@@ -787,7 +787,7 @@ class TestHyundaiFingerprint:
     assert parser.vl["FCA12"]["FCA_DrvSetState"] == 2
     assert parser.vl["FCA12"]["FCA_USM"] == 2
 
-  def test_sportage_angle_steering_uses_adas_cmd_with_send_lfa(self):
+  def test_sportage_angle_steering_uses_lfa_and_adas_cmd_with_send_lfa(self):
     fingerprint = gen_empty_fingerprint()
     cam_can = CanBus(None, fingerprint).CAM
     fingerprint[cam_can][0xCB] = 24
@@ -797,8 +797,12 @@ class TestHyundaiFingerprint:
     assert CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
 
     packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
-    msgs = hyundaicanfd.create_steering_messages(packer, CP, CanBus(CP), True, True, 1.0, 12.3)
-    assert [(addr, bus) for addr, _, bus in msgs] == [(0xCB, CanBus(CP).ECAN)]
+    can_bus = CanBus(CP)
+    msgs = hyundaicanfd.create_steering_messages(packer, CP, can_bus, True, True, 1.0, 12.3)
+    assert [(packer.dbc.addr_to_msg[addr].name, bus) for addr, _, bus in msgs] == [
+      ("LFA", can_bus.ECAN),
+      ("ADAS_CMD_35_10ms", can_bus.ECAN),
+    ]
 
   def test_ioniq_6_lfa_helper_preserves_stock_ui_fields(self):
     CP = CarParams.new_message()
@@ -1040,6 +1044,7 @@ class TestHyundaiFingerprint:
     assert sportage_high_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK == sportage_params.ANGLE_LIMITS.MAX_LATERAL_JERK
     assert sportage_low_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK > sportage_high_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK
     assert sportage_low_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK < comparison_params.ANGLE_LIMITS.MAX_LATERAL_JERK
+    assert sportage_params.ANGLE_LIMITS.STEER_ANGLE_MAX > comparison_params.ANGLE_LIMITS.STEER_ANGLE_MAX
     assert sportage_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL > comparison_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL
     assert sportage_params.ANGLE_LIMITS.MAX_ANGLE_RATE > comparison_params.ANGLE_LIMITS.MAX_ANGLE_RATE
     assert comparison_params.ANGLE_LIMITS.MAX_LATERAL_JERK == ioniq6_params.ANGLE_LIMITS.MAX_LATERAL_JERK

@@ -17,6 +17,7 @@ SPORTAGE_HEV_2026_LOW_SPEED_JERK_BOOST = 0.75
 SPORTAGE_HEV_2026_LOW_SPEED_JERK_SPEED = 12.0
 SPORTAGE_HEV_2026_LOW_SPEED_JERK_WIDTH = 6.0
 SPORTAGE_HEV_2026_MAX_ANGLE_RATE = 6.0
+SPORTAGE_HEV_2026_STEER_ANGLE_MAX = 220.0
 
 
 class CarControllerParams:
@@ -69,6 +70,7 @@ class CarControllerParams:
         sportage_low_speed_weight = min(max((SPORTAGE_HEV_2026_LOW_SPEED_JERK_SPEED - vEgoRaw) / SPORTAGE_HEV_2026_LOW_SPEED_JERK_WIDTH, 0.0), 1.0)
         sportage_lateral_jerk = SPORTAGE_HEV_2026_BASE_LATERAL_JERK + (SPORTAGE_HEV_2026_LOW_SPEED_JERK_BOOST * sportage_low_speed_weight)
         self.ANGLE_LIMITS = replace(self.ANGLE_LIMITS,
+                                    STEER_ANGLE_MAX=SPORTAGE_HEV_2026_STEER_ANGLE_MAX,
                                     MAX_LATERAL_ACCEL=SPORTAGE_HEV_2026_MAX_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
                                     MAX_LATERAL_JERK=sportage_lateral_jerk + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
                                     MAX_ANGLE_RATE=SPORTAGE_HEV_2026_MAX_ANGLE_RATE)
