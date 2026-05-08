@@ -133,6 +133,7 @@ class SelfdriveD:
     self.recalibrating_seen = False
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
+    self.prev_pedal_long_active = False
 
     # Determine startup event
     self.startup_event = StarPilotEventName.customStartupAlert
@@ -240,6 +241,22 @@ class SelfdriveD:
         elif switchback_mode_enabled:
           self.last_below_steer_speed_alert_time = now
       self.events.add_from_msg(car_events)
+
+      if (self.CP.brand == "tesla"
+          and self.CP.carFingerprint == "TESLA_MODEL_S_PREAP"
+          and self.CP.openpilotLongitudinalControl
+          and not self.CP.pcmCruise):
+        pedal_long_active = bool(CS.cruiseState.enabled and getattr(CS, 'pedalLongActive', False))
+        if pedal_long_active and not self.prev_pedal_long_active:
+          self.events.add(EventName.pedalCruiseEnabled)
+        elif self.prev_pedal_long_active and not pedal_long_active:
+          self.events.add(EventName.pedalCruiseDisabled)
+        self.prev_pedal_long_active = pedal_long_active
+
+        if getattr(CS, 'pedalMaxRegen', False):
+          self.events.add(EventName.pedalMaxRegen)
+      else:
+        self.prev_pedal_long_active = False
 
       if (getattr(self.starpilot_toggles, "nostalgia_mode", False) and
           self.CP.openpilotLongitudinalControl and

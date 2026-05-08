@@ -124,11 +124,14 @@ class CarController(CarControllerBase):
       can_sends.append(self.tesla_can.create_steering_control(cntr, self.apply_angle_last, lat_active))
       can_sends.append(self.tesla_can.create_epas_control(cntr, 1))
 
+    CS.pccEvent = None
     if self.CP.openpilotLongitudinalControl and self.preap_long is not None:
       can_sends.extend(self.preap_long.update(CC, CS, self.frame, self.tesla_can, CANBUS.party))
 
     if self.stock_cc is not None:
       can_sends.extend(self.stock_cc.update(CS, self.frame, self.tesla_can, CANBUS.party))
+      if self.stock_cc.pcc_event:
+        CS.pccEvent = self.stock_cc.pcc_event
 
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
