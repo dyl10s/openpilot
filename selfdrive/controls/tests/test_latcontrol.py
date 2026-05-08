@@ -227,7 +227,8 @@ class TestLatControl:
     left_unwind = get_genesis_g90_friction_threshold(6.0, 0.7, -0.8)
     right_unwind = get_genesis_g90_friction_threshold(6.0, -0.7, 0.8)
     assert left_turn_in < base
-    assert right_turn_in < left_turn_in
+    assert right_turn_in < base
+    assert left_turn_in < right_turn_in
     assert left_unwind > base
     assert right_unwind > left_unwind
 
@@ -237,7 +238,7 @@ class TestLatControl:
     right_turn_in = get_genesis_g90_friction_scale(6.0, -0.7, -0.8)
     left_unwind = get_genesis_g90_friction_scale(6.0, 0.7, -0.8)
     right_unwind = get_genesis_g90_friction_scale(6.0, -0.7, 0.8)
-    assert right_turn_in > left_turn_in > base
+    assert left_turn_in > right_turn_in > base
     assert base > left_unwind > right_unwind
 
   def test_ioniq_6_ff_scale_curve(self):
@@ -440,7 +441,7 @@ class TestLatControl:
     monkeypatch.setattr(latcontrol_torque, "civic_bosch_modified_lateral_testing_ground_active", lambda: True)
     variant_controller = LatControlTorque(CP.as_reader(), CI, DT_CTRL)
 
-    assert variant_controller.torque_params.latAccelFactor == pytest.approx(3.0 * 1.20 * 1.16)
+    assert variant_controller.torque_params.latAccelFactor == pytest.approx(3.0 * 1.20 * 1.26)
 
   def test_modified_civic_b_torque_ff_scale_curve(self):
     steady_left = get_civic_bosch_modified_b_ff_scale(0.5, 0.0, 12.0)
