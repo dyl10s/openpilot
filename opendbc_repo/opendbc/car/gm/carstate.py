@@ -315,14 +315,8 @@ class CarState(CarStateBase):
       self.lkas_enabled = pt_cp.vl["ASCMSteeringButton"]["LKAButton"]
     self.pcm_acc_status = pt_cp.vl["AcceleratorPedal2"]["CruiseState"]
 
+    # Only activate cancel remap when panda safety was configured for it at startup.
     remap_cancel_to_distance = bool(self.CP.alternativeExperience & ALTERNATIVE_EXPERIENCE.GM_REMAP_CANCEL_TO_DISTANCE)
-    if not remap_cancel_to_distance:
-      remap_cancel_to_distance = (
-        getattr(starpilot_toggles, "remap_cancel_to_distance", False) and
-        self.CP.openpilotLongitudinalControl and
-        bool(self.CP.flags & GMFlags.PEDAL_LONG.value) and
-        self.CP.carFingerprint in (BOLT_CANCEL_BUTTON_CARS | {CAR.CHEVROLET_MALIBU_HYBRID_CC})
-      )
     malibu_cancel_passthrough = (
       remap_cancel_to_distance and
       self.CP.carFingerprint == CAR.CHEVROLET_MALIBU_HYBRID_CC and
