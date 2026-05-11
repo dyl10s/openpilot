@@ -8,7 +8,7 @@ from opendbc.car import Bus, ButtonType, gen_empty_fingerprint, structs
 from opendbc.car.structs import CarControl, CarParams
 from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
 from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalTuningState, GenesisG90LongitudinalTuningState, \
-                                             IONIQ_6_IPEDAL_PADDLE_BURST_COUNT, IONIQ_6_IPEDAL_NEXT_COUNTER_BURST_COUNT, \
+                                             IONIQ_6_IPEDAL_PADDLE_BURST_COUNT, \
                                              update_ioniq_6_longitudinal_tuning, \
                                              update_genesis_g90_longitudinal_tuning
 from opendbc.car.hyundai.carstate import CarState, decode_ioniq_6_blindspot_radar_state, decode_ioniq_6_ipedal_intermediate_state, \
@@ -484,7 +484,8 @@ class TestHyundaiFingerprint:
     sends = controller._update_ioniq_6_always_ipedal(cc, cs, toggles)
 
     assert sends
-    assert controller._ioniq_6_always_ipedal_press_remaining == 9
+    assert [msg[1].hex() for msg in sends if msg[0] == 0x1CF] == ["9060002800000000"]
+    assert controller._ioniq_6_always_ipedal_press_remaining == 5
 
   def test_ioniq_6_always_ipedal_sends_regen_control_companion_once_max_regen_is_shown(self):
     toggles = get_test_toggles()
@@ -550,13 +551,12 @@ class TestHyundaiFingerprint:
     sends = controller._update_ioniq_6_always_ipedal(cc, cs, toggles)
 
     paddle_msgs = [msg for msg in sends if msg[0] == 0x1CF]
-    assert len(paddle_msgs) == IONIQ_6_IPEDAL_PADDLE_BURST_COUNT + IONIQ_6_IPEDAL_NEXT_COUNTER_BURST_COUNT
-    assert [msg[1].hex() for msg in paddle_msgs[:IONIQ_6_IPEDAL_PADDLE_BURST_COUNT]] == ["4650002800000000"] * IONIQ_6_IPEDAL_PADDLE_BURST_COUNT
-    assert [msg[1].hex() for msg in paddle_msgs[IONIQ_6_IPEDAL_PADDLE_BURST_COUNT:]] == ["9060002800000000"] * IONIQ_6_IPEDAL_NEXT_COUNTER_BURST_COUNT
+    assert [msg[1].hex() for msg in paddle_msgs] == ["9060002800000000"]
     regen_cmd = next(msg for msg in sends if msg[0] == 0x25A)
     assert regen_cmd[1][24:28] == bytes.fromhex("c00c1200")
     checksum = hyundaicanfd.hkg_can_fd_checksum(regen_cmd[0], None, bytearray(regen_cmd[1]))
     assert regen_cmd[1][0] | (regen_cmd[1][1] << 8) == checksum
+    assert controller._ioniq_6_always_ipedal_press_remaining == 5
 
     controller.frame = 1
     cs.buttons_counter = 6
@@ -564,9 +564,7 @@ class TestHyundaiFingerprint:
     sends = controller._update_ioniq_6_always_ipedal(cc, cs, toggles)
 
     paddle_msgs = [msg for msg in sends if msg[0] == 0x1CF]
-    assert len(paddle_msgs) == IONIQ_6_IPEDAL_PADDLE_BURST_COUNT + IONIQ_6_IPEDAL_NEXT_COUNTER_BURST_COUNT
-    assert [msg[1].hex() for msg in paddle_msgs[:IONIQ_6_IPEDAL_PADDLE_BURST_COUNT]] == ["9060002800000000"] * IONIQ_6_IPEDAL_PADDLE_BURST_COUNT
-    assert [msg[1].hex() for msg in paddle_msgs[IONIQ_6_IPEDAL_PADDLE_BURST_COUNT:]] == ["2970002800000000"] * IONIQ_6_IPEDAL_NEXT_COUNTER_BURST_COUNT
+    assert [msg[1].hex() for msg in paddle_msgs] == ["2970002800000000"]
     assert not any(msg[0] == 0x25A for msg in sends)
 
   def test_ioniq_6_longitudinal_params_match_canfd_tune(self):
