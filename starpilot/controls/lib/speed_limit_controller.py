@@ -282,6 +282,10 @@ class SpeedLimitController:
       self.target = desired_target
       self.clear_override_for_source_limit(desired_source, desired_target, had_override)
 
+    elif desired_target == self.target:
+      self.source = desired_source
+      self.target = desired_target
+
     else:
       self.source = "None"
       self.unconfirmed_speed_limit = desired_target
