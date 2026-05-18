@@ -1353,9 +1353,11 @@ FW_VERSIONS = {
   },
   CAR.KIA_FORTE_2021_NON_SCC: {
     (Ecu.eps, 0x7D4, None): [
+      b'\xf1\x00BD  MDPS C 1.00 1.07 56310/M6300 4BDDC107',
       b'\xf1\x00BD  MDPS C 1.00 1.08 56310M6000\x00 4BDDC108',
     ],
     (Ecu.fwdCamera, 0x7C4, None): [
+      b'\xf1\x00BD  LKAS AT USA LHD 1.00 1.02 95740-M6000 J31',
       b'\xf1\x00BD  LKAS AT USA LHD 1.00 1.04 95740-M6000 J33',
     ],
   },
