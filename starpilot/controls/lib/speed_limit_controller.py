@@ -57,6 +57,7 @@ class SpeedLimitController:
 
     self.previous_source = "None"
     self.source = "None"
+    self.previous_road_name = ""
 
     self._slc_adopt_counter = 0
 
@@ -244,7 +245,7 @@ class SpeedLimitController:
     self.mapbox_future = future
     future.add_done_callback(complete_request)
 
-  def handle_limit_change(self, desired_source, desired_target, v_ego, sm):
+  def handle_limit_change(self, desired_source, desired_target, current_road_name, v_ego, sm):
     self.speed_limit_changed_timer += DT_MDL
     had_override = self.override_active(v_ego, sm["carState"].gasPressed)
 
@@ -269,6 +270,7 @@ class SpeedLimitController:
 
       self.previous_source = desired_source
       self.previous_target = desired_target
+      self.previous_road_name = current_road_name
 
     elif desired_target < self.target and not self.starpilot_toggles.speed_limit_confirmation_lower:
       self.source = desired_source
@@ -284,11 +286,12 @@ class SpeedLimitController:
       self.source = "None"
       self.unconfirmed_speed_limit = desired_target
 
-    if self.target != self.previous_target and self.target > 0 and not speed_limit_denied:
+    if (self.target != self.previous_target or self.previous_road_name != current_road_name) and self.target > 0 and not speed_limit_denied:
       self.denied_target = 0
 
       self.previous_source = self.source
       self.previous_target = self.target
+      self.previous_road_name = current_road_name
 
       self.starpilot_planner.params.put_nonblocking("PreviousSpeedLimit", self.target)
 
@@ -342,7 +345,7 @@ class SpeedLimitController:
           desired_target = self.mapbox_limit
 
       if not display_only and (desired_target == 0 or self.target == 0):
-        if self.denied_target != self.previous_target > 0 and self.starpilot_toggles.slc_fallback_previous_speed_limit:
+        if self.previous_target > 0 and self.starpilot_toggles.slc_fallback_previous_speed_limit:
           desired_source = self.previous_source
           desired_target = self.previous_target
 
@@ -370,8 +373,10 @@ class SpeedLimitController:
 
       return
 
-    if abs(desired_target - self.previous_target) >= 1:
-      self.handle_limit_change(desired_source, desired_target, v_ego, sm)
+    current_road_name = sm["mapdOut"].roadName if desired_source == "Map Data" else ""
+
+    if abs(desired_target - self.previous_target) >= 1 or (current_road_name != self.previous_road_name and current_road_name != ""):
+      self.handle_limit_change(desired_source, desired_target, current_road_name, v_ego, sm)
     elif desired_source != self.source and abs(desired_target - self.target) < 1:
       self.source = desired_source
     else:
