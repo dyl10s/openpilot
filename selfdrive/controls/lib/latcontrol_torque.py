@@ -129,6 +129,9 @@ SONATA_HYBRID_CARS = (
 KIA_EV6_CARS = (
   HYUNDAI_CAR.KIA_EV6,
 )
+KIA_FORTE_CARS = (
+  HYUNDAI_CAR.KIA_FORTE,
+)
 
 BOLT_2017_LATERAL_TESTING_GROUND_ID = testing_ground.id_3
 BOLT_2017_STEER_RATIO_TEST_SCALE = 1.045
@@ -260,6 +263,25 @@ SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_LAT = 0.09
 SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_LAT_WIDTH = 0.02
 SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_SPEED_MAX = 6.0
 SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_SPEED_WIDTH = 1.0
+
+KIA_FORTE_BASE_LAT_ACCEL_FACTOR_MULT = 1.08
+KIA_FORTE_FF_REDUCTION_LEFT = 0.08
+KIA_FORTE_FF_REDUCTION_RIGHT = 0.20
+KIA_FORTE_FF_ONSET = 0.16
+KIA_FORTE_FF_ONSET_WIDTH = 0.06
+KIA_FORTE_FF_CUTOFF = 1.20
+KIA_FORTE_FF_CUTOFF_WIDTH = 0.36
+KIA_FORTE_TRANSITION_SPEED = 9.0
+KIA_FORTE_PHASE_SCALE = 0.10
+KIA_FORTE_TURN_IN_BOOST_LEFT = 0.06
+KIA_FORTE_TURN_IN_BOOST_RIGHT = 0.00
+KIA_FORTE_UNWIND_TAPER_LEFT = 0.18
+KIA_FORTE_UNWIND_TAPER_RIGHT = 0.08
+KIA_FORTE_CENTER_TAPER_MAX = 0.11
+KIA_FORTE_CENTER_TAPER_LAT = 0.14
+KIA_FORTE_CENTER_TAPER_LAT_WIDTH = 0.03
+KIA_FORTE_CENTER_TAPER_SPEED = 24.0
+KIA_FORTE_CENTER_TAPER_SPEED_WIDTH = 2.5
 
 GENESIS_G90_LATERAL_TESTING_GROUND_ID = testing_ground.id_4
 GENESIS_G90_FF_GAIN_LEFT = 0.20
@@ -939,6 +961,48 @@ def get_sonata_hybrid_center_taper_scale(desired_lateral_accel: float, v_ego: fl
   return 1.0 - reduction
 
 
+def _kia_forte_sigmoid(x: float) -> float:
+  return _sigmoid(x)
+
+
+def _kia_forte_low_speed_factor(v_ego: float) -> float:
+  return 1.0 / (1.0 + (max(v_ego, 0.0) / KIA_FORTE_TRANSITION_SPEED) ** 2)
+
+
+def _kia_forte_transition_phase(desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+  return math.tanh((desired_lateral_accel * desired_lateral_jerk) / KIA_FORTE_PHASE_SCALE)
+
+
+def _kia_forte_side_value(desired_lateral_accel: float, left_value: float, right_value: float) -> float:
+  return left_value if desired_lateral_accel >= 0.0 else right_value
+
+
+def get_kia_forte_ff_scale(desired_lateral_accel: float, desired_lateral_jerk: float, v_ego: float) -> float:
+  if desired_lateral_accel == 0.0:
+    return 1.0
+
+  abs_lateral_accel = abs(desired_lateral_accel)
+  onset = _kia_forte_sigmoid((abs_lateral_accel - KIA_FORTE_FF_ONSET) / KIA_FORTE_FF_ONSET_WIDTH)
+  cutoff = _kia_forte_sigmoid((KIA_FORTE_FF_CUTOFF - abs_lateral_accel) / KIA_FORTE_FF_CUTOFF_WIDTH)
+  base_reduction = _kia_forte_side_value(desired_lateral_accel, KIA_FORTE_FF_REDUCTION_LEFT, KIA_FORTE_FF_REDUCTION_RIGHT) * onset * cutoff
+  phase = _kia_forte_transition_phase(desired_lateral_accel, desired_lateral_jerk)
+  turn_in_weight = max(phase, 0.0)
+  unwind_weight = max(-phase, 0.0)
+  low_speed_factor = _kia_forte_low_speed_factor(v_ego)
+  turn_in_boost = 1.0 + (_kia_forte_side_value(desired_lateral_accel, KIA_FORTE_TURN_IN_BOOST_LEFT, KIA_FORTE_TURN_IN_BOOST_RIGHT) *
+                         turn_in_weight * (0.35 + 0.65 * low_speed_factor))
+  unwind_taper = 1.0 - (_kia_forte_side_value(desired_lateral_accel, KIA_FORTE_UNWIND_TAPER_LEFT, KIA_FORTE_UNWIND_TAPER_RIGHT) *
+                        unwind_weight * (0.35 + 0.65 * low_speed_factor))
+  return (1.0 - base_reduction) * turn_in_boost * max(unwind_taper, 0.0)
+
+
+def get_kia_forte_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _kia_forte_sigmoid((v_ego - KIA_FORTE_CENTER_TAPER_SPEED) / KIA_FORTE_CENTER_TAPER_SPEED_WIDTH)
+  center_weight = _kia_forte_sigmoid((KIA_FORTE_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / KIA_FORTE_CENTER_TAPER_LAT_WIDTH)
+  reduction = KIA_FORTE_CENTER_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
+
+
 def genesis_g90_lateral_testing_ground_active() -> bool:
   return testing_ground.use(GENESIS_G90_LATERAL_TESTING_GROUND_ID)
 
@@ -1420,6 +1484,7 @@ class LatControlTorque(LatControl):
     self.is_ioniq_ev_old = CP.carFingerprint in IONIQ_EV_OLD_CARS
     self.is_ioniq_6 = CP.carFingerprint in IONIQ_6_CARS
     self.is_sonata_hybrid = CP.carFingerprint in SONATA_HYBRID_CARS
+    self.is_kia_forte = CP.carFingerprint in KIA_FORTE_CARS
     self.is_kia_ev6 = CP.carFingerprint in KIA_EV6_CARS
     self.is_civic_bosch_modified = CP.carFingerprint == HONDA_CAR.HONDA_CIVIC_BOSCH and bool(CP.flags & HondaFlags.EPS_MODIFIED)
     self.is_volt_cc = CP.carFingerprint == GM_CAR.CHEVROLET_VOLT_CC
@@ -1438,6 +1503,8 @@ class LatControlTorque(LatControl):
       self.torque_params.latAccelFactor *= IONIQ_6_BASE_LAT_ACCEL_FACTOR_MULT
     if self.is_sonata_hybrid:
       self.torque_params.latAccelFactor *= SONATA_HYBRID_BASE_LAT_ACCEL_FACTOR_MULT
+    if self.is_kia_forte:
+      self.torque_params.latAccelFactor *= KIA_FORTE_BASE_LAT_ACCEL_FACTOR_MULT
     if self.is_civic_bosch_modified:
       self.torque_params.latAccelFactor *= CIVIC_BOSCH_MODIFIED_B_LAT_ACCEL_FACTOR_MULT
       if civic_bosch_modified_a_lateral_testing_ground_active():
@@ -1463,6 +1530,8 @@ class LatControlTorque(LatControl):
       latAccelFactor *= IONIQ_6_BASE_LAT_ACCEL_FACTOR_MULT
     if self.is_sonata_hybrid:
       latAccelFactor *= SONATA_HYBRID_BASE_LAT_ACCEL_FACTOR_MULT
+    if self.is_kia_forte:
+      latAccelFactor *= KIA_FORTE_BASE_LAT_ACCEL_FACTOR_MULT
     if self.is_civic_bosch_modified:
       latAccelFactor *= CIVIC_BOSCH_MODIFIED_B_LAT_ACCEL_FACTOR_MULT
       if civic_bosch_modified_a_lateral_testing_ground_active():
@@ -1540,12 +1609,14 @@ class LatControlTorque(LatControl):
       ioniq_ev_old_active = self.is_ioniq_ev_old
       ioniq_6_active = self.is_ioniq_6
       sonata_hybrid_active = self.is_sonata_hybrid
+      kia_forte_active = self.is_kia_forte
       kia_ev6_test_active = self.is_kia_ev6 and kia_ev6_lateral_testing_ground_active()
       volt_plexy_test_active = self.is_volt_cc and volt_plexy_lateral_testing_ground_active()
       volt_standard_center_taper = get_volt_standard_center_taper_scale(setpoint, CS.vEgo) if volt_standard_test_active else 1.0
       ioniq_ev_old_center_taper = get_ioniq_ev_old_center_taper_scale(setpoint, CS.vEgo) if ioniq_ev_old_active else 1.0
       ioniq_6_center_taper = get_ioniq_6_center_taper_scale(setpoint, CS.vEgo) if ioniq_6_active else 1.0
       sonata_hybrid_center_taper = get_sonata_hybrid_center_taper_scale(setpoint, CS.vEgo) if sonata_hybrid_active else 1.0
+      kia_forte_center_taper = get_kia_forte_center_taper_scale(setpoint, CS.vEgo) if kia_forte_active else 1.0
       civic_bosch_modified_a_center_taper = get_civic_bosch_modified_a_center_taper_scale(setpoint, CS.vEgo) if (
         self.is_civic_bosch_modified and civic_bosch_modified_a_lateral_testing_ground_active()
       ) else 1.0
@@ -1581,6 +1652,8 @@ class LatControlTorque(LatControl):
         friction_scale = 1.0 + ((friction_scale - 1.0) * ioniq_6_center_taper)
       elif sonata_hybrid_active:
         ff *= get_sonata_hybrid_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * sonata_hybrid_center_taper
+      elif kia_forte_active:
+        ff *= get_kia_forte_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * kia_forte_center_taper
       elif kia_ev6_test_active:
         ff *= get_kia_ev6_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
         friction_threshold = get_kia_ev6_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
