@@ -72,13 +72,14 @@ def get_test_toggles() -> SimpleNamespace:
 class TestHyundaiFingerprint:
   def test_feature_detection(self):
     # LKA steering
-    for lka_steering in (True, False):
-      fingerprint = gen_empty_fingerprint()
-      if lka_steering:
-        cam_can = CanBus(None, fingerprint).CAM
-        fingerprint[cam_can] = [0x50, 0x110]  # LKA steering messages
-      CP = CarInterface.get_params(CAR.KIA_EV6, fingerprint, [], False, False, False, None)
-      assert bool(CP.flags & HyundaiFlags.CANFD_LKA_STEERING) == lka_steering
+    for candidate in (CAR.KIA_EV6, CAR.HYUNDAI_IONIQ_6):
+      for lka_steering in (True, False):
+        fingerprint = gen_empty_fingerprint()
+        if lka_steering:
+          cam_can = CanBus(None, fingerprint).CAM
+          fingerprint[cam_can] = [0x50, 0x110]  # LKA steering messages
+        CP = CarInterface.get_params(candidate, fingerprint, [], False, False, False, None)
+        assert bool(CP.flags & HyundaiFlags.CANFD_LKA_STEERING) == lka_steering
 
     # radar available
     for radar in (True, False):
@@ -103,6 +104,15 @@ class TestHyundaiFingerprint:
     fingerprint[cam_can][0xCB] = 24
     CP = CarInterface.get_params(CAR.KIA_SPORTAGE_HEV_2026, fingerprint, [], False, False, False, None)
     assert CP.flags & HyundaiFlags.SEND_LFA
+
+  def test_ioniq_6_hda1_layout_stays_non_lka(self):
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[1] = {0x100: 8, 0x110: 8}
+
+    CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], False, False, False, None)
+
+    assert not (CP.flags & HyundaiFlags.CANFD_LKA_STEERING)
+    assert bool(CP.flags & HyundaiFlags.CANFD_CAMERA_SCC)
 
     palisade_2023 = CarInterface.get_params(CAR.HYUNDAI_PALISADE_2023, gen_empty_fingerprint(), [], True, False, False, None)
     assert palisade_2023.flags & HyundaiFlags.CAN_CANFD_BLENDED
