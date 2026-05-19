@@ -109,14 +109,17 @@ class SpeedLimitController:
     return self.overridden_speed > target_with_offset or (gas_pressed and v_ego > target_with_offset)
 
   def clear_override_for_source_limit(self, desired_source, desired_target, had_override):
-    if desired_source == "None" or desired_target <= 0 or not had_override:
+    if desired_source == "None" or desired_target <= 0:
+      return
+    if not had_override and self.overridden_speed <= 0:
       return
 
     # A new posted limit starts a new segment, so the previous segment's gas override
     # should not carry through until the driver releases and reapplies the pedal.
     self.override_slc = False
     self.overridden_speed = 0
-    self.override_requires_gas_release = True
+    if had_override:
+      self.override_requires_gas_release = True
 
   def get_mapbox_speed_limit(self, now, time_validated, v_ego, sm):
     if not self.starpilot_planner.gps_valid or not self.mapbox_token or (sm["carState"].steeringAngleDeg - sm["liveParameters"].angleOffsetDeg) >= 45:
@@ -436,7 +439,7 @@ class SpeedLimitController:
     if not sm["carState"].gasPressed:
       self.override_requires_gas_release = False
 
-    self.override_slc = self.overridden_speed > self.target + self.offset > 0
+    self.override_slc = self.overridden_speed > self.target + self.offset > 0 and v_ego > self.target + self.offset
     self.override_slc |= not self.override_requires_gas_release and sm["carState"].gasPressed and v_ego > self.target + self.offset > 0
 
     if self.override_slc:
