@@ -759,11 +759,6 @@ CANCEL_BUTTON_ENABLE_CARS = frozenset({
 })
 
 
-ALT_BUS_LDA_BUTTON_CARS = frozenset({
-  CAR.GENESIS_G90,
-})
-
-
 def hyundai_cancel_button_enables_cruise(car_fingerprint) -> bool:
   return car_fingerprint in CANCEL_BUTTON_ENABLE_CARS
 
