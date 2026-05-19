@@ -973,25 +973,24 @@ class StarPilotDrivingModelLayout(_SettingsPage):
         ]
       )
 
-    if self._params.get_int("TuningLevel") == 3:
-      rows.extend(
-        [
-          {
-            "id": "recovery_power",
-            "title": tr("Recovery Power"),
-            "subtitle": tr("How assertively the model recenters after disturbances."),
-            "type": "value",
-            "value": f"{self._params.get_float('RecoveryPower'):.1f}x",
-          },
-          {
-            "id": "stop_distance",
-            "title": tr("Stop Distance"),
-            "subtitle": tr("Preferred gap held at a complete stop."),
-            "type": "value",
-            "value": f"{self._params.get_float('StopDistance'):.1f}m",
-          },
-        ]
-      )
+    rows.extend(
+      [
+        {
+          "id": "recovery_power",
+          "title": tr("Recovery Power"),
+          "subtitle": tr("How assertively the model recenters after disturbances."),
+          "type": "value",
+          "value": f"{self._params.get_float('RecoveryPower'):.1f}x",
+        },
+        {
+          "id": "stop_distance",
+          "title": tr("Stop Distance"),
+          "subtitle": tr("Preferred gap held at a complete stop."),
+          "type": "value",
+          "value": f"{self._params.get_float('StopDistance'):.1f}m",
+        },
+      ]
+    )
 
     return rows
 
