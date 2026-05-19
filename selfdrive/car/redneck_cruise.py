@@ -13,12 +13,12 @@ HYST_GAP = 0.0
 INACTIVE_TIMER = 0.4
 
 CRUISE_BUTTON_TIMERS = {
-  ButtonType.decelCruise: 0,
-  ButtonType.accelCruise: 0,
-  ButtonType.setCruise: 0,
-  ButtonType.resumeCruise: 0,
-  ButtonType.cancel: 0,
-  ButtonType.mainCruise: 0,
+  int(ButtonType.decelCruise): 0,
+  int(ButtonType.accelCruise): 0,
+  int(ButtonType.setCruise): 0,
+  int(ButtonType.resumeCruise): 0,
+  int(ButtonType.cancel): 0,
+  int(ButtonType.mainCruise): 0,
 }
 
 
@@ -26,14 +26,15 @@ def get_minimum_set_speed(is_metric: bool) -> int:
   return 30 if is_metric else 20
 
 
-def update_manual_button_timers(CS: car.CarState, button_timers: dict[ButtonType, int]) -> None:
+def update_manual_button_timers(CS: car.CarState, button_timers: dict[int, int]) -> None:
   for button_type in button_timers:
     if button_timers[button_type] > 0:
       button_timers[button_type] += 1
 
   for event in CS.buttonEvents:
-    if event.type in button_timers:
-      button_timers[event.type] = 1 if event.pressed else 0
+    button_type = event.type.raw if hasattr(event.type, "raw") else int(event.type)
+    if button_type in button_timers:
+      button_timers[button_type] = 1 if event.pressed else 0
 
 
 class RedneckCruise:

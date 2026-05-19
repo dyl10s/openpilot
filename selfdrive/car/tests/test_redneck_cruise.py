@@ -68,6 +68,11 @@ class TestRedneckCruise(unittest.TestCase):
     send_button, _ = self._run_until_active(target_mph=25.0, speed_cluster_mph=20.0, button_events=[button_event])
     self.assertEqual(SEND_BUTTON_NONE, send_button)
 
+  def test_suppresses_output_for_capnp_style_button_events(self):
+    button_event = SimpleNamespace(type=SimpleNamespace(raw=int(ButtonType.accelCruise)), pressed=True)
+    send_button, _ = self._run_until_active(target_mph=25.0, speed_cluster_mph=20.0, button_events=[button_event])
+    self.assertEqual(SEND_BUTTON_NONE, send_button)
+
   def test_suppresses_output_for_override_cancel_and_resume(self):
     for kwargs in ({"override": True}, {"cancel": True}, {"resume": True}):
       with self.subTest(**kwargs):

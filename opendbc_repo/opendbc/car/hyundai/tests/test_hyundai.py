@@ -10,7 +10,8 @@ from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
 from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalTuningState, GenesisG90LongitudinalTuningState, \
                                              update_ioniq_6_longitudinal_tuning, \
                                              update_genesis_g90_longitudinal_tuning
-from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state
+from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state, \
+                                         ALT_BUS_LDA_BUTTON_BURST_DEBOUNCE_NS
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
 from opendbc.car.hyundai.hyundaicanfd import CanBus
@@ -18,7 +19,8 @@ from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
 from opendbc.car.hyundai.values import CAMERA_SCC_CAR, CANFD_CAR, CAN_GEARS, CAR, CHECKSUM, DATE_FW_ECUS, \
                                          HYBRID_CAR, EV_CAR, FW_QUERY_CONFIG, LEGACY_SAFETY_MODE_CAR, CANFD_FUZZY_WHITELIST, \
                                          UNSUPPORTED_LONGITUDINAL_CAR, PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
-                                         CarControllerParams, DBC, HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, Buttons
+                                         CarControllerParams, DBC, HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, Buttons, \
+                                         HyundaiStarPilotSafetyFlags
 
 LongCtrlState = CarControl.Actuators.LongControlState
 from opendbc.car.hyundai.fingerprints import FW_VERSIONS
@@ -208,6 +210,47 @@ class TestHyundaiFingerprint:
 
     assert CP.vEgoStopping == pytest.approx(0.8)
     assert CP.stoppingDecelRate == pytest.approx(0.55)
+
+  def test_genesis_g90_sets_has_lkas_button_flag(self):
+    toggles = get_test_toggles()
+    CP = CarInterface.get_params(CAR.GENESIS_G90, gen_empty_fingerprint(), [], True, False, False, toggles)
+    FPCP = CarInterface.get_starpilot_params(CAR.GENESIS_G90, gen_empty_fingerprint(), [], CP, toggles)
+
+    assert CP.flags & HyundaiFlags.HAS_LDA_BUTTON
+    assert FPCP.safetyConfigs[-1].safetyParam & HyundaiStarPilotSafetyFlags.HAS_LDA_BUTTON
+
+  def test_genesis_g90_lkas_button_uses_clu13_on_alt_bus(self):
+    toggles = get_test_toggles()
+    CP = CarInterface.get_params(CAR.GENESIS_G90, gen_empty_fingerprint(), [], True, False, False, toggles)
+    FPCP = CarInterface.get_starpilot_params(CAR.GENESIS_G90, gen_empty_fingerprint(), [], CP, toggles)
+
+    car_state = CarState(CP, FPCP)
+    can_parsers = car_state.get_can_parsers(CP)
+    packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
+
+    assert Bus.alt in can_parsers
+
+    can_parsers[Bus.alt].update([(1, [packer.make_can_msg("CLU13", 1, {"CF_Clu_LdwsLkasSW": 1})])])
+    ret, _ = car_state.update(can_parsers, toggles)
+    assert [(be.type, be.pressed) for be in ret.buttonEvents] == [(ButtonType.lkas, True), (ButtonType.lkas, False)]
+
+    can_parsers[Bus.alt].update([(2, [packer.make_can_msg("CLU13", 1, {"CF_Clu_LdwsLkasSW": 0})])])
+    ret, _ = car_state.update(can_parsers, toggles)
+    assert len(ret.buttonEvents) == 0
+
+    can_parsers[Bus.alt].update([(3, [packer.make_can_msg("CLU13", 1, {"CF_Clu_LdwsLkasSW": 1})])])
+    ret, _ = car_state.update(can_parsers, toggles)
+    assert len(ret.buttonEvents) == 0
+
+    quiet_ts = ALT_BUS_LDA_BUTTON_BURST_DEBOUNCE_NS + 3
+    can_parsers[Bus.alt].update([(quiet_ts, [packer.make_can_msg("CLU13", 1, {"CF_Clu_LdwsLkasSW": 0})])])
+    ret, _ = car_state.update(can_parsers, toggles)
+    assert len(ret.buttonEvents) == 0
+
+    next_press_ts = ALT_BUS_LDA_BUTTON_BURST_DEBOUNCE_NS + 4
+    can_parsers[Bus.alt].update([(next_press_ts, [packer.make_can_msg("CLU13", 1, {"CF_Clu_LdwsLkasSW": 1})])])
+    ret, _ = car_state.update(can_parsers, toggles)
+    assert [(be.type, be.pressed) for be in ret.buttonEvents] == [(ButtonType.lkas, True), (ButtonType.lkas, False)]
 
   def test_palisade_2023_longitudinal_params_soften_final_stop_hold(self):
     toggles = get_test_toggles()

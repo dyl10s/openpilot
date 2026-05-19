@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import os
 import time
 import threading
@@ -74,7 +75,7 @@ class Car:
 
   def __init__(self, CI=None, RI=None) -> None:
     self.can_sock = messaging.sub_sock('can', timeout=20)
-    self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents', 'radarState'])
+    self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents', 'radarState', 'longitudinalPlan'])
     self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'liveTracks'])
 
     self.can_rcv_cum_timeout_counter = 0
@@ -372,9 +373,19 @@ class Car:
     if self.redneck_cruise is None:
       return
 
-    send_button, v_target = self.redneck_cruise.run(CS, CC, self.sm['starpilotPlan'].vCruise, self.is_metric)
+    send_button, v_target = self.redneck_cruise.run(CS, CC, self._get_redneck_target_speed(), self.is_metric)
     self.CI.CS.redneck_send_button = send_button
     self.CI.CS.redneck_v_target = v_target
+
+  def _get_redneck_target_speed(self) -> float:
+    if self.sm.seen['longitudinalPlan'] and self.sm.valid['longitudinalPlan']:
+      speeds = self.sm['longitudinalPlan'].speeds
+      if len(speeds) > 0:
+        target_speed = float(speeds[0])
+        if math.isfinite(target_speed):
+          return target_speed
+
+    return float(self.sm['starpilotPlan'].vCruise)
 
   def step(self):
     CS, RD, FPCS = self.state_update()
