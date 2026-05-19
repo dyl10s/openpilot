@@ -403,6 +403,11 @@ IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_LEFT = 0.10
 IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_RIGHT = 0.04
 IONIQ_6_DIRECTIONAL_TAPER_JERK_ONSET = 0.45
 IONIQ_6_DIRECTIONAL_TAPER_JERK_WIDTH = 0.10
+IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF = 0.30
+IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED = 13.5
+IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED_WIDTH = 2.0
+IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT = 0.65
+IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT_WIDTH = 0.12
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_LAT_START = 0.82
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_LAT_WIDTH = 0.12
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_BASE_LEFT = 0.10
@@ -1228,7 +1233,7 @@ def get_ioniq_6_ff_scale(desired_lateral_accel: float, desired_lateral_jerk: flo
                           turn_in_weight * low_speed_factor)
   unwind_taper = 1.0 - (_ioniq_6_side_value(desired_lateral_accel, IONIQ_6_UNWIND_TAPER_LEFT, IONIQ_6_UNWIND_TAPER_RIGHT) *
                          unwind_weight * (0.30 + 0.70 * low_speed_factor))
-  return (1.0 + (extra_scale * turn_in_boost * max(unwind_taper, 0.0))) * get_ioniq_6_directional_taper_scale(desired_lateral_accel, desired_lateral_jerk)
+  return (1.0 + (extra_scale * turn_in_boost * max(unwind_taper, 0.0))) * get_ioniq_6_directional_taper_scale(desired_lateral_accel, desired_lateral_jerk, v_ego)
 
 
 def get_ioniq_6_friction_threshold(v_ego: float, desired_lateral_accel: float = 0.0, desired_lateral_jerk: float = 0.0) -> float:
@@ -1277,7 +1282,7 @@ def get_ioniq_6_center_taper_scale(desired_lateral_accel: float, v_ego: float) -
   return 1.0 - min(high_speed_reduction + highway_center_reduction + low_mid_reduction, 0.12)
 
 
-def get_ioniq_6_directional_taper_scale(desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+def get_ioniq_6_directional_taper_scale(desired_lateral_accel: float, desired_lateral_jerk: float, v_ego: float | None = None) -> float:
   if desired_lateral_accel == 0.0:
     return 1.0
 
@@ -1289,10 +1294,19 @@ def get_ioniq_6_directional_taper_scale(desired_lateral_accel: float, desired_la
   phase = _ioniq_6_transition_phase(desired_lateral_accel, desired_lateral_jerk)
   unwind_weight = max(-phase, 0.0) * _ioniq_6_sigmoid((abs(desired_lateral_jerk) - IONIQ_6_DIRECTIONAL_TAPER_JERK_ONSET) /
                                                        IONIQ_6_DIRECTIONAL_TAPER_JERK_WIDTH)
+  low_speed_relief_weight = 0.0
+  if v_ego is not None:
+    low_speed_weight = _ioniq_6_sigmoid((IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED - max(v_ego, 0.0)) /
+                                        IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED_WIDTH)
+    tight_turn_weight = _ioniq_6_sigmoid((abs_lateral_accel - IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT) /
+                                         IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT_WIDTH)
+    low_speed_relief_weight = IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF * low_speed_weight * tight_turn_weight * (1.0 - unwind_weight)
   base_reduction = _ioniq_6_side_value(desired_lateral_accel, IONIQ_6_DIRECTIONAL_TAPER_BASE_LEFT, IONIQ_6_DIRECTIONAL_TAPER_BASE_RIGHT)
   unwind_reduction = _ioniq_6_side_value(desired_lateral_accel, IONIQ_6_DIRECTIONAL_TAPER_UNWIND_LEFT, IONIQ_6_DIRECTIONAL_TAPER_UNWIND_RIGHT)
   heavy_base_reduction = _ioniq_6_side_value(desired_lateral_accel, IONIQ_6_HEAVY_DIRECTIONAL_TAPER_BASE_LEFT, IONIQ_6_HEAVY_DIRECTIONAL_TAPER_BASE_RIGHT)
   heavy_unwind_reduction = _ioniq_6_side_value(desired_lateral_accel, IONIQ_6_HEAVY_DIRECTIONAL_TAPER_UNWIND_LEFT, IONIQ_6_HEAVY_DIRECTIONAL_TAPER_UNWIND_RIGHT)
+  base_reduction *= 1.0 - low_speed_relief_weight
+  heavy_base_reduction *= 1.0 - low_speed_relief_weight
   reduction = band_weight * (base_reduction + unwind_reduction * unwind_weight)
   reduction += heavy_band_weight * (heavy_base_reduction + heavy_unwind_reduction * unwind_weight)
   floor = _ioniq_6_side_value(desired_lateral_accel, IONIQ_6_DIRECTIONAL_TAPER_FLOOR_LEFT, IONIQ_6_DIRECTIONAL_TAPER_FLOOR_RIGHT)
@@ -1303,7 +1317,7 @@ def get_ioniq_6_directional_taper_scale(desired_lateral_accel: float, desired_la
 def get_ioniq_6_output_taper_scale(desired_lateral_accel: float, desired_lateral_jerk: float, v_ego: float) -> float:
   speed_weight = _ioniq_6_sigmoid((v_ego - IONIQ_6_OUTPUT_TAPER_SPEED) / IONIQ_6_OUTPUT_TAPER_SPEED_WIDTH)
   center_taper = get_ioniq_6_center_taper_scale(desired_lateral_accel, v_ego)
-  directional_taper = get_ioniq_6_directional_taper_scale(desired_lateral_accel, desired_lateral_jerk)
+  directional_taper = get_ioniq_6_directional_taper_scale(desired_lateral_accel, desired_lateral_jerk, v_ego)
   center_scale = 1.0 - ((1.0 - center_taper) * IONIQ_6_OUTPUT_CENTER_TAPER_BLEND * speed_weight)
   directional_scale = 1.0 - ((1.0 - directional_taper) * IONIQ_6_OUTPUT_DIRECTIONAL_TAPER_BLEND * speed_weight)
   return center_scale * directional_scale
