@@ -201,6 +201,9 @@ class CarInterface(CarInterfaceBase):
       ret.vEgoStarting = 0.5
       ret.vEgoStopping = 0.35
 
+    if candidate == CAR.HYUNDAI_IONIQ_6:
+      ret.longitudinalActuatorDelay = 0.6
+
     if candidate == CAR.KIA_NIRO_PHEV_2022:
       ret.stopAccel = -1.4
       ret.stoppingDecelRate = 0.5

@@ -381,7 +381,7 @@ class TestHyundaiFingerprint:
     assert CP.vEgoStopping == pytest.approx(0.3)
     assert CP.vEgoStarting == pytest.approx(0.1)
     assert CP.stoppingDecelRate == pytest.approx(0.4)
-    assert CP.longitudinalActuatorDelay == pytest.approx(0.5)
+    assert CP.longitudinalActuatorDelay == pytest.approx(0.6)
     assert CP.startingState
 
   def test_ioniq_6_longitudinal_tuning_helper_matches_dynamic_profile(self):
@@ -447,9 +447,9 @@ class TestHyundaiFingerprint:
 
     state = update_ioniq_6_longitudinal_tuning(state, accel_cmd=-1.8, v_ego=0.0, a_ego=0.0,
                                                long_control_state=LongCtrlState.stopping, long_active=True)
-    assert state.desired_accel == pytest.approx(-0.09)
+    assert state.desired_accel == pytest.approx(-0.15)
     assert state.jerk_upper == pytest.approx(0.42)
-    assert state.actual_accel == pytest.approx(-0.099)
+    assert state.actual_accel == pytest.approx(-0.15)
 
   def test_ioniq_6_longitudinal_tuning_helper_caps_final_low_speed_stop_brake(self):
     state = Ioniq6LongitudinalTuningState(actual_accel=-2.82, accel_last=-2.82,
@@ -458,7 +458,7 @@ class TestHyundaiFingerprint:
     state = update_ioniq_6_longitudinal_tuning(state, accel_cmd=-2.82, v_ego=1.8, a_ego=-2.4,
                                                long_control_state=LongCtrlState.stopping, long_active=True)
     assert state.stopping
-    assert state.desired_accel == pytest.approx(-0.8375)
+    assert state.desired_accel == pytest.approx(-1.0575)
 
     for _ in range(10):
       state = update_ioniq_6_longitudinal_tuning(state, accel_cmd=-2.82, v_ego=1.8, a_ego=-2.4,
