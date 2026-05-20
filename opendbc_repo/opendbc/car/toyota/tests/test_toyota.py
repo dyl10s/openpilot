@@ -3,8 +3,10 @@ from types import SimpleNamespace
 from hypothesis import given, settings, strategies as st
 
 from opendbc.car import Bus
+from opendbc.can import CANPacker, CANParser
 from opendbc.car.structs import CarParams
 from opendbc.car.fw_versions import build_fw_dict
+from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota.carcontroller import CarController, update_permit_braking
 from opendbc.car.toyota.fingerprints import FW_VERSIONS
 from opendbc.car.toyota.values import CAR, DBC, TSS2_CAR, ANGLE_CONTROL_CAR, RADAR_ACC_CAR, SECOC_CAR, \
@@ -259,6 +261,30 @@ class TestToyotaCarController:
     )
 
     assert controller.standstill_req is False
+
+  def test_ui_command_shows_aol_bars_when_lateral_active(self):
+    packer = CANPacker(DBC[CAR.TOYOTA_HIGHLANDER_TSS2][Bus.pt])
+    parser = CANParser(DBC[CAR.TOYOTA_HIGHLANDER_TSS2][Bus.pt], [("LKAS_HUD", 0)], 0)
+
+    msg = toyotacan.create_ui_command(packer, False, False, True, True, False, False, {}, True)
+    parser.update([(1, [msg])])
+
+    assert parser.can_valid
+    assert parser.vl["LKAS_HUD"]["BARRIERS"] == 1
+    assert parser.vl["LKAS_HUD"]["LEFT_LINE"] == 1
+    assert parser.vl["LKAS_HUD"]["RIGHT_LINE"] == 1
+
+  def test_ui_command_hides_lane_markers_when_lateral_inactive(self):
+    packer = CANPacker(DBC[CAR.TOYOTA_HIGHLANDER_TSS2][Bus.pt])
+    parser = CANParser(DBC[CAR.TOYOTA_HIGHLANDER_TSS2][Bus.pt], [("LKAS_HUD", 0)], 0)
+
+    msg = toyotacan.create_ui_command(packer, False, False, True, True, False, False, {}, False)
+    parser.update([(1, [msg])])
+
+    assert parser.can_valid
+    assert parser.vl["LKAS_HUD"]["BARRIERS"] == 0
+    assert parser.vl["LKAS_HUD"]["LEFT_LINE"] == 0
+    assert parser.vl["LKAS_HUD"]["RIGHT_LINE"] == 0
 
   def test_interceptor_stop_and_go_holds_small_launch_at_standstill(self):
     controller = self._make_controller()
