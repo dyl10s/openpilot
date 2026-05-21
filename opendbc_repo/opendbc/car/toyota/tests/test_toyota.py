@@ -338,9 +338,19 @@ class TestToyotaCarController:
 
   def test_interceptor_comfort_limit_bypasses_harder_braking(self):
     original = -1.80
-    limited = limit_interceptor_pcm_accel(original, -1.20, False, 8.5)
+    limited = limit_interceptor_pcm_accel(original, -1.80, False, 8.5)
 
     assert limited == original
+
+  def test_interceptor_comfort_limit_prevents_positive_target_from_crossing_negative(self):
+    limited = limit_interceptor_pcm_accel(-2.0, 1.7, False, 7.5)
+
+    assert limited >= 0.0
+
+  def test_interceptor_comfort_limit_prevents_negative_target_from_crossing_positive(self):
+    limited = limit_interceptor_pcm_accel(0.8, -0.7, False, 7.5)
+
+    assert limited <= 0.0
 
 
 class TestToyotaCarState:

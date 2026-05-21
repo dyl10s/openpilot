@@ -32,7 +32,7 @@ TOYOTA_COAST_BRAKE_MIN_SPEED = 15.0  # m/s
 TOYOTA_COAST_BRAKE_ENABLE_ACCEL = -0.10  # m/s^2
 TOYOTA_COAST_BRAKE_DISABLE_ACCEL = -0.06  # m/s^2
 TOYOTA_NO_LEAD_COAST_BRAKE_ACCEL = -0.30  # m/s^2
-TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL = 1.0  # m/s^2
+TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL = 2.0  # m/s^2
 
 # LKA limits
 # EPS faults if you apply torque while the steering rate is above 100 deg/s for too long
@@ -91,7 +91,22 @@ def update_permit_braking(current: bool, net_acceleration_request_min: float, st
 
 
 def limit_interceptor_pcm_accel(pcm_accel_cmd: float, target_accel: float, stopping: bool, v_ego: float) -> float:
-  if stopping or abs(target_accel) > TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL:
+  if stopping:
+    return pcm_accel_cmd
+
+  # The Toyota long path should not cross the accel sign against a strong planner
+  # request on pedal/SDSU cars during ordinary driving.
+  if target_accel > 0.15 and pcm_accel_cmd < 0.0:
+    positive_floor = float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.12, 0.08, 0.0]))
+    pcm_accel_cmd = max(pcm_accel_cmd, positive_floor)
+  elif target_accel < -0.15 and pcm_accel_cmd > 0.0:
+    negative_floor = float(np.interp(v_ego, [0.0, 5.0, 15.0], [-0.12, -0.08, 0.0]))
+    pcm_accel_cmd = min(pcm_accel_cmd, negative_floor)
+
+  if target_accel <= -1.6:
+    return pcm_accel_cmd
+
+  if abs(target_accel) > TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL:
     return pcm_accel_cmd
 
   lower_delta = float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.20, 0.25, 0.35]))

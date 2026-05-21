@@ -156,6 +156,10 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & ToyotaFlags.HYBRID.value:
         ret.longitudinalActuatorDelay = 0.05
 
+    if ret.enableGasInterceptorDEPRECATED:
+      # Pedal/SDSU Toyotas feel best with a softer final stop clamp.
+      ret.stopAccel = -1.5
+
     return ret
 
   @staticmethod
