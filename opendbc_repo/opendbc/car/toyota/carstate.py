@@ -38,6 +38,11 @@ def calculate_speed_limit(cp_cam):
     return 0
 
 
+def calculate_interceptor_gas_pressed(cp) -> bool:
+  interceptor_gas = (cp.vl["GAS_SENSOR"]["INTERCEPTOR_GAS"] + cp.vl["GAS_SENSOR"]["INTERCEPTOR_GAS2"]) / 2
+  return interceptor_gas > 805
+
+
 class CarState(CarStateBase):
   def __init__(self, CP, FPCP):
     super().__init__(CP, FPCP)
@@ -100,8 +105,7 @@ class CarState(CarStateBase):
       can_gear = int(cp.vl["GEAR_PACKET_HYBRID"]["GEAR"])
     else:
       if self.CP.enableGasInterceptorDEPRECATED:
-        ret.gas = (cp.vl["GAS_SENSOR"]["INTERCEPTOR_GAS"] + cp.vl["GAS_SENSOR"]["INTERCEPTOR_GAS2"]) / 2
-        ret.gasPressed = ret.gas > 805
+        ret.gasPressed = calculate_interceptor_gas_pressed(cp)
       else:
         ret.gasPressed = cp.vl["PCM_CRUISE"]["GAS_RELEASED"] == 0  # TODO: these also have GAS_PEDAL, come back and unify
       can_gear = int(cp.vl["GEAR_PACKET"]["GEAR"])

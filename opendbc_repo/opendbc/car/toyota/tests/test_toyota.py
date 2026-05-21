@@ -8,6 +8,7 @@ from opendbc.car.structs import CarParams
 from opendbc.car.fw_versions import build_fw_dict
 from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota.carcontroller import CarController, update_permit_braking
+from opendbc.car.toyota.carstate import calculate_interceptor_gas_pressed
 from opendbc.car.toyota.fingerprints import FW_VERSIONS
 from opendbc.car.toyota.values import CAR, DBC, TSS2_CAR, ANGLE_CONTROL_CAR, RADAR_ACC_CAR, SECOC_CAR, \
                                                   FW_QUERY_CONFIG, PLATFORM_CODE_ECUS, FUZZY_EXCLUDED_PLATFORMS, \
@@ -322,3 +323,22 @@ class TestToyotaCarController:
     )
 
     assert gas_cmd == 0.0
+
+
+class TestToyotaCarState:
+  def test_interceptor_gas_pressed_threshold(self):
+    cp = SimpleNamespace(vl={
+      "GAS_SENSOR": {
+        "INTERCEPTOR_GAS": 900,
+        "INTERCEPTOR_GAS2": 910,
+      }
+    })
+    assert calculate_interceptor_gas_pressed(cp) is True
+
+    cp = SimpleNamespace(vl={
+      "GAS_SENSOR": {
+        "INTERCEPTOR_GAS": 700,
+        "INTERCEPTOR_GAS2": 710,
+      }
+    })
+    assert calculate_interceptor_gas_pressed(cp) is False
