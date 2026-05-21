@@ -138,7 +138,7 @@ class TestHyundaiFingerprint:
 
   @pytest.mark.parametrize(("candidate", "expected_msgs", "unexpected_msgs"), [
     (CAR.HYUNDAI_ELANTRA_2022_NON_SCC, ("EMS16", "LVR12"), ()),
-    (CAR.HYUNDAI_ELANTRA_HEV_2022_NON_SCC, ("EMS16", "ELECT_GEAR"), ("E_CRUISE_CONTROL",)),
+    (CAR.HYUNDAI_ELANTRA_HEV_2022_NON_SCC, ("E_CRUISE_CONTROL", "ELECT_GEAR"), ("EMS16",)),
     (CAR.HYUNDAI_KONA_EV_NON_SCC, ("LABEL11", "EMS12", "E_EMS11"), ()),
   ])
   def test_non_scc_cruise_message_selection(self, candidate, expected_msgs, unexpected_msgs):

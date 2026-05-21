@@ -39,6 +39,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_genesis_g90_ff_scale,
   get_genesis_g90_friction_scale,
   get_genesis_g90_friction_threshold,
+  get_elantra_non_scc_ff_scale,
   get_ioniq_5_ff_scale,
   get_ioniq_5_friction_scale,
   get_ioniq_5_friction_threshold,
@@ -236,6 +237,23 @@ class TestLatControl:
     assert get_sonata_hybrid_center_taper_scale(0.0, 30.0) < get_sonata_hybrid_center_taper_scale(0.0, 15.0)
     assert get_sonata_hybrid_center_taper_scale(0.0, 3.0) < get_sonata_hybrid_center_taper_scale(0.0, 10.0)
     assert get_sonata_hybrid_center_taper_scale(0.0, 30.0) < get_sonata_hybrid_center_taper_scale(0.20, 30.0) <= 1.0
+
+  def test_elantra_non_scc_ff_scale_curve(self):
+    assert get_elantra_non_scc_ff_scale(0.0, 0.0, 20.0) == 1.0
+    steady_left = get_elantra_non_scc_ff_scale(0.45, 0.0, 8.0)
+    steady_right = get_elantra_non_scc_ff_scale(-0.45, 0.0, 8.0)
+    turn_in_left = get_elantra_non_scc_ff_scale(0.45, 0.7, 8.0)
+    turn_in_right = get_elantra_non_scc_ff_scale(-0.45, -0.7, 8.0)
+    unwind_left = get_elantra_non_scc_ff_scale(0.45, -0.7, 8.0)
+    unwind_right = get_elantra_non_scc_ff_scale(-0.45, 0.7, 8.0)
+    assert steady_left < 1.0
+    assert steady_right > steady_left
+    assert turn_in_left > steady_left
+    assert turn_in_right > steady_right
+    assert unwind_left < steady_left
+    assert unwind_right < steady_right
+    assert unwind_left < unwind_right
+    assert get_elantra_non_scc_ff_scale(-0.45, 0.0, 25.0) < get_elantra_non_scc_ff_scale(-0.45, 0.0, 8.0)
 
   def test_kia_forte_ff_scale_curve(self):
     assert get_kia_forte_ff_scale(0.0, 0.0, 20.0) == 1.0
@@ -484,6 +502,16 @@ class TestLatControl:
 
     assert lac_log.active
     assert controller.torque_params.latAccelFactor == pytest.approx(3.0 * 1.22)
+
+  def test_elantra_non_scc_default_update_path(self):
+    controller, VM, CS, params, starpilot_toggles = self._build_torque_controller(HYUNDAI.HYUNDAI_ELANTRA_HEV_2022_NON_SCC)
+    CarInterface = interfaces[HYUNDAI.HYUNDAI_ELANTRA_HEV_2022_NON_SCC]
+    CP = CarInterface.get_non_essential_params(HYUNDAI.HYUNDAI_ELANTRA_HEV_2022_NON_SCC)
+
+    _, _, lac_log = controller.update(True, CS, VM, params, False, 0.0025, False, 0.2, None, None, starpilot_toggles)
+
+    assert lac_log.active
+    assert controller.torque_params.latAccelFactor == pytest.approx(CP.lateralTuning.torque.latAccelFactor)
 
   def test_kia_forte_default_update_path(self):
     controller, VM, CS, params, starpilot_toggles = self._build_torque_controller(HYUNDAI.KIA_FORTE)
