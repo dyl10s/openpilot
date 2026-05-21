@@ -136,6 +136,28 @@ class TestHyundaiFingerprint:
     g70_2021 = CarInterface.get_params(CAR.GENESIS_G70_2021_NON_SCC, gen_empty_fingerprint(), [], True, False, False, None)
     assert g70_2021.flags & HyundaiFlags.NON_SCC_RADAR_FCA
 
+  @pytest.mark.parametrize(("candidate", "expected_msgs", "unexpected_msgs"), [
+    (CAR.HYUNDAI_ELANTRA_2022_NON_SCC, ("EMS16", "LVR12"), ()),
+    (CAR.HYUNDAI_ELANTRA_HEV_2022_NON_SCC, ("EMS16", "ELECT_GEAR"), ("E_CRUISE_CONTROL",)),
+    (CAR.HYUNDAI_KONA_EV_NON_SCC, ("LABEL11", "EMS12", "E_EMS11"), ()),
+  ])
+  def test_non_scc_cruise_message_selection(self, candidate, expected_msgs, unexpected_msgs):
+    toggles = get_test_toggles()
+    CP = CarInterface.get_params(candidate, gen_empty_fingerprint(), [], True, False, False, toggles)
+    FPCP = CarInterface.get_starpilot_params(candidate, gen_empty_fingerprint(), [], CP, toggles)
+
+    car_state = CarState(CP, FPCP)
+    can_parsers = car_state.get_can_parsers(CP)
+
+    ret, _ = car_state.update(can_parsers, toggles)
+    pt_states = {state.name for state in can_parsers[Bus.pt].message_states.values()}
+
+    assert set(expected_msgs).issubset(pt_states)
+    assert set(unexpected_msgs).isdisjoint(pt_states)
+    assert not ret.cruiseState.available
+    assert not ret.cruiseState.enabled
+    assert ret.cruiseState.speed == 0
+
   def test_hyundai_redneck_cruise_availability(self, monkeypatch):
     class FakeParams:
       def __init__(self, *args, **kwargs):

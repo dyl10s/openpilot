@@ -27,12 +27,12 @@ IONIQ_6_BLINDSPOT_LEFT_MASK = 0x10
 CANFD_CAMERA_LEAD_MIN_DISTANCE = 0.1
 
 
-def get_non_scc_cruise_signals(CP) -> tuple[str, str, str, str, str]:
+def get_non_scc_cruise_signals(CP) -> tuple[str, str, str, str, str, str]:
   if CP.flags & HyundaiFlags.EV:
-    return "LABEL11", "CC_React", "CC_ACT", "E_EMS11", "Cruise_Limit_Target"
+    return "LABEL11", "CC_React", "EMS12", "ACC_ACT", "E_EMS11", "Cruise_Limit_Target"
   if CP.flags & HyundaiFlags.HYBRID:
-    return "E_CRUISE_CONTROL", "CRUISE_LAMP_M", "CRUISE_LAMP_S", "ELECT_GEAR", "SLC_SET_SPEED"
-  return "EMS16", "CRUISE_LAMP_M", "CRUISE_LAMP_S", "LVR12", "CF_Lvr_CruiseSet"
+    return "EMS16", "CRUISE_LAMP_M", "EMS16", "CRUISE_LAMP_S", "ELECT_GEAR", "SLC_SET_SPEED"
+  return "EMS16", "CRUISE_LAMP_M", "EMS16", "CRUISE_LAMP_S", "LVR12", "CF_Lvr_CruiseSet"
 
 
 def calculate_canfd_speed_limit(CP, FPCP, cp, cp_cam, speed_factor):
@@ -224,9 +224,9 @@ class CarState(CarStateBase):
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
     elif no_scc:
-      cruise_msg, cruise_available_sig, cruise_enabled_sig, cruise_speed_msg, cruise_speed_sig = get_non_scc_cruise_signals(self.CP)
-      ret.cruiseState.available = cp.vl[cruise_msg][cruise_available_sig] != 0
-      ret.cruiseState.enabled = cp.vl[cruise_msg][cruise_enabled_sig] != 0
+      cruise_available_msg, cruise_available_sig, cruise_enabled_msg, cruise_enabled_sig, cruise_speed_msg, cruise_speed_sig = get_non_scc_cruise_signals(self.CP)
+      ret.cruiseState.available = cp.vl[cruise_available_msg][cruise_available_sig] != 0
+      ret.cruiseState.enabled = cp.vl[cruise_enabled_msg][cruise_enabled_sig] != 0
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
       ret.cruiseState.speed = cp.vl[cruise_speed_msg][cruise_speed_sig] * speed_conv
