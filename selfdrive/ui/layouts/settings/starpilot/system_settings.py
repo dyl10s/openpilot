@@ -253,6 +253,13 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
         "set": lambda v: self._controller._params.put_bool("DebugMode", v),
       },
       {
+        "id": "ShowFPS",
+        "title": tr("Show FPS"),
+        "subtitle": tr("Display screen refresh rate and system performance metrics onroad."),
+        "get": lambda: self._controller._params.get_bool("ShowFPS"),
+        "set": lambda v: self._controller._params.put_bool("ShowFPS", v),
+      },
+      {
         "id": "NoUploads",
         "title": tr("Disable Uploads"),
         "subtitle": tr("Stop all cloud uploads from this device."),
@@ -330,7 +337,7 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
       {
         "id": "device_controls",
         "title": tr("Device Controls"),
-        "toggle_ids": ["StandbyMode", "IncreaseThermalLimits", "UseKonikServer", "DebugMode"],
+        "toggle_ids": ["StandbyMode", "IncreaseThermalLimits", "UseKonikServer", "DebugMode", "ShowFPS"],
       },
       {
         "id": "uploads_logging",

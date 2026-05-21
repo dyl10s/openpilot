@@ -60,6 +60,7 @@ class ModelRenderer(Widget):
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    self._adjacent_lead_vehicles = [LeadVehicle(), LeadVehicle()]
     self._path_offset_z = HEIGHT_INIT[0]
 
     # Adjacent path vertices (left, right)
@@ -120,7 +121,11 @@ class ModelRenderer(Widget):
     model = sm['modelV2']
     radar_state = sm['radarState'] if sm.valid['radarState'] else None
     lead_one = radar_state.leadOne if radar_state else None
-    render_lead_indicator = self._longitudinal_control and radar_state is not None and lead_indicator_enabled(self._params)
+
+    # StarPilot lead indicator visibility conditions
+    hide_lead_marker = self._params.get_bool("HideLeadMarker")
+    lead_info_enabled = self._params.get_bool("LeadInfo")
+    render_lead_indicator = (self._longitudinal_control or lead_info_enabled) and radar_state is not None and not hide_lead_marker
 
     # Update model data when needed
     model_updated = sm.updated['modelV2']
@@ -135,14 +140,23 @@ class ModelRenderer(Widget):
       self._update_model(lead_one, path_x_array)
       if render_lead_indicator:
         self._update_leads(radar_state, path_x_array)
+        if sm.valid.get("starpilotRadarState", False):
+          self._update_adjacent_leads(sm["starpilotRadarState"], path_x_array)
       self._transform_dirty = False
+
+    self._lead_text_rects = []
+    self._adjacent_lead_text_rects = []
 
     # Draw elements
     self._draw_lane_lines()
     self._draw_path(sm)
 
     if render_lead_indicator and radar_state:
-      self._draw_lead_indicator()
+      self._draw_lead_indicator(radar_state)
+      if sm.valid.get("starpilotRadarState", False):
+        self._draw_adjacent_leads()
+
+    self._draw_radar_tracks()
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -190,15 +204,15 @@ class ModelRenderer(Widget):
   def _update_model(self, lead, path_x_array):
     """Update model visualization data based on model message"""
     model_ui_enabled = self._params.get_bool('ModelUI', default=True)
-    custom_path_width = model_ui_enabled and self._param_float_changed('PathWidth', DEFAULT_PATH_WIDTH)
-    custom_lane_line_width = model_ui_enabled and self._param_float_changed('LaneLinesWidth', DEFAULT_LANE_LINES_WIDTH)
-    custom_road_edge_width = model_ui_enabled and self._param_float_changed('RoadEdgesWidth', DEFAULT_ROAD_EDGES_WIDTH)
-    custom_path_edge_width = model_ui_enabled and self._param_float_changed('PathEdgeWidth', DEFAULT_PATH_EDGE_WIDTH)
+    custom_path_width, pw = self._param_float_changed('PathWidth', DEFAULT_PATH_WIDTH) if model_ui_enabled else (False, DEFAULT_PATH_WIDTH)
+    custom_lane_line_width, llw = self._param_float_changed('LaneLinesWidth', DEFAULT_LANE_LINES_WIDTH) if model_ui_enabled else (False, DEFAULT_LANE_LINES_WIDTH)
+    custom_road_edge_width, rew = self._param_float_changed('RoadEdgesWidth', DEFAULT_ROAD_EDGES_WIDTH) if model_ui_enabled else (False, DEFAULT_ROAD_EDGES_WIDTH)
+    custom_path_edge_width, pew = self._param_float_changed('PathEdgeWidth', DEFAULT_PATH_EDGE_WIDTH) if model_ui_enabled else (False, DEFAULT_PATH_EDGE_WIDTH)
 
-    path_width = self._path_width_to_half_m(self._params.get_float('PathWidth', default=DEFAULT_PATH_WIDTH)) if custom_path_width else 0.9
-    lane_line_width_m = self._small_distance_to_half_m(self._params.get_float('LaneLinesWidth', default=DEFAULT_LANE_LINES_WIDTH)) if custom_lane_line_width else 0.025
-    road_edge_width_m = self._small_distance_to_half_m(self._params.get_float('RoadEdgesWidth', default=DEFAULT_ROAD_EDGES_WIDTH)) if custom_road_edge_width else 0.025
-    path_edge_width_pct = np.clip(self._params.get_float('PathEdgeWidth', default=DEFAULT_PATH_EDGE_WIDTH) / 100.0, 0.0, 1.0) if custom_path_edge_width else 0.0
+    path_width = self._path_width_to_half_m(pw) if custom_path_width else 0.9
+    lane_line_width_m = self._small_distance_to_half_m(llw) if custom_lane_line_width else 0.025
+    road_edge_width_m = self._small_distance_to_half_m(rew) if custom_road_edge_width else 0.025
+    path_edge_width_pct = np.clip(pew / 100.0, 0.0, 1.0) if custom_path_edge_width else 0.0
 
     # Dynamic path width
     if model_ui_enabled and self._params.get_bool('DynamicPathWidth', default=False):
@@ -420,15 +434,200 @@ class ModelRenderer(Widget):
       )
       draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
 
-  def _draw_lead_indicator(self):
+  def _draw_lead_indicator(self, radar_state):
     # Draw lead vehicles if available
     lead_color = get_theme_color("LeadMarker", rl.Color(201, 34, 49, 255))
-    for lead in self._lead_vehicles:
+    leads = [radar_state.leadOne, radar_state.leadTwo]
+
+    # Threshold for Lead 1
+    threshold = self._params.get_int("LeadDetectionProbability")
+    if threshold is None or threshold == 0:
+      threshold = self._params.get_int("LeadDetectionThreshold")
+    if threshold is None or threshold == 0:
+      threshold = 50
+    prob_threshold = threshold / 100.0 if threshold > 1.0 else threshold
+
+    for i, lead in enumerate(self._lead_vehicles):
+      if not lead.glow or not lead.chevron:
+        continue
+
+      # Choose color
+      if i == 0 and radar_state.leadOne and radar_state.leadOne.status:
+        if radar_state.leadOne.modelProb >= prob_threshold:
+          color = lead_color
+        else:
+          color = rl.WHITE
+      else:
+        color = lead_color
+
+      rl.draw_triangle_fan(lead.glow, len(lead.glow), rl.Color(218, 202, 37, 255))
+      rl.draw_triangle_fan(lead.chevron, len(lead.chevron), with_alpha(color, lead.fill_alpha))
+
+      # Draw metrics if enabled
+      lead_info_enabled = self._params.get_bool("LeadInfo")
+      if lead_info_enabled and i < len(leads) and leads[i] and leads[i].status:
+        self._draw_lead_metrics(False, lead.chevron, leads[i])
+
+  def _update_adjacent_leads(self, starpilot_radar_state, path_x_array):
+    self._adjacent_lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    leads = [starpilot_radar_state.leadLeft, starpilot_radar_state.leadRight]
+
+    for i, lead_data in enumerate(leads):
+      if lead_data and lead_data.status:
+        d_rel, y_rel, v_rel = lead_data.dRel, lead_data.yRel, lead_data.vRel
+        idx = self._get_path_length_idx(path_x_array, d_rel)
+        z = self._path.raw_points[idx, 2] if idx < len(self._path.raw_points) else 0.0
+        point = self._map_to_screen(d_rel, -y_rel, z + self._path_offset_z)
+        if point:
+          eff_d_rel = d_rel + abs(y_rel)
+          self._adjacent_lead_vehicles[i] = self._update_lead_vehicle(eff_d_rel, v_rel, point, self._rect)
+
+  def _draw_adjacent_leads(self):
+    sm = ui_state.sm
+    if not sm.valid.get("starpilotRadarState", False):
+      return
+
+    starpilot_radar_state = sm["starpilotRadarState"]
+    lead_left = starpilot_radar_state.leadLeft
+    lead_right = starpilot_radar_state.leadRight
+
+    blue_color = rl.Color(0, 150, 255, 255)
+    purple_color = rl.Color(180, 0, 255, 255)
+
+    leads_to_draw = []
+    if lead_left and lead_left.status:
+      leads_to_draw.append((0, lead_left, blue_color))
+    if lead_right and lead_right.status:
+      leads_to_draw.append((1, lead_right, purple_color))
+
+    for idx, lead_data, color in leads_to_draw:
+      lead = self._adjacent_lead_vehicles[idx]
       if not lead.glow or not lead.chevron:
         continue
 
       rl.draw_triangle_fan(lead.glow, len(lead.glow), rl.Color(218, 202, 37, 255))
-      rl.draw_triangle_fan(lead.chevron, len(lead.chevron), with_alpha(lead_color, lead.fill_alpha))
+      rl.draw_triangle_fan(lead.chevron, len(lead.chevron), with_alpha(color, lead.fill_alpha))
+
+      # Draw metrics if enabled
+      lead_info_enabled = self._params.get_bool("LeadInfo")
+      if lead_info_enabled:
+        self._draw_lead_metrics(True, lead.chevron, lead_data)
+
+  def _draw_lead_metrics(self, adjacent, chevron, lead_data):
+    is_metric = ui_state.is_metric
+    use_si_metrics = ui_state.starpilot_toggles.get("UseSiMetrics", False)
+
+    if is_metric or use_si_metrics:
+      lead_distance_unit = "m"
+      distance_conversion = 1.0
+      lead_speed_unit = " m/s" if use_si_metrics else " km/h"
+      speed_conversion_metrics = 1.0 if use_si_metrics else CV.MS_TO_KPH
+    else:
+      lead_distance_unit = "ft"
+      distance_conversion = CV.METER_TO_FOOT
+      lead_speed_unit = " mph"
+      speed_conversion_metrics = CV.MS_TO_MPH
+
+    y_rel = getattr(lead_data, "yRel", 0.0)
+    lead_distance = lead_data.dRel + (abs(y_rel) if adjacent else 0.0)
+    lead_speed = max(getattr(lead_data, "vLead", 0.0), 0.0)
+
+    distance_string = f"{round(lead_distance * distance_conversion)}"
+    speed_string = f"{round(lead_speed * speed_conversion_metrics)}"
+
+    text_lines = []
+    if adjacent:
+      text_lines.append(f"{distance_string} {lead_distance_unit}")
+      text_lines.append(f"{speed_string}{lead_speed_unit}")
+    else:
+      if self._longitudinal_control:
+        plan = ui_state.sm["starpilotPlan"]
+        desired_follow_distance = float(plan.desiredFollowDistance) if plan and plan.desiredFollowDistance > 0 else 0.0
+        desired_distance = max(0, round(desired_follow_distance * distance_conversion))
+        text_lines.append(f"{distance_string} {lead_distance_unit} (Desired: {desired_distance})")
+      else:
+        text_lines.append(f"{distance_string} {lead_distance_unit}")
+      
+      text_lines.append(f"{speed_string}{lead_speed_unit}")
+
+      v_ego = max(ui_state.sm["carState"].vEgo, 0.0)
+      time_gap = lead_distance / max(v_ego, 1.0)
+      text_lines.append(f"{time_gap:.2f} seconds")
+
+    from openpilot.system.ui.lib.application import gui_app, FontWeight
+    from openpilot.selfdrive.ui.onroad.starpilot.path import _draw_text_with_outline
+    font = gui_app.font(FontWeight.SEMI_BOLD)
+    font_size = 24
+    line_height = font_size + 2
+
+    max_text_width = 0.0
+    for line in text_lines:
+      sz = rl.measure_text_ex(font, line, font_size, 0)
+      if sz.x > max_text_width:
+        max_text_width = sz.x
+
+    centerX = chevron[1][0]
+    startY = max(chevron[0][1], chevron[2][1]) + line_height + 5
+
+    x_margin = max_text_width * 0.1
+    y_margin = line_height * 0.1
+
+    rect_x = centerX - max_text_width / 2 - x_margin
+    rect_y = startY - line_height - y_margin
+    rect_w = max_text_width + 2 * x_margin
+    rect_h = len(text_lines) * line_height + 2 * y_margin
+    text_rect = rl.Rectangle(rect_x, rect_y, rect_w, rect_h)
+
+    collision = False
+    for r in self._lead_text_rects + self._adjacent_lead_text_rects:
+      if rl.check_collision_recs(text_rect, r):
+        collision = True
+        break
+
+    if collision:
+      return
+
+    if adjacent:
+      self._adjacent_lead_text_rects.append(text_rect)
+    else:
+      self._lead_text_rects.append(text_rect)
+
+    for i, line in enumerate(text_lines):
+      sz = rl.measure_text_ex(font, line, font_size, 0)
+      line_x = centerX - sz.x / 2
+      line_y = startY + (i * line_height)
+      _draw_text_with_outline(line, line_x, line_y, font, font_size)
+
+  def _draw_radar_tracks(self):
+    radar_tracks_enabled = self._params.get_bool("RadarTracksUI")
+    if not radar_tracks_enabled:
+      return
+
+    sm = ui_state.sm
+    if not sm.valid.get("liveTracks", False):
+      return
+
+    radar_points = sm["liveTracks"].points
+    if len(radar_points) == 0:
+      return
+
+    path_x_array = self._path.raw_points[:, 0]
+    line_z = self._path.raw_points[:, 2]
+
+    radius = 4.0
+    red_color = rl.Color(255, 0, 0, 200)
+
+    for point in radar_points:
+      d_rel = point.dRel
+      idx = self._get_path_length_idx(path_x_array, d_rel)
+      z = line_z[idx] if idx < len(line_z) else 0.0
+
+      calibrated_point = self._map_to_screen(d_rel, -point.yRel, z + self._path_offset_z)
+      if calibrated_point:
+        x, y = calibrated_point
+        x = np.clip(x, self._rect.x, self._rect.x + self._rect.width)
+        y = np.clip(y, self._rect.y, self._rect.y + self._rect.height)
+        rl.draw_circle_v(rl.Vector2(x, y), radius, red_color)
 
   def _update_adjacent_paths(self, max_idx: int, max_distance: float):
     """Compute adjacent lane path polygons by averaging lane line pairs."""
@@ -684,14 +883,15 @@ class ModelRenderer(Widget):
       return value / 2.0
     return value * CV.FOOT_TO_METER / 2.0
 
-  def _param_float_changed(self, key: str, default: float) -> bool:
+  def _param_float_changed(self, key: str, default: float) -> tuple[bool, float]:
     value = self._params.get(key, encoding="utf-8")
     if value in (None, ""):
-      return False
+      return False, default
     try:
-      return not np.isclose(float(value), default)
+      fval = float(value)
+      return (not np.isclose(fval, default)), fval
     except (TypeError, ValueError):
-      return False
+      return False, default
 
   @staticmethod
   def _blend_colors(begin_colors, end_colors, t):

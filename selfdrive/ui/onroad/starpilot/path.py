@@ -8,20 +8,11 @@ import pyray as rl
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
 from openpilot.selfdrive.ui.lib.starpilot_theme import get_param_color, get_theme_color, is_stock_color_scheme, with_alpha
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 
-_METRICS_FONT = None
 _METRICS_FONT_SIZE = 45
 _STOCK_LINE_GREEN = rl.Color(0, 255, 0, 241)
-
-
-def _get_metrics_font():
-  global _METRICS_FONT
-  if _METRICS_FONT is None or _METRICS_FONT.baseSize != _METRICS_FONT_SIZE:
-    if _METRICS_FONT is not None:
-      rl.unload_font(_METRICS_FONT)
-    _METRICS_FONT = rl.load_font_ex("fonts/Inter-SemiBold.ttf", _METRICS_FONT_SIZE, None, 256)
-  return _METRICS_FONT
 
 
 def _hsla_to_color(h: float, s: float, l: float, a: float) -> rl.Color:
@@ -80,7 +71,7 @@ def render_adjacent_paths(renderer) -> None:
 
   distance_conversion = 3.28084 if not ui_state.is_metric else 1.0
   unit = "ft" if not ui_state.is_metric else "m"
-  font = _get_metrics_font()
+  font = gui_app.font(FontWeight.SEMI_BOLD)
 
   for i, (verts, lane_width) in enumerate(zip(vertices, [lane_width_left, lane_width_right], strict=True)):
     if verts.size < 4 or lane_width == 0.0:
@@ -92,17 +83,16 @@ def render_adjacent_paths(renderer) -> None:
     draw_polygon(rect, verts, gradient=gradient)
 
     if show_metrics:
-      is_left = i == 0
       mid_index = len(verts) // 2
-      anchor_idx = mid_index // 2 if is_left else mid_index + (len(verts) - mid_index) // 2
-      anchor = verts[anchor_idx]
+      left = verts[mid_index // 2]
+      right = verts[mid_index + (len(verts) - mid_index) // 2]
 
       text = f"{lane_width * distance_conversion:.2f}{unit}"
       text_width = rl.measure_text_ex(font, text, _METRICS_FONT_SIZE, 0).x
       text_height = rl.measure_text_ex(font, text, _METRICS_FONT_SIZE, 0).y
 
-      text_x = anchor[0] - text_width if is_left else anchor[0]
-      text_y = anchor[1] - text_height / 2 + text_height * 0.75
+      text_x = (left[0] + right[0]) / 2.0 - text_width / 2.0
+      text_y = (left[1] + right[1]) / 2.0 - text_height / 2.0 + text_height * 0.75
       _draw_text_with_outline(text, text_x, text_y, font, _METRICS_FONT_SIZE)
 
 

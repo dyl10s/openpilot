@@ -85,10 +85,10 @@ class HudRenderer(Widget):
     car_state = sm['carState']
 
     v_cruise_cluster = car_state.vCruiseCluster
-    self.set_speed = (
-      controls_state.deprecated.vCruise if v_cruise_cluster == 0.0 else v_cruise_cluster
-    )
-    self.is_cruise_set = 0 < self.set_speed < SET_SPEED_NA
+    v_cruise = controls_state.deprecated.vCruise if v_cruise_cluster == 0.0 else v_cruise_cluster
+    offset = ui_state.starpilot_toggles.get("set_speed_offset", 0.0)
+    self.set_speed = v_cruise + offset if (0 < v_cruise < SET_SPEED_NA) else v_cruise
+    self.is_cruise_set = 0 < v_cruise < SET_SPEED_NA
     self.is_cruise_available = self.set_speed != -1
 
     if self.is_cruise_set and not ui_state.is_metric:
@@ -96,7 +96,8 @@ class HudRenderer(Widget):
 
     v_ego_cluster = car_state.vEgoCluster
     self.v_ego_cluster_seen = self.v_ego_cluster_seen or v_ego_cluster != 0.0
-    v_ego = v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo
+    use_wheel_speed = ui_state.starpilot_toggles.get("use_wheel_speed", False)
+    v_ego = car_state.vEgo if use_wheel_speed else (v_ego_cluster if self.v_ego_cluster_seen else car_state.vEgo)
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
 
@@ -112,10 +113,11 @@ class HudRenderer(Widget):
       COLORS.HEADER_GRADIENT_END,
     )
 
-    if self.is_cruise_available:
+    if self.is_cruise_available and not ui_state.starpilot_toggles.get("hide_max_speed", False):
       self._draw_set_speed(rect)
 
-    self._draw_current_speed(rect)
+    if not ui_state.starpilot_toggles.get("hide_speed", False):
+      self._draw_current_speed(rect)
 
     button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
     button_y = rect.y + UI_CONFIG.border_size

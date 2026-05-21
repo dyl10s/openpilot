@@ -1,3 +1,4 @@
+import json
 import pyray as rl
 import numpy as np
 import time
@@ -59,6 +60,11 @@ class UIState:
         "rawAudioData",
         "starpilotCarState",
         "starpilotPlan",
+        "starpilotRadarState",
+        "starpilotSelfdriveState",
+        "liveTracks",
+        "liveDelay",
+        "liveTorqueParameters",
       ]
     )
 
@@ -88,6 +94,22 @@ class UIState:
     self.switchback_mode_enabled: bool = False
     self.traffic_mode_enabled: bool = False
     self.conditional_status: int = 0
+    self.starpilot_toggles: dict = {
+      "debug_mode": False,
+      "driver_camera_in_reverse": False,
+      "force_offroad": False,
+      "force_onroad": False,
+      "screen_brightness": 101,
+      "screen_brightness_onroad": 101,
+      "screen_timeout": 30,
+      "screen_timeout_onroad": 10,
+      "sidebar_color1": "#FFFFFFFF",
+      "sidebar_color2": "#FFFFFFFF",
+      "sidebar_color3": "#FFFFFFFF",
+      "simple_mode": False,
+      "standby_mode": False,
+      "tethering_config": 0,
+    }
 
     # Callbacks
     self._offroad_transition_callbacks: list[Callable[[], None]] = []
@@ -163,6 +185,20 @@ class UIState:
       self.traffic_mode_enabled = False
 
     self.conditional_status = self.params_memory.get_int("CEStatus", default=0) if self.started else 0
+
+    if self.sm.updated["starpilotPlan"]:
+      plan = self.sm["starpilotPlan"]
+      toggles_str = plan.starpilotToggles
+      if toggles_str:
+        try:
+          parsed = json.loads(toggles_str)
+          if isinstance(parsed, dict):
+            self.starpilot_toggles.update(parsed)
+        except Exception as e:
+          cloudlog.warning(f"Error parsing starpilot_toggles: {e}")
+
+    self.starpilot_toggles["force_offroad"] = self.params.get_bool("ForceOffroad")
+    self.starpilot_toggles["force_onroad"] = self.params.get_bool("ForceOnroad")
 
   def _update_status(self) -> None:
     if self.started and self.sm.updated["selfdriveState"]:
