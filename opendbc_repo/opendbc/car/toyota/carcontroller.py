@@ -32,6 +32,7 @@ TOYOTA_COAST_BRAKE_MIN_SPEED = 15.0  # m/s
 TOYOTA_COAST_BRAKE_ENABLE_ACCEL = -0.10  # m/s^2
 TOYOTA_COAST_BRAKE_DISABLE_ACCEL = -0.06  # m/s^2
 TOYOTA_NO_LEAD_COAST_BRAKE_ACCEL = -0.30  # m/s^2
+TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL = 1.0  # m/s^2
 
 # LKA limits
 # EPS faults if you apply torque while the steering rate is above 100 deg/s for too long
@@ -87,6 +88,28 @@ def update_permit_braking(current: bool, net_acceleration_request_min: float, st
   if net_acceleration_request_min > 0.3:
     return False
   return current
+
+
+def limit_interceptor_pcm_accel(pcm_accel_cmd: float, target_accel: float, stopping: bool, v_ego: float) -> float:
+  if stopping or abs(target_accel) > TOYOTA_INTERCEPTOR_COMFORT_TARGET_ACCEL:
+    return pcm_accel_cmd
+
+  lower_delta = float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.20, 0.25, 0.35]))
+  upper_delta = float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.25, 0.30, 0.40]))
+  limited = float(np.clip(pcm_accel_cmd, target_accel - lower_delta, target_accel + upper_delta))
+
+  # Pedal/SDSU cars can feel especially surgey if the Toyota longitudinal controller
+  # swings far away from the planner target. Bias comfort-zone requests back toward
+  # the planner while still allowing some controller correction.
+  target_weight = float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.8, 0.65, 0.5]))
+  limited = (target_weight * target_accel) + ((1.0 - target_weight) * limited)
+
+  if target_accel > 0.15:
+    limited = max(limited, float(np.interp(v_ego, [0.0, 5.0, 15.0], [0.10, 0.05, 0.0])))
+  elif target_accel < -0.15:
+    limited = min(limited, float(np.interp(v_ego, [0.0, 5.0, 15.0], [-0.10, -0.05, 0.0])))
+
+  return limited
 
 
 class CarController(CarControllerBase):
@@ -346,6 +369,9 @@ class CarController(CarControllerBase):
                                                     CC.longActive,
                                                     CS.out.vEgo,
                                                     lead)
+
+        if self.CP.enableGasInterceptorDEPRECATED:
+          pcm_accel_cmd = limit_interceptor_pcm_accel(pcm_accel_cmd, actuators.accel, stopping, CS.out.vEgo)
 
         pcm_accel_cmd = float(np.clip(pcm_accel_cmd, self.params.ACCEL_MIN, self.params.ACCEL_MAX))
 
