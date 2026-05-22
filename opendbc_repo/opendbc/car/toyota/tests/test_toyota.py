@@ -10,6 +10,7 @@ from opendbc.car.toyota import toyotacan
 from opendbc.car.toyota.carcontroller import CarController, limit_interceptor_pcm_accel, limit_interceptor_stopping_accel, update_permit_braking
 from opendbc.car.toyota.carstate import calculate_interceptor_gas_pressed
 from opendbc.car.toyota.fingerprints import FW_VERSIONS
+from opendbc.car.toyota.interface import CarInterface
 from opendbc.car.toyota.values import CAR, DBC, TSS2_CAR, ANGLE_CONTROL_CAR, RADAR_ACC_CAR, SECOC_CAR, \
                                                   FW_QUERY_CONFIG, PLATFORM_CODE_ECUS, FUZZY_EXCLUDED_PLATFORMS, \
                                                   get_platform_codes
@@ -353,20 +354,46 @@ class TestToyotaCarController:
     assert limited <= 0.0
 
   def test_interceptor_stopping_limit_softens_no_lead_final_crawl(self):
-    limited = limit_interceptor_stopping_accel(-1.48, True, 0.5, False)
+    limited = limit_interceptor_stopping_accel(-1.48, -1.48, True, 0.5, False)
 
     assert limited > -1.48
-    assert limited == -1.05
+    assert limited == -0.82
+
+  def test_interceptor_stopping_limit_tracks_softer_target_near_standstill(self):
+    limited = limit_interceptor_stopping_accel(-1.86, -0.63, True, 0.5, False)
+
+    assert limited > -1.0
+    assert limited == -0.73
 
   def test_interceptor_stopping_limit_keeps_visible_lead_stop_untouched(self):
-    limited = limit_interceptor_stopping_accel(-1.48, True, 0.5, True)
+    limited = limit_interceptor_stopping_accel(-1.48, -0.63, True, 0.5, True)
 
     assert limited == -1.48
 
   def test_interceptor_stopping_limit_keeps_higher_speed_stop_untouched(self):
-    limited = limit_interceptor_stopping_accel(-1.48, True, 2.0, False)
+    limited = limit_interceptor_stopping_accel(-1.48, -0.63, True, 3.0, False)
 
     assert limited == -1.48
+
+  def test_interceptor_stopping_limit_softens_low_speed_no_lead_stop_before_final_crawl(self):
+    limited = limit_interceptor_stopping_accel(-1.55, -0.66, True, 1.45, False)
+
+    assert abs(limited - (-0.8075)) < 1e-6
+
+  def test_avalon_pedal_params_raise_delay_and_soften_stop(self):
+    CP = CarInterface.get_params(
+      CAR.TOYOTA_AVALON_2019,
+      {0: {0x2FF: 8, 0x201: 8}},
+      [],
+      True,
+      False,
+      False,
+      None,
+    )
+
+    assert CP.enableGasInterceptorDEPRECATED
+    assert abs(CP.longitudinalActuatorDelay - 0.2) < 1e-6
+    assert CP.stopAccel == -1.5
 
 
 class TestToyotaCarState:

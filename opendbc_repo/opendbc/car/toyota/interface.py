@@ -158,6 +158,7 @@ class CarInterface(CarInterfaceBase):
 
     if ret.enableGasInterceptorDEPRECATED:
       # Pedal/SDSU Toyotas feel best with a softer final stop clamp.
+      ret.longitudinalActuatorDelay = max(ret.longitudinalActuatorDelay, 0.2)
       ret.stopAccel = -1.5
 
     return ret

@@ -127,15 +127,19 @@ def limit_interceptor_pcm_accel(pcm_accel_cmd: float, target_accel: float, stopp
   return limited
 
 
-def limit_interceptor_stopping_accel(pcm_accel_cmd: float, stopping: bool, v_ego: float, lead_visible: bool) -> float:
-  if not stopping or lead_visible or pcm_accel_cmd >= 0.0 or v_ego >= 1.5:
+def limit_interceptor_stopping_accel(pcm_accel_cmd: float, target_accel: float, stopping: bool, v_ego: float, lead_visible: bool) -> float:
+  if not stopping or lead_visible or pcm_accel_cmd >= 0.0 or v_ego >= 2.5:
     return pcm_accel_cmd
 
   # Pedal/SDSU Toyotas can feel abrupt in the last few feet of a no-lead stop
-  # because stopping state holds onto a relatively strong negative accel. Keep
-  # real lead stops untouched, but soften the final crawl into standstill.
-  stop_floor = float(np.interp(v_ego, [0.0, 0.2, 0.5, 0.9, 1.5], [-0.90, -0.95, -1.05, -1.15, -1.30]))
-  return max(pcm_accel_cmd, stop_floor)
+  # because stopping state can hold onto a stale strong negative command even
+  # after the planner target has already softened. Keep real lead stops
+  # untouched, but let the last 2-3 mph of a no-lead stop unwind toward the
+  # current planner target instead of shoving through zero.
+  stop_floor = float(np.interp(v_ego, [0.0, 0.2, 0.5, 0.9, 1.5, 2.5], [-0.72, -0.76, -0.82, -0.92, -1.05, -1.20]))
+  target_buffer = float(np.interp(v_ego, [0.0, 0.5, 1.5, 2.5], [0.08, 0.10, 0.15, 0.20]))
+  planner_floor = float(target_accel) - target_buffer
+  return max(pcm_accel_cmd, max(stop_floor, planner_floor))
 
 
 class CarController(CarControllerBase):
@@ -405,7 +409,7 @@ class CarController(CarControllerBase):
 
         if self.CP.enableGasInterceptorDEPRECATED:
           pcm_accel_cmd = limit_interceptor_pcm_accel(pcm_accel_cmd, actuators.accel, stopping, CS.out.vEgo)
-          pcm_accel_cmd = limit_interceptor_stopping_accel(pcm_accel_cmd, stopping, CS.out.vEgo, bool(hud_control.leadVisible))
+          pcm_accel_cmd = limit_interceptor_stopping_accel(pcm_accel_cmd, actuators.accel, stopping, CS.out.vEgo, bool(hud_control.leadVisible))
 
         pcm_accel_cmd = float(np.clip(pcm_accel_cmd, self.params.ACCEL_MIN, self.params.ACCEL_MAX))
 
