@@ -11,6 +11,7 @@ from openpilot.selfdrive.ui.onroad.starpilot.slc_speed_limit import (
   SET_SPEED_WIDTH_IMP, SET_SPEED_WIDTH_MET, SET_SPEED_HEIGHT, SIGN_MARGIN,
 )
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.onroad.starpilot.aethergauge import AetherGauge
 from openpilot.selfdrive.ui.lib.starpilot_status import (
     get_screen_edge_color, CEM_OVERRIDE_COLOR, ENGAGED_COLOR,
     EXPERIMENTAL_COLOR, TRAFFIC_COLOR,
@@ -29,6 +30,7 @@ class StarPilotOnroadView(AugmentedRoadView):
     self._font_medium = gui_app.font(FontWeight.MEDIUM)
     self._standstill_started_at = 0.0
     self._smoothed_steer = 0.0
+    self._aethergauge = AetherGauge()
 
   def _render(self, rect: rl.Rectangle):
     self._position_personality_button()
@@ -60,6 +62,7 @@ class StarPilotOnroadView(AugmentedRoadView):
     self._render_road_name()
     self._render_standstill_timer()
     self._render_developer_metrics()
+    self._aethergauge.render(self._content_rect, self._font_bold, self._font_medium)
     self._render_bottom_row_widgets()
     self._render_pedals()
 
