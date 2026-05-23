@@ -5,7 +5,7 @@ from collections.abc import Callable
 from enum import Enum
 import pyray as rl
 from openpilot.selfdrive.ui import UI_BORDER_SIZE
-from openpilot.selfdrive.ui.lib.starpilot_status import get_screen_edge_color
+
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 
@@ -21,11 +21,9 @@ class BorderEffect:
   name: str = ""
 
 
-_GLOW_LAYERS = 16
-_GLOW_MAX_ALPHA = 255
-_GLOW_MIN_ALPHA = 250
+_GLOW_MAX_ALPHA = 200
 _GLOW_BASE_INTENSITY = 0.70
-_GLOW_SPAN = 3.5
+_GLOW_SPAN = 2.5
 _BREATHING_PERIOD = 4.5
 _GLOW_FADE_IN_DURATION = 0.6
 
@@ -108,7 +106,6 @@ def _render_csc_glow(border_rect: rl.Rectangle, border_width: float = UI_BORDER_
 
   state = _csc_state()
   now = rl.get_time()
-  border_color = get_screen_edge_color(ui_state)
 
   if state is None or not state['active']:
     if _last_was_active:
@@ -138,31 +135,30 @@ def _render_csc_glow(border_rect: rl.Rectangle, border_width: float = UI_BORDER_
   elapsed = now - _activation_start
   phase = (elapsed % period) / period
   amplitude = 0.3 + 0.7 * t_norm
-  breath = max(0.0, min(1.0, 0.5 + amplitude * math.sin(phase * 2 * math.pi)))
-  base_alpha = max(_GLOW_MIN_ALPHA * fade, _GLOW_MAX_ALPHA * intensity * breath * fade)
+  breath_raw = 0.5 + amplitude * math.sin(phase * 2 * math.pi)
+  breath = max(0.0, min(1.0, breath_raw))
+  base_alpha = _GLOW_MAX_ALPHA * intensity * fade * (0.6 + 0.4 * breath)
 
-  step = border_width * _GLOW_SPAN / (_GLOW_LAYERS - 1)
-  base_inset = border_width * 0.5
+  edge_alpha = min(255, max(1, int(base_alpha)))
+  if edge_alpha < 2:
+    return
 
-  for i in range(_GLOW_LAYERS):
-    inset = base_inset + i * step
-    t = i / (_GLOW_LAYERS - 1)
-    a = int(base_alpha * (1.0 - t) * (1.0 - t))
-    if a < 3:
-      continue
+  span = int(border_width * _GLOW_SPAN)
+  if span < 1:
+    return
 
-    glow_rect = rl.Rectangle(
-      border_rect.x + inset,
-      border_rect.y + inset,
-      border_rect.width - 2 * inset,
-      border_rect.height - 2 * inset,
-    )
-    if t < 0.4:
-      layer_color = border_color
-    else:
-      blend_factor = (t - 0.4) / 0.6
-      layer_color = _lerp_color(border_color, color, blend_factor)
-    rl.draw_rectangle_rounded_lines_ex(glow_rect, 0.12, 10, int(border_width * 1.5), rl.Color(layer_color.r, layer_color.g, layer_color.b, a))
+  gx = int(border_rect.x)
+  gy = int(border_rect.y)
+  gw = int(border_rect.width)
+  gh = int(border_rect.height)
+
+  glow_rgba = rl.Color(color.r, color.g, color.b, edge_alpha)
+  fade_rgba = rl.Color(color.r, color.g, color.b, 0)
+
+  rl.draw_rectangle_gradient_v(gx, gy, gw, span, glow_rgba, fade_rgba)
+  rl.draw_rectangle_gradient_v(gx, gy + gh - span, gw, span, fade_rgba, glow_rgba)
+  rl.draw_rectangle_gradient_h(gx, gy, span, gh, glow_rgba, fade_rgba)
+  rl.draw_rectangle_gradient_h(gx + gw - span, gy, span, gh, fade_rgba, glow_rgba)
 
 
 _effects: list[BorderEffect] = [
