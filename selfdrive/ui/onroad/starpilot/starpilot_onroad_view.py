@@ -132,8 +132,8 @@ class StarPilotOnroadView(AugmentedRoadView):
     pad_x, pad_y = 28, 18
     box_w = int(text_size.x + pad_x * 2)
     box_h = int(text_size.y + pad_y * 2)
-    x = int((gui_app.width - box_w) / 2)
-    y = int(gui_app.height - box_h - 22)
+    x = int(self._content_rect.x + (self._content_rect.width - box_w) / 2)
+    y = int(self._content_rect.y + self._content_rect.height - box_h - 22)
 
     rect = rl.Rectangle(x, y, box_w, box_h)
     rl.draw_rectangle_rounded(rect, 0.35, 10, rl.Color(0, 0, 0, 166))
