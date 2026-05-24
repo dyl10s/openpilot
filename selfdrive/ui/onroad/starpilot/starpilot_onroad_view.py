@@ -52,8 +52,6 @@ class StarPilotOnroadView(AugmentedRoadView):
       int(self._content_rect.width), int(self._content_rect.height),
     )
     render_speed_limit(self._content_rect)
-    from openpilot.selfdrive.ui.onroad.starpilot.csc_force_stop import render_csc_force_stop
-    render_csc_force_stop(self._content_rect, self._font_bold)
     rl.end_scissor_mode()
 
   def _render_overlays(self):

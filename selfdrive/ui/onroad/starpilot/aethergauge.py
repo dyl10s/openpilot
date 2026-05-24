@@ -15,6 +15,7 @@ class AetherGaugeData:
   color: rl.Color = rl.WHITE
   indicator_type: str = "none" # e.g. "road_curve"
   indicator_value: float = 0.0 # value used by indicator (e.g. curvature)
+  stop_sign_confirmed: bool = False
 
 class AetherGaugeSource:
   def is_active(self) -> bool:
@@ -22,6 +23,36 @@ class AetherGaugeSource:
 
   def get_gauge_data(self) -> AetherGaugeData:
     raise NotImplementedError
+
+class ForceStopSource(AetherGaugeSource):
+  def is_active(self) -> bool:
+    if "starpilotPlan" not in ui_state.sm.valid or not ui_state.sm.valid["starpilotPlan"]:
+      return False
+    plan = ui_state.sm["starpilotPlan"]
+    return getattr(plan, "forcingStop", False)
+
+  def get_gauge_data(self) -> AetherGaugeData:
+    plan = ui_state.sm["starpilotPlan"]
+    
+    distance_conversion = 1.0 if ui_state.is_metric else 3.28084
+    dist_unit = "m" if ui_state.is_metric else "ft"
+    
+    forcing_stop_length = getattr(plan, "forcingStopLength", 0.0)
+    dist_val = int(round(forcing_stop_length * distance_conversion))
+    stop_sign_confirmed = getattr(plan, "stopSignConfirmed", False)
+    
+    color = rl.Color(255, 30, 60, 255) # Sleek high-contrast red
+    
+    return AetherGaugeData(
+      text=str(dist_val),
+      unit=dist_unit,
+      label="STOP",
+      animation="force_stop",
+      color=color,
+      indicator_type="force_stop",
+      indicator_value=forcing_stop_length,
+      stop_sign_confirmed=stop_sign_confirmed
+    )
 
 class CurveSpeedSource(AetherGaugeSource):
   def is_active(self) -> bool:
@@ -59,7 +90,7 @@ class CurveSpeedSource(AetherGaugeSource):
 
 class AetherGauge:
   def __init__(self):
-    self.sources: list[AetherGaugeSource] = [CurveSpeedSource()]
+    self.sources: list[AetherGaugeSource] = [ForceStopSource(), CurveSpeedSource()]
 
   def get_active_data(self) -> AetherGaugeData | None:
     for source in self.sources:
@@ -82,7 +113,7 @@ class AetherGauge:
     # Position the curving road widget to the left of the speed text, center-aligned vertically
     icon_cx = cx - speed_text_size.x / 2 - 70.0
 
-    if data.indicator_type == "road_curve":
+    if data.indicator_type in ("road_curve", "force_stop"):
       self._render_unified_road(icon_cx, cy_speed - 39.5, data, font_bold, font_medium)
 
   def _render_unified_road(self, icx: float, icy: float, data: AetherGaugeData, font_bold: rl.Font, font_medium: rl.Font):
@@ -92,9 +123,12 @@ class AetherGauge:
     top = icy - half_size
     
     # Non-linear curvature offset
-    abs_curv = abs(data.indicator_value)
-    sign = math.copysign(1.0, data.indicator_value) if data.indicator_value != 0.0 else 1.0
-    curve_offset = max(-half_size, min(half_size, sign * (abs_curv ** 0.5) * 300.0))
+    if data.indicator_type == "road_curve":
+      abs_curv = abs(data.indicator_value)
+      sign = math.copysign(1.0, data.indicator_value) if data.indicator_value != 0.0 else 1.0
+      curve_offset = max(-half_size, min(half_size, sign * (abs_curv ** 0.5) * 300.0))
+    else:
+      curve_offset = 0.0
     
     # 3D perspective widths
     w_bottom = 28.0
@@ -137,7 +171,13 @@ class AetherGauge:
       rl.draw_line_ex(points_right[i], points_right[i+1], thickness, data.color)
 
     # C. Draw animating chevrons flowing down the road center path
-    progress = (rl.get_time() * 1.2) % 1.0
+    if data.indicator_type == "force_stop":
+      # Slow down chevrons as we approach the stop
+      speed_factor = max(0.1, min(1.0, data.indicator_value / 30.0))
+    else:
+      speed_factor = 1.0
+
+    progress = (rl.get_time() * 1.2 * speed_factor) % 1.0
     for i in range(3):
       # Chevron fraction t (flowing down from 1.0 to 0.0)
       t = 1.0 - ((i + progress) / 3.0)
@@ -187,6 +227,10 @@ class AetherGauge:
       rl.draw_line_ex(rl.Vector2(int(lx), int(ly)), rl.Vector2(int(cx_t), int(cy_t)), chevron_thick, chev_color)
       rl.draw_line_ex(rl.Vector2(int(rx), int(ry)), rl.Vector2(int(cx_t), int(cy_t)), chevron_thick, chev_color)
 
+    # E. Draw approaching stop sign if force_stop
+    if data.indicator_type == "force_stop":
+      self._draw_approaching_stop_sign(icx, icy, bottom, data.indicator_value, data.stop_sign_confirmed)
+
     # D. Draw clean floating target speed directly below the road base
     self._draw_mini_cradle(icx, bottom, data.text, data.unit, data.color, font_bold, font_medium)
 
@@ -210,3 +254,50 @@ class AetherGauge:
     rl.draw_text_ex(font_medium, unit, rl.Vector2(unit_pos.x - 1, unit_pos.y + 1), 20, 0, rl.BLACK)
     rl.draw_text_ex(font_medium, unit, rl.Vector2(unit_pos.x + 1, unit_pos.y + 1), 20, 0, rl.BLACK)
     rl.draw_text_ex(font_medium, unit, unit_pos, 20, 0, rl.Color(255, 255, 255, 200))
+
+  def _draw_approaching_stop_sign(self, cx: float, icy: float, bottom: float, distance: float, confirmed: bool):
+    # Normalized progress: d_max = 60.0 meters
+    d_max = 60.0
+    s = max(0.0, min(1.0, (d_max - distance) / d_max))
+    
+    # 3D perspective translation (stays within the road boundary)
+    y_sign = (icy - 30.0) + (s ** 1.5) * 50.0
+    
+    # Dynamic scale based on distance
+    r_min = 6.0
+    r_max = 20.0
+    r_sign = r_min + (s ** 2.0) * (r_max - r_min)
+    
+    # Draw drop shadow
+    rl.draw_poly(rl.Vector2(int(cx), int(y_sign + 2)), 8, r_sign, 22.5, rl.Color(0, 0, 0, 120))
+    
+    # Draw outer white border
+    rl.draw_poly(rl.Vector2(int(cx), int(y_sign)), 8, r_sign, 22.5, rl.WHITE)
+    
+    # Draw inner red octagon
+    red_color = rl.Color(196, 30, 58, 255)
+    rl.draw_poly(rl.Vector2(int(cx), int(y_sign)), 8, r_sign - 3, 22.5, red_color)
+    
+    # Draw checkmark or exclamation point
+    if confirmed:
+      # White checkmark
+      lx = cx - r_sign * 0.3
+      ly = y_sign
+      bx = cx - r_sign * 0.07
+      by = y_sign + r_sign * 0.22
+      rx = cx + r_sign * 0.35
+      ry = y_sign - r_sign * 0.22
+      
+      thick = max(2.0, r_sign * 0.12)
+      rl.draw_line_ex(rl.Vector2(int(lx), int(ly)), rl.Vector2(int(bx), int(by)), thick, rl.WHITE)
+      rl.draw_line_ex(rl.Vector2(int(bx), int(by)), rl.Vector2(int(rx), int(ry)), thick, rl.WHITE)
+    else:
+      # White exclamation mark
+      thick = max(1.5, r_sign * 0.12)
+      bar_h = r_sign * 0.4
+      dot_r = max(1.0, r_sign * 0.08)
+      
+      # Top bar
+      rl.draw_rectangle(int(cx - thick / 2), int(y_sign - r_sign * 0.35), int(thick), int(bar_h), rl.WHITE)
+      # Dot
+      rl.draw_circle(int(cx), int(y_sign + r_sign * 0.35), int(dot_r), rl.WHITE)
