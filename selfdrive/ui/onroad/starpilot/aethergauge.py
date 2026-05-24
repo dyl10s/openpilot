@@ -98,6 +98,31 @@ class AetherGauge:
         return source.get_gauge_data()
     return None
 
+  def _get_model_offset(self, t: float, model) -> float:
+    if not model:
+      return 0.0
+    
+    # Map t (0.0 to 1.0) to distance x (0.0 to 50.0 meters)
+    x_target = t * 50.0
+    
+    xs = model.position.x
+    ys = model.position.y
+    n = len(xs)
+    if n < 2:
+      return 0.0
+      
+    if x_target <= xs[0]:
+      return ys[0]
+    if x_target >= xs[n-1]:
+      return ys[n-1]
+      
+    for i in range(n - 1):
+      if xs[i] <= x_target <= xs[i+1]:
+        seg_t = (x_target - xs[i]) / (xs[i+1] - xs[i])
+        return ys[i] + seg_t * (ys[i+1] - ys[i])
+        
+    return 0.0
+
   def render(self, rect: rl.Rectangle, font_bold: rl.Font, font_medium: rl.Font, current_speed: float):
     data = self.get_active_data()
     if not data:
@@ -122,17 +147,12 @@ class AetherGauge:
     bottom = icy + half_size
     top = icy - half_size
     
-    # Non-linear curvature offset
-    if data.indicator_type == "road_curve":
-      abs_curv = abs(data.indicator_value)
-      sign = math.copysign(1.0, data.indicator_value) if data.indicator_value != 0.0 else 1.0
-      curve_offset = max(-half_size, min(half_size, sign * (abs_curv ** 0.5) * 300.0))
-    else:
-      curve_offset = 0.0
+    # Model path lookup
+    model = ui_state.sm["modelV2"] if ui_state.sm.valid.get("modelV2", False) else None
     
     # 3D perspective widths
     w_bottom = 28.0
-    w_top = 14.0
+    w_top = 10.0
     thickness = 4.0
     
     # Generate points along the road path
@@ -142,8 +162,16 @@ class AetherGauge:
     
     for i in range(num_segments + 1):
       t = i / num_segments
-      # Center path quadratic bend
-      offset = curve_offset * (t ** 2)
+      if data.indicator_type == "road_curve" and model:
+        path_y = self._get_model_offset(t, model)
+        abs_y = abs(path_y)
+        sign = math.copysign(1.0, path_y) if path_y != 0.0 else 1.0
+        # Apply perspective-based shaping factor (t * sqrt(t)) to start straight and bend progressively
+        offset = sign * (abs_y ** 0.6) * 10.0 * t * math.sqrt(t)
+        offset = max(-half_size, min(half_size, offset))
+      else:
+        offset = 0.0
+      
       cx_t = icx + offset
       y_t = bottom - t * 80.0
       
@@ -182,12 +210,27 @@ class AetherGauge:
       # Chevron fraction t (flowing down from 1.0 to 0.0)
       t = 1.0 - ((i + progress) / 3.0)
       
-      # Calculate local tangent vector for rotation
+      # Calculate local tangent vector for rotation using model path
       t_next = min(1.0, t + 0.05)
-      cx_t = icx + curve_offset * (t ** 2)
-      cy_t = bottom - t * 80.0
+      if data.indicator_type == "road_curve" and model:
+        y_t = self._get_model_offset(t, model)
+        abs_yt = abs(y_t)
+        sign_t = math.copysign(1.0, y_t) if y_t != 0.0 else 1.0
+        cx_t = icx + sign_t * (abs_yt ** 0.6) * 10.0 * t * math.sqrt(t)
+        
+        y_next = self._get_model_offset(t_next, model)
+        abs_ynext = abs(y_next)
+        sign_next = math.copysign(1.0, y_next) if y_next != 0.0 else 1.0
+        cx_next = icx + sign_next * (abs_ynext ** 0.6) * 10.0 * t_next * math.sqrt(t_next)
+        
+        # Clamp both
+        cx_t = max(icx - half_size, min(icx + half_size, cx_t))
+        cx_next = max(icx - half_size, min(icx + half_size, cx_next))
+      else:
+        cx_t = icx
+        cx_next = icx
       
-      cx_next = icx + curve_offset * (t_next ** 2)
+      cy_t = bottom - t * 80.0
       cy_next = bottom - t_next * 80.0
       
       dx = cx_next - cx_t
