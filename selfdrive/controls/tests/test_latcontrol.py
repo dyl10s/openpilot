@@ -53,6 +53,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_ioniq_6_friction_threshold,
   get_kia_forte_center_taper_scale,
   get_kia_forte_ff_scale,
+  get_kia_ev6_center_taper_scale,
   get_kia_ev6_ff_scale,
   get_kia_ev6_friction_scale,
   get_kia_ev6_friction_threshold,
@@ -687,6 +688,25 @@ class TestLatControl:
     _, _, lac_log = controller.update(True, CS, VM, params, False, 0.0025, False, 0.2, None, None, starpilot_toggles)
 
     assert lac_log.active
+
+  def test_kia_ev6_ff_scale_curve(self):
+    assert get_kia_ev6_ff_scale(0.0, 0.0, 20.0) == 1.0
+    steady_left = get_kia_ev6_ff_scale(0.45, 0.0, 25.0)
+    steady_right = get_kia_ev6_ff_scale(-0.45, 0.0, 25.0)
+    turn_in_left = get_kia_ev6_ff_scale(0.45, 0.7, 10.0)
+    turn_in_right = get_kia_ev6_ff_scale(-0.45, -0.7, 10.0)
+    unwind_left = get_kia_ev6_ff_scale(0.45, -0.7, 10.0)
+    unwind_right = get_kia_ev6_ff_scale(-0.45, 0.7, 10.0)
+    assert steady_left > 1.0
+    assert steady_right > steady_left
+    assert turn_in_left > steady_left
+    assert turn_in_right > steady_right
+    assert unwind_left < steady_left
+    assert unwind_right < steady_right
+
+  def test_kia_ev6_center_taper_curve(self):
+    assert get_kia_ev6_center_taper_scale(0.0, 25.0) < get_kia_ev6_center_taper_scale(0.0, 10.0)
+    assert get_kia_ev6_center_taper_scale(0.0, 25.0) < get_kia_ev6_center_taper_scale(0.20, 25.0) <= 1.0
 
   def test_volt_plexy_testing_ground_update_path(self, monkeypatch):
     controller, VM, CS, params, starpilot_toggles = self._build_torque_controller(GM.CHEVROLET_VOLT_CC)

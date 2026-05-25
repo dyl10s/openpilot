@@ -244,10 +244,10 @@ VOLT_STANDARD_CENTER_TAPER_LAT_WIDTH = 0.018
 VOLT_STANDARD_CENTER_TAPER_SPEED = 20.0
 VOLT_STANDARD_CENTER_TAPER_SPEED_WIDTH = 2.5
 
-SONATA_HYBRID_BASE_LAT_ACCEL_FACTOR_MULT = 1.04
-SONATA_HYBRID_FF_REDUCTION_LEFT = 0.07
-SONATA_HYBRID_FF_REDUCTION_RIGHT = 0.22
-SONATA_HYBRID_FF_ONSET = 0.22
+SONATA_HYBRID_BASE_LAT_ACCEL_FACTOR_MULT = 1.05
+SONATA_HYBRID_FF_REDUCTION_LEFT = 0.09
+SONATA_HYBRID_FF_REDUCTION_RIGHT = 0.24
+SONATA_HYBRID_FF_ONSET = 0.18
 SONATA_HYBRID_FF_ONSET_WIDTH = 0.08
 SONATA_HYBRID_FF_CUTOFF = 1.35
 SONATA_HYBRID_FF_CUTOFF_WIDTH = 0.40
@@ -257,15 +257,15 @@ SONATA_HYBRID_TURN_IN_BOOST_LEFT = 0.12
 SONATA_HYBRID_TURN_IN_BOOST_RIGHT = 0.00
 SONATA_HYBRID_UNWIND_TAPER_LEFT = 0.18
 SONATA_HYBRID_UNWIND_TAPER_RIGHT = 0.10
-SONATA_HYBRID_CENTER_TAPER_MAX = 0.05
-SONATA_HYBRID_CENTER_TAPER_LAT = 0.14
+SONATA_HYBRID_CENTER_TAPER_MAX = 0.07
+SONATA_HYBRID_CENTER_TAPER_LAT = 0.16
 SONATA_HYBRID_CENTER_TAPER_LAT_WIDTH = 0.025
 SONATA_HYBRID_CENTER_TAPER_SPEED = 22.0
 SONATA_HYBRID_CENTER_TAPER_SPEED_WIDTH = 2.5
-SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_MAX = 0.12
-SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_LAT = 0.09
+SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_MAX = 0.14
+SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_LAT = 0.10
 SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_LAT_WIDTH = 0.02
-SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_SPEED_MAX = 6.0
+SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_SPEED_MAX = 7.5
 SONATA_HYBRID_LOW_SPEED_CENTER_TAPER_SPEED_WIDTH = 1.0
 
 ELANTRA_NON_SCC_FF_ADJUST_LEFT = 0.02
@@ -439,7 +439,7 @@ IONIQ_6_OUTPUT_DIRECTIONAL_TAPER_BLEND = 0.97
 KIA_EV6_LATERAL_TESTING_GROUND_ID = testing_ground.id_6
 KIA_EV6_LATERAL_TESTING_GROUND_VARIANT = "C"
 KIA_EV6_FF_GAIN_LEFT = 0.07
-KIA_EV6_FF_GAIN_RIGHT = 0.10
+KIA_EV6_FF_GAIN_RIGHT = 0.085
 KIA_EV6_FF_ONSET = 0.08
 KIA_EV6_FF_ONSET_WIDTH = 0.04
 KIA_EV6_FF_CUTOFF = 0.60
@@ -448,19 +448,24 @@ KIA_EV6_TRANSITION_SPEED = 11.0
 KIA_EV6_PHASE_SCALE = 0.09
 KIA_EV6_TURN_IN_BOOST_LEFT = 0.14
 KIA_EV6_TURN_IN_BOOST_RIGHT = 0.22
-KIA_EV6_UNWIND_TAPER_LEFT = 0.26
-KIA_EV6_UNWIND_TAPER_RIGHT = 0.34
+KIA_EV6_UNWIND_TAPER_LEFT = 0.34
+KIA_EV6_UNWIND_TAPER_RIGHT = 0.44
 KIA_EV6_FRICTION_MULT = 1.01
 KIA_EV6_FRICTION_LAT_RISE = 0.18
 KIA_EV6_FRICTION_JERK_RISE = 0.22
 KIA_EV6_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.10
 KIA_EV6_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.14
-KIA_EV6_UNWIND_THRESHOLD_INCREASE_LEFT = 0.14
-KIA_EV6_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.18
+KIA_EV6_UNWIND_THRESHOLD_INCREASE_LEFT = 0.18
+KIA_EV6_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.24
 KIA_EV6_TURN_IN_FRICTION_BOOST_LEFT = 0.03
 KIA_EV6_TURN_IN_FRICTION_BOOST_RIGHT = 0.05
-KIA_EV6_UNWIND_FRICTION_REDUCTION_LEFT = 0.12
-KIA_EV6_UNWIND_FRICTION_REDUCTION_RIGHT = 0.15
+KIA_EV6_UNWIND_FRICTION_REDUCTION_LEFT = 0.18
+KIA_EV6_UNWIND_FRICTION_REDUCTION_RIGHT = 0.22
+KIA_EV6_CENTER_TAPER_MAX = 0.08
+KIA_EV6_CENTER_TAPER_LAT = 0.16
+KIA_EV6_CENTER_TAPER_LAT_WIDTH = 0.035
+KIA_EV6_CENTER_TAPER_SPEED = 18.0
+KIA_EV6_CENTER_TAPER_SPEED_WIDTH = 3.0
 
 VOLT_PLEXY_LATERAL_TESTING_GROUND_ID = testing_ground.id_7
 VOLT_PLEXY_FF_GAIN_LEFT = 0.12
@@ -1454,6 +1459,13 @@ def get_kia_ev6_friction_scale(v_ego: float, desired_lateral_accel: float, desir
   return min(max(friction_scale, 0.90), 1.10)
 
 
+def get_kia_ev6_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _kia_ev6_sigmoid((v_ego - KIA_EV6_CENTER_TAPER_SPEED) / KIA_EV6_CENTER_TAPER_SPEED_WIDTH)
+  center_weight = _kia_ev6_sigmoid((KIA_EV6_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / KIA_EV6_CENTER_TAPER_LAT_WIDTH)
+  reduction = KIA_EV6_CENTER_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
+
+
 def volt_plexy_lateral_testing_ground_active() -> bool:
   return testing_ground.use(VOLT_PLEXY_LATERAL_TESTING_GROUND_ID)
 
@@ -1692,6 +1704,7 @@ class LatControlTorque(LatControl):
       ioniq_6_center_taper = get_ioniq_6_center_taper_scale(setpoint, CS.vEgo) if ioniq_6_active else 1.0
       sonata_hybrid_center_taper = get_sonata_hybrid_center_taper_scale(setpoint, CS.vEgo) if sonata_hybrid_active else 1.0
       kia_forte_center_taper = get_kia_forte_center_taper_scale(setpoint, CS.vEgo) if kia_forte_active else 1.0
+      kia_ev6_center_taper = get_kia_ev6_center_taper_scale(setpoint, CS.vEgo) if kia_ev6_test_active else 1.0
       civic_bosch_modified_a_center_taper = get_civic_bosch_modified_a_center_taper_scale(setpoint, CS.vEgo) if (
         self.is_civic_bosch_modified and civic_bosch_modified_a_lateral_testing_ground_active()
       ) else 1.0
@@ -1732,9 +1745,10 @@ class LatControlTorque(LatControl):
       elif kia_forte_active:
         ff *= get_kia_forte_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * kia_forte_center_taper
       elif kia_ev6_test_active:
-        ff *= get_kia_ev6_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+        ff *= get_kia_ev6_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * kia_ev6_center_taper
         friction_threshold = get_kia_ev6_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_kia_ev6_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
+        friction_scale = 1.0 + ((friction_scale - 1.0) * kia_ev6_center_taper)
       elif volt_plexy_test_active:
         ff *= get_volt_plexy_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
         friction_threshold = get_volt_plexy_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
