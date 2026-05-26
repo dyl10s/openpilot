@@ -1,5 +1,8 @@
+import json
+
 from cereal import log
 from openpilot.common.constants import CV
+from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 
 LaneChangeState = log.LaneChangeState
@@ -40,6 +43,8 @@ TURN_DESIRES = {
 
 class DesireHelper:
   def __init__(self):
+    self.params = Params()
+    self.params_memory = Params(memory=True)
     self.lane_change_state = LaneChangeState.off
     self.lane_change_direction = LaneChangeDirection.none
     self.lane_change_timer = 0.0
@@ -51,6 +56,84 @@ class DesireHelper:
     self.lane_change_completed = False
 
     self.lane_change_wait_timer = 0.0
+    self.nav_desires_allowed = False
+    self._nav_param_counter = -1
+    self._nav_instruction_state_raw: object = None
+    self._nav_instruction_state: dict[str, object] = {}
+
+  def _update_nav_params(self):
+    self._nav_param_counter += 1
+    if self._nav_param_counter % 60 == 0:
+      self.nav_desires_allowed = self.params.get_bool("NavDesiresAllowed")
+
+    raw = self.params_memory.get("NavInstructionState") or {}
+    if raw == self._nav_instruction_state_raw:
+      return
+
+    self._nav_instruction_state_raw = raw
+    if not raw:
+      self._nav_instruction_state = {}
+      return
+
+    if isinstance(raw, dict):
+      self._nav_instruction_state = raw
+      return
+
+    if isinstance(raw, str):
+      try:
+        parsed = json.loads(raw)
+        self._nav_instruction_state = parsed if isinstance(parsed, dict) else {}
+        return
+      except Exception:
+        pass
+
+    self._nav_instruction_state = {}
+
+  @staticmethod
+  def _nav_keep_direction_is_clear(carstate, lane_change_direction):
+    return not (
+      (lane_change_direction == LaneChangeDirection.left and carstate.leftBlindspot) or
+      (lane_change_direction == LaneChangeDirection.right and carstate.rightBlindspot)
+    )
+
+  @staticmethod
+  def _nav_torque_applied(carstate, lane_change_direction):
+    return carstate.steeringPressed and (
+      (lane_change_direction == LaneChangeDirection.left and carstate.steeringTorque > 0) or
+      (lane_change_direction == LaneChangeDirection.right and carstate.steeringTorque < 0)
+    )
+
+  def _navigation_desire(self, carstate, lateral_active, starpilotPlan, starpilot_toggles):
+    self._update_nav_params()
+    if not self.nav_desires_allowed or not lateral_active or not bool(self._nav_instruction_state.get("valid", False)):
+      return log.Desire.none
+
+    modifier = str(self._nav_instruction_state.get("maneuverModifier", ""))
+    if modifier == "":
+      return log.Desire.none
+
+    if modifier == "slightLeft":
+      lane_change_direction = LaneChangeDirection.left
+      desired_lane_width = starpilotPlan.laneWidthLeft
+      nudgeless_allowed = starpilot_toggles.nudgeless and desired_lane_width >= starpilot_toggles.lane_detection_width
+      if not carstate.rightBlinker and self._nav_keep_direction_is_clear(carstate, lane_change_direction):
+        if self._nav_torque_applied(carstate, lane_change_direction) or nudgeless_allowed:
+          return log.Desire.keepLeft
+    elif modifier == "slightRight":
+      lane_change_direction = LaneChangeDirection.right
+      desired_lane_width = starpilotPlan.laneWidthRight
+      nudgeless_allowed = starpilot_toggles.nudgeless and desired_lane_width >= starpilot_toggles.lane_detection_width
+      if not carstate.leftBlinker and self._nav_keep_direction_is_clear(carstate, lane_change_direction):
+        if self._nav_torque_applied(carstate, lane_change_direction) or nudgeless_allowed:
+          return log.Desire.keepRight
+    elif modifier in ("left", "sharpLeft"):
+      if not carstate.rightBlinker and not carstate.leftBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill:
+        return log.Desire.turnLeft
+    elif modifier in ("right", "sharpRight"):
+      if not carstate.leftBlinker and not carstate.rightBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill:
+        return log.Desire.turnRight
+
+    return log.Desire.none
 
   @staticmethod
   def get_lane_change_direction(CS):
@@ -155,3 +238,7 @@ class DesireHelper:
       self.lane_change_completed = False
 
       self.lane_change_wait_timer = 0.0
+
+    nav_desire = self._navigation_desire(carstate, lateral_active, starpilotPlan, starpilot_toggles)
+    if nav_desire != log.Desire.none and self.lane_change_state == LaneChangeState.off:
+      self.desire = nav_desire
