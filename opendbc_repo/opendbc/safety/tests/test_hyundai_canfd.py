@@ -422,6 +422,37 @@ class TestHyundaiCanfdLFASteeringAltButtons(TestHyundaiCanfdLFASteeringAltButton
   pass
 
 
+class TestHyundaiCanfdCCNCSupportFrames(common.SafetyTestBase):
+  TX_MSGS = [[0x161, 0], [0x162, 0], [0x7C4, 2], [0xEA, 2]]
+
+  def setUp(self):
+    self.packer = CANPackerSafety("hyundai_canfd_generated")
+    self.safety = libsafety_py.libsafety
+
+  def _set_hooks(self, param):
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundaiCanfd, param)
+    self.safety.init_tests()
+
+  def test_ccnc_support_frames_require_ccnc_flag(self):
+    support_msgs = (
+      self.packer.make_can_msg_safety("CCNC_0x161", 0, {}),
+      self.packer.make_can_msg_safety("CCNC_0x162", 0, {}),
+      common.make_msg(2, 0x7C4, 8),
+      common.make_msg(2, 0xEA, 24),
+    )
+
+    for longitudinal in (False, True):
+      base_param = HyundaiSafetyFlags.CAMERA_SCC | (HyundaiSafetyFlags.LONG if longitudinal else 0)
+
+      self._set_hooks(base_param)
+      for msg in support_msgs:
+        self.assertFalse(self._tx(msg))
+
+      self._set_hooks(base_param | HyundaiSafetyFlags.CCNC)
+      for msg in support_msgs:
+        self.assertTrue(self._tx(msg))
+
+
 class TestHyundaiCanfdLKASteeringEV(TestHyundaiCanfdBase):
 
   TX_MSGS = [[0x50, 0], [0x1CF, 1], [0x2A4, 0]]

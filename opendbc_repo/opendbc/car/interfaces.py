@@ -233,7 +233,7 @@ class CarInterfaceBase(ABC):
             not CP.openpilotLongitudinalControl:
           fp_ret.pcmCruiseSpeed = False
 
-        if CP.flags & HyundaiFlags.HAS_LDA_BUTTON:
+        if 0x391 in fingerprint[0] or CP.flags & HyundaiFlags.CAN_CANFD_BLENDED:
           fp_ret.safetyConfigs[-1].safetyParam |= HyundaiStarPilotSafetyFlags.HAS_LDA_BUTTON.value
         if starpilot_toggles.always_on_lateral_lkas:
           fp_ret.safetyConfigs[-1].safetyParam |= HyundaiStarPilotSafetyFlags.AOL_LKAS_ON_ENGAGE.value
