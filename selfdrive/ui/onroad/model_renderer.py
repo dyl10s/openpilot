@@ -231,12 +231,12 @@ class ModelRenderer(Widget):
     # Update lane lines using raw points
     for i, lane_line in enumerate(self._lane_lines):
       lane_line.projected_points = self._map_line_to_polygon(
-        lane_line.raw_points, lane_line_width_m * self._lane_line_probs[i], 0.0, unclipped_max_idx, unclipped_max_distance
+        lane_line.raw_points, lane_line_width_m * self._lane_line_probs[i], 0.0, unclipped_max_idx, unclipped_max_distance, clip_by_lead=True
       )
 
     # Update road edges using raw points
     for road_edge in self._road_edges:
-      road_edge.projected_points = self._map_line_to_polygon(road_edge.raw_points, road_edge_width_m, 0.0, unclipped_max_idx, unclipped_max_distance)
+      road_edge.projected_points = self._map_line_to_polygon(road_edge.raw_points, road_edge_width_m, 0.0, unclipped_max_idx, unclipped_max_distance, clip_by_lead=True)
 
     # Update path using raw points
     max_distance = unclipped_max_distance
@@ -674,7 +674,7 @@ class ModelRenderer(Widget):
     avg_line[:, 2] = line1[:min_len, 2]
 
     # Map the averaged line to a polygon using the standard path mapper
-    polygon = self._map_line_to_polygon(avg_line, y_off, 0.0, max_idx, max_distance, allow_invert=True)
+    polygon = self._map_line_to_polygon(avg_line, y_off, 0.0, max_idx, max_distance, allow_invert=True, clip_by_lead=True)
 
     # Ground to bottom of screen
     if polygon.shape[0] >= 4:
@@ -737,7 +737,7 @@ class ModelRenderer(Widget):
 
     return (x, y)
 
-  def _map_line_to_polygon(self, line: np.ndarray, y_off: float, z_off: float, max_idx: int, max_distance: float, allow_invert: bool = True) -> np.ndarray:
+  def _map_line_to_polygon(self, line: np.ndarray, y_off: float, z_off: float, max_idx: int, max_distance: float, allow_invert: bool = True, clip_by_lead: bool = False) -> np.ndarray:
     """Convert 3D line to 2D polygon for rendering."""
     if line.shape[0] == 0:
       return np.empty((0, 2), dtype=np.float32)
@@ -756,6 +756,73 @@ class ModelRenderer(Widget):
       points = np.concatenate((points, interp_point[None, :]), axis=0)
 
     points = points[points[:, 0] >= 0]
+    if points.shape[0] == 0:
+      return np.empty((0, 2), dtype=np.float32)
+
+    # Lead vehicle clipping to prevent drawing through/on top of lead vehicles
+    if clip_by_lead:
+      active_leads = []
+      sm = ui_state.sm
+      if sm.valid.get("radarState", False):
+        rs = sm["radarState"]
+        if rs.leadOne and rs.leadOne.status:
+          active_leads.append(("ego", rs.leadOne))
+        if rs.leadTwo and rs.leadTwo.status:
+          active_leads.append(("ego", rs.leadTwo))
+      if sm.valid.get("starpilotRadarState", False):
+        srs = sm["starpilotRadarState"]
+        if srs.leadLeft and srs.leadLeft.status:
+          active_leads.append(("left", srs.leadLeft))
+        if srs.leadRight and srs.leadRight.status:
+          active_leads.append(("right", srs.leadRight))
+
+      if active_leads:
+        x = points[:, 0]
+        y = points[:, 1]
+        clipped_mask = np.zeros(len(points), dtype=bool)
+
+        for lead_type, lead in active_leads:
+          lead_x = lead.dRel
+          lead_y = -lead.yRel
+          y_limit = 5.0 if lead_type == "ego" else 1.8
+          # Collision box for lead car: x ∈ [lead_x - 1.5, lead_x + 5.0], y ∈ [lead_y - y_limit, lead_y + y_limit]
+          in_box = (x >= lead_x - 1.5) & (x <= lead_x + 5.0) & (y >= lead_y - y_limit) & (y <= lead_y + y_limit)
+          clipped_mask |= in_box
+
+        indices = np.where(clipped_mask)[0]
+        if indices.size > 0:
+          first_clip_idx = indices[0]
+          if first_clip_idx > 0:
+            # Interpolate to the exact entry boundary (lead_x - 1.5)
+            p_prev = points[first_clip_idx - 1]
+            p_curr = points[first_clip_idx]
+            
+            # Find the lead vehicle that triggered the clip
+            best_lead_x = None
+            for lead_type, lead in active_leads:
+              lead_x = lead.dRel
+              lead_y = -lead.yRel
+              y_limit = 5.0 if lead_type == "ego" else 1.8
+              if (lead_x - 1.5) <= p_curr[0] <= (lead_x + 5.0) and (lead_y - y_limit) <= p_curr[1] <= (lead_y + y_limit):
+                best_lead_x = lead_x
+                break
+
+            if best_lead_x is not None:
+              x_clip = best_lead_x - 1.5
+              x0, x1 = p_prev[0], p_curr[0]
+              if x1 > x0:
+                t = (x_clip - x0) / (x1 - x0)
+                y_clip = p_prev[1] + t * (p_curr[1] - p_prev[1])
+                z_clip = p_prev[2] + t * (p_curr[2] - p_prev[2])
+                interp_pt = np.array([x_clip, y_clip, z_clip], dtype=points.dtype)
+                points = np.concatenate((points[:first_clip_idx], interp_pt[None, :]), axis=0)
+              else:
+                points = points[:first_clip_idx]
+            else:
+              points = points[:first_clip_idx]
+          else:
+            points = np.empty((0, 3), dtype=points.dtype)
+
     if points.shape[0] == 0:
       return np.empty((0, 2), dtype=np.float32)
 
