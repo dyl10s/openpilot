@@ -1,12 +1,12 @@
 import time
-from opendbc.car import Bus, get_safety_config, structs, uds
+from opendbc.car import get_safety_config, structs, uds
 from opendbc.car.hyundai.hyundaicanfd import CanBus
-from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, CarControllerParams, \
+from opendbc.car.hyundai.values import HyundaiFlags, CAR, CarControllerParams, \
                                                    CANFD_UNSUPPORTED_LONGITUDINAL_CAR, \
                                                    CANFD_SECURITYACCESS_CAR, \
                                                    UNSUPPORTED_LONGITUDINAL_CAR, HyundaiSafetyFlags, \
                                                    hyundai_cancel_button_enables_cruise
-from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
+from opendbc.car.hyundai.radar_interface import get_radar_track_config
 from opendbc.car.interfaces import CarInterfaceBase, ACCEL_MIN
 from opendbc.car.disable_ecu import disable_ecu, ecu_log
 from opendbc.car.hyundai.carcontroller import CarController
@@ -171,13 +171,15 @@ class CarInterface(CarInterfaceBase):
 
     # Common longitudinal control setup
 
-    ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or Bus.radar not in DBC[ret.carFingerprint]
+    radar_config = get_radar_track_config(ret.carFingerprint)
+    radar_tracks_available = radar_config is not None and radar_config.start_addr in fingerprint[1]
+    ret.radarUnavailable = not radar_tracks_available
     if ret.flags & HyundaiFlags.NON_SCC:
       ret.alphaLongitudinalAvailable = False
     ret.openpilotLongitudinalControl = alpha_long and ret.alphaLongitudinalAvailable
     # When longitudinal is enabled, we disable the ADAS ECU which stops radar messages
     # Force radarUnavailable to prevent CAN Error from missing radar messages
-    if ret.openpilotLongitudinalControl:
+    if ret.openpilotLongitudinalControl and not (candidate == CAR.HYUNDAI_IONIQ_6 and radar_tracks_available):
       ret.radarUnavailable = True
     ret.pcmCruise = not ret.openpilotLongitudinalControl
     apply_platform_longitudinal_params(ret)

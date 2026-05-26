@@ -1,30 +1,56 @@
 import math
+from dataclasses import dataclass
 
 from opendbc.can import CANParser
 from opendbc.car import Bus, structs
 from opendbc.car.interfaces import RadarInterfaceBase
-from opendbc.car.hyundai.values import CAR, DBC
+from opendbc.car.hyundai.values import CAR, DBC, HYUNDAI_MANDO_FRONT_RADAR_DBC, HYUNDAI_MRR30_RADAR_DBC, \
+                                       HYUNDAI_MRR35_RADAR_DBC
 from openpilot.common.swaglog import cloudlog
 
 RADAR_START_ADDR = 0x500
 RADAR_MSG_COUNT = 32
+MRR30_RADAR_START_ADDR = 0x210
+MRR30_RADAR_MSG_COUNT = 16
+MRR35_RADAR_START_ADDR = 0x3A5
+MRR35_RADAR_MSG_COUNT = 32
+
+
+@dataclass(frozen=True)
+class RadarTrackConfig:
+  start_addr: int
+  msg_count: int
+  radar_type: str
+
+
+RADAR_TRACK_CONFIGS = {
+  HYUNDAI_MANDO_FRONT_RADAR_DBC: RadarTrackConfig(RADAR_START_ADDR, RADAR_MSG_COUNT, "mando"),
+  HYUNDAI_MRR30_RADAR_DBC: RadarTrackConfig(MRR30_RADAR_START_ADDR, MRR30_RADAR_MSG_COUNT, "mrr30"),
+  HYUNDAI_MRR35_RADAR_DBC: RadarTrackConfig(MRR35_RADAR_START_ADDR, MRR35_RADAR_MSG_COUNT, "mrr35"),
+}
 
 # POC for parsing corner radars: https://github.com/commaai/openpilot/pull/24221/
 
 
-def get_radar_can_parser(CP):
-  if Bus.radar not in DBC[CP.carFingerprint]:
+def get_radar_track_config(car_fingerprint) -> RadarTrackConfig | None:
+  radar_dbc = DBC[car_fingerprint].get(Bus.radar)
+  return RADAR_TRACK_CONFIGS.get(radar_dbc)
+
+
+def get_radar_can_parser(CP, radar_config):
+  if radar_config is None:
     return None
 
-  messages = [(f"RADAR_TRACK_{addr:x}", 50) for addr in range(RADAR_START_ADDR, RADAR_START_ADDR + RADAR_MSG_COUNT)]
+  messages = [(f"RADAR_TRACK_{addr:x}", 50) for addr in range(radar_config.start_addr, radar_config.start_addr + radar_config.msg_count)]
   return CANParser(DBC[CP.carFingerprint][Bus.radar], messages, 1)
 
 
 class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
     super().__init__(CP)
+    self.radar_config = get_radar_track_config(CP.carFingerprint)
     self.updated_messages = set()
-    self.trigger_msg = RADAR_START_ADDR + RADAR_MSG_COUNT - 1
+    self.trigger_msg = (self.radar_config.start_addr + self.radar_config.msg_count - 1) if self.radar_config is not None else RADAR_START_ADDR
     self.track_id = 0
 
     self.radar_off_can = CP.radarUnavailable
@@ -33,7 +59,7 @@ class RadarInterface(RadarInterfaceBase):
     self.ioniq_6_radar_probe = CP.carFingerprint == CAR.HYUNDAI_IONIQ_6 and CP.openpilotLongitudinalControl and self.radar_off_can
     self.ioniq_6_radar_probe_logged = False
     self.ioniq_6_radar_probe_updates = 0
-    self.rcp = get_radar_can_parser(CP)
+    self.rcp = get_radar_can_parser(CP, self.radar_config)
 
   def update(self, can_strings):
     if self.ioniq_6_radar_probe and self.rcp is not None and not self.ioniq_6_radar_probe_logged:
@@ -73,13 +99,50 @@ class RadarInterface(RadarInterfaceBase):
     if not self.rcp.can_valid:
       ret.errors.canError = True
 
-    for addr in range(RADAR_START_ADDR, RADAR_START_ADDR + RADAR_MSG_COUNT):
+    if self.radar_config is None:
+      return ret
+
+    for addr in range(self.radar_config.start_addr, self.radar_config.start_addr + self.radar_config.msg_count):
       msg = self.rcp.vl[f"RADAR_TRACK_{addr:x}"]
+
+      if self.radar_config.radar_type == "mrr30":
+        for i in ("1", "2"):
+          track_key = addr * 2 + int(i) - 1
+          if track_key not in self.pts:
+            self.pts[track_key] = structs.RadarData.RadarPoint()
+            self.pts[track_key].trackId = self.track_id
+            self.track_id += 1
+
+          valid = msg[f"{i}_STATE"] in (3, 4)
+          if valid:
+            pt = self.pts[track_key]
+            pt.measured = True
+            pt.dRel = msg[f"{i}_LONG_DIST"]
+            pt.yRel = msg[f"{i}_LAT_DIST"]
+            pt.vRel = msg[f"{i}_REL_SPEED"]
+            pt.aRel = float("nan")
+            pt.yvRel = float("nan")
+          else:
+            del self.pts[track_key]
+        continue
 
       if addr not in self.pts:
         self.pts[addr] = structs.RadarData.RadarPoint()
         self.pts[addr].trackId = self.track_id
         self.track_id += 1
+
+      if self.radar_config.radar_type == "mrr35":
+        valid = msg["STATE"] in (3, 4)
+        if valid:
+          self.pts[addr].measured = True
+          self.pts[addr].dRel = msg["LONG_DIST"]
+          self.pts[addr].yRel = msg["LAT_DIST"]
+          self.pts[addr].vRel = msg["REL_SPEED"]
+          self.pts[addr].aRel = msg["REL_ACCEL"]
+          self.pts[addr].yvRel = float("nan")
+        else:
+          del self.pts[addr]
+        continue
 
       valid = msg['STATE'] in (3, 4)
       if valid:

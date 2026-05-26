@@ -18,6 +18,9 @@ SPORTAGE_HEV_2026_LOW_SPEED_JERK_SPEED = 11.0
 SPORTAGE_HEV_2026_LOW_SPEED_JERK_WIDTH = 5.0
 SPORTAGE_HEV_2026_MAX_ANGLE_RATE = 6.5
 SPORTAGE_HEV_2026_STEER_ANGLE_MAX = 220.0
+HYUNDAI_MANDO_FRONT_RADAR_DBC = "hyundai_kia_mando_front_radar_generated"
+HYUNDAI_MRR30_RADAR_DBC = "hyundai_mrr30_radar_generated"
+HYUNDAI_MRR35_RADAR_DBC = "hyundai_mrr35_radar_generated"
 
 
 class CarControllerParams:
@@ -224,7 +227,7 @@ class HyundaiPlatformConfig(PlatformConfig):
 
   def init(self):
     if self.flags & HyundaiFlags.MANDO_RADAR:
-      self.dbc_dict = {Bus.pt: "hyundai_kia_generic", Bus.radar: 'hyundai_kia_mando_front_radar_generated'}
+      self.dbc_dict = {Bus.pt: "hyundai_kia_generic", Bus.radar: HYUNDAI_MANDO_FRONT_RADAR_DBC}
 
     if self.flags & HyundaiFlags.MIN_STEER_32_MPH:
       self.specs = self.specs.override(minSteerSpeed=32 * CV.MPH_TO_MS)
@@ -236,9 +239,12 @@ class HyundaiPlatformConfig(PlatformConfig):
 @dataclass
 class HyundaiCanFDPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_canfd_generated"})
+  radar_dbc: str | None = None
 
   def init(self):
     self.flags |= HyundaiFlags.CANFD
+    if self.radar_dbc is not None:
+      self.dbc_dict = {Bus.pt: "hyundai_canfd_generated", Bus.radar: self.radar_dbc}
 
 
 @dataclass
@@ -372,6 +378,7 @@ class CAR(Platforms):
     ],
     CarSpecs(mass=1740, wheelbase=2.66, steerRatio=13.6, tireStiffnessFactor=0.385),
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_NO_RADAR_DISABLE | HyundaiFlags.CCNC,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
   HYUNDAI_KONA_HEV = HyundaiPlatformConfig(
     [HyundaiCarDocs("Hyundai Kona Hybrid 2020", car_parts=CarParts.common([CarHarness.hyundai_i]))],  # TODO: check packages,
@@ -492,16 +499,19 @@ class CAR(Platforms):
     ],
     HYUNDAI_IONIQ_5.specs,
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR30_RADAR_DBC,
   )
   HYUNDAI_IONIQ_5_N = HyundaiCanFDPlatformConfig(
     [HyundaiCarDocs("Hyundai Ioniq 5 N (with HDA II) 2024", car_parts=CarParts.common([CarHarness.hyundai_s]))],
     CarSpecs(mass=2205, wheelbase=3.00, steerRatio=14.26, tireStiffnessFactor=1.3),
     flags=HyundaiFlags.EV | HyundaiFlags.CCNC,
+    radar_dbc=HYUNDAI_MRR30_RADAR_DBC,
   )
   HYUNDAI_IONIQ_6 = HyundaiCanFDPlatformConfig(
     [HyundaiCarDocs("Hyundai Ioniq 6 (with HDA II) 2023-24", "Highway Driving Assist II", car_parts=CarParts.common([CarHarness.hyundai_p]))],
     HYUNDAI_IONIQ_5.specs,
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_NO_RADAR_DISABLE,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
   HYUNDAI_IONIQ_9 = HyundaiCanFDPlatformConfig(
     [
@@ -510,6 +520,7 @@ class CAR(Platforms):
     ],
     CarSpecs(mass=2700, wheelbase=3.13, steerRatio=16.02),
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
   HYUNDAI_TUCSON_4TH_GEN = HyundaiCanFDPlatformConfig(
     [
@@ -744,6 +755,7 @@ class CAR(Platforms):
     ],
     CarSpecs(mass=2055, wheelbase=2.9, steerRatio=16, tireStiffnessFactor=0.65),
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR30_RADAR_DBC,
   )
   KIA_EV9 = HyundaiCanFDPlatformConfig(
     [
@@ -751,6 +763,7 @@ class CAR(Platforms):
     ],
     CarSpecs(mass=2664, wheelbase=3.1, steerRatio=16),
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
   KIA_CARNIVAL_4TH_GEN = HyundaiCanFDPlatformConfig(
     [
@@ -808,6 +821,7 @@ class CAR(Platforms):
     ],
     GENESIS_GV70_ELECTRIFIED_1ST_GEN.specs,
     flags=HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
   GENESIS_G80 = HyundaiPlatformConfig(
     [HyundaiCarDocs("Genesis G80 2018-19", "All", car_parts=CarParts.common([CarHarness.hyundai_h]))],
@@ -836,6 +850,7 @@ class CAR(Platforms):
     ],
     GENESIS_GV80.specs,
     flags=HyundaiFlags.CANFD_ANGLE_STEERING,
+    radar_dbc=HYUNDAI_MRR35_RADAR_DBC,
   )
 
   # Hyundai non-SCC extensions

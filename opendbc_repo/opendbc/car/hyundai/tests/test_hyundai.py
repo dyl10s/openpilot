@@ -14,7 +14,7 @@ from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, dec
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
 from opendbc.car.hyundai.hyundaicanfd import CanBus
-from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
+from opendbc.car.hyundai.radar_interface import MRR30_RADAR_START_ADDR, MRR35_RADAR_START_ADDR, RADAR_START_ADDR, get_radar_track_config
 from opendbc.car.hyundai.values import CAMERA_SCC_CAR, CANFD_CAR, CAN_GEARS, CAR, CHECKSUM, DATE_FW_ECUS, \
                                          HYBRID_CAR, EV_CAR, FW_QUERY_CONFIG, LEGACY_SAFETY_MODE_CAR, CANFD_FUZZY_WHITELIST, \
                                          UNSUPPORTED_LONGITUDINAL_CAR, PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
@@ -125,6 +125,31 @@ class TestHyundaiFingerprint:
         fingerprint[1][RADAR_START_ADDR] = 8
       CP = CarInterface.get_params(CAR.HYUNDAI_SONATA, fingerprint, [], False, False, False, None)
       assert CP.radarUnavailable != radar
+
+    for candidate, radar_addr in (
+      (CAR.HYUNDAI_IONIQ_5_N, MRR30_RADAR_START_ADDR),
+      (CAR.KIA_EV6_2025, MRR30_RADAR_START_ADDR),
+      (CAR.HYUNDAI_KONA_EV_2ND_GEN, MRR35_RADAR_START_ADDR),
+      (CAR.HYUNDAI_IONIQ_6, MRR35_RADAR_START_ADDR),
+      (CAR.HYUNDAI_IONIQ_9, MRR35_RADAR_START_ADDR),
+    ):
+      assert get_radar_track_config(candidate).start_addr == radar_addr
+      for radar in (True, False):
+        fingerprint = gen_empty_fingerprint()
+        if radar:
+          fingerprint[1][radar_addr] = 8
+        CP = CarInterface.get_params(candidate, fingerprint, [], False, False, False, None)
+        assert CP.radarUnavailable != radar
+
+    CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, gen_empty_fingerprint(), [], True, False, False, None)
+    assert CP.openpilotLongitudinalControl
+    assert CP.radarUnavailable
+
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[1][MRR35_RADAR_START_ADDR] = 24
+    CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], True, False, False, None)
+    assert CP.openpilotLongitudinalControl
+    assert not CP.radarUnavailable
 
     for candidate in HYUNDAI_NON_SCC_CARS:
       CP = CarInterface.get_params(candidate, gen_empty_fingerprint(), [], True, False, False, None)
