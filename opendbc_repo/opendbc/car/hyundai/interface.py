@@ -177,9 +177,11 @@ class CarInterface(CarInterfaceBase):
     if ret.flags & HyundaiFlags.NON_SCC:
       ret.alphaLongitudinalAvailable = False
     ret.openpilotLongitudinalControl = alpha_long and ret.alphaLongitudinalAvailable
-    # When longitudinal is enabled, we disable the ADAS ECU which stops radar messages.
     # Keep Ioniq 6 radar tracks probe-only until a harness path can provide them reliably.
-    if ret.openpilotLongitudinalControl:
+    if candidate == CAR.HYUNDAI_IONIQ_6:
+      ret.radarUnavailable = True
+    # When longitudinal is enabled, we disable the ADAS ECU which stops radar messages.
+    elif ret.openpilotLongitudinalControl:
       ret.radarUnavailable = True
     ret.pcmCruise = not ret.openpilotLongitudinalControl
     apply_platform_longitudinal_params(ret)
