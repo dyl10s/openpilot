@@ -43,6 +43,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_ioniq_5_ff_scale,
   get_ioniq_5_friction_scale,
   get_ioniq_5_friction_threshold,
+  get_ioniq_5_center_taper_scale,
   get_ioniq_ev_old_center_taper_scale,
   get_ioniq_ev_old_ff_scale,
   get_ioniq_6_center_taper_scale,
@@ -339,6 +340,10 @@ class TestLatControl:
     assert unwind_left_scale < 1.0
     assert unwind_right_scale < unwind_left_scale
 
+  def test_ioniq_5_center_taper_curve(self):
+    assert get_ioniq_5_center_taper_scale(0.0, 25.0) < get_ioniq_5_center_taper_scale(0.0, 10.0)
+    assert get_ioniq_5_center_taper_scale(0.0, 25.0) < get_ioniq_5_center_taper_scale(0.20, 25.0) <= 1.0
+
   def test_ioniq_ev_old_ff_scale_curve(self):
     assert get_ioniq_ev_old_ff_scale(0.0, 0.0, 20.0) == 1.0
     assert get_ioniq_ev_old_ff_scale(0.35, 0.0, 20.0) > get_ioniq_ev_old_ff_scale(-0.35, 0.0, 20.0)
@@ -494,7 +499,7 @@ class TestLatControl:
     _, _, lac_log = controller.update(True, CS, VM, params, False, 0.0025, False, 0.2, None, None, starpilot_toggles)
 
     assert lac_log.active
-    assert controller.torque_params.latAccelFactor == pytest.approx(CP.lateralTuning.torque.latAccelFactor * 1.18)
+    assert controller.torque_params.latAccelFactor == pytest.approx(CP.lateralTuning.torque.latAccelFactor * 1.22)
 
   def test_ioniq_6_default_update_path(self):
     controller, VM, CS, params, starpilot_toggles = self._build_torque_controller(HYUNDAI.HYUNDAI_IONIQ_6)

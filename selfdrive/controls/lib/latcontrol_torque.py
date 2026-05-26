@@ -325,27 +325,32 @@ GENESIS_G90_TURN_IN_FRICTION_BOOST_RIGHT = 0.14
 GENESIS_G90_UNWIND_FRICTION_REDUCTION_LEFT = 0.04
 GENESIS_G90_UNWIND_FRICTION_REDUCTION_RIGHT = 0.30
 
-IONIQ_5_BASE_LAT_ACCEL_FACTOR_MULT = 1.18
+IONIQ_5_BASE_LAT_ACCEL_FACTOR_MULT = 1.22
 IONIQ_5_FF_ONSET = 0.10
 IONIQ_5_FF_ONSET_WIDTH = 0.05
 IONIQ_5_FF_CUTOFF = 1.20
 IONIQ_5_FF_CUTOFF_WIDTH = 0.30
 IONIQ_5_TRANSITION_SPEED = 11.0
 IONIQ_5_PHASE_SCALE = 0.10
-IONIQ_5_FF_REDUCTION_LEFT = 0.10
+IONIQ_5_FF_REDUCTION_LEFT = 0.14
 IONIQ_5_FF_REDUCTION_RIGHT = 0.18
 IONIQ_5_TURN_IN_BOOST_LEFT = 0.04
 IONIQ_5_TURN_IN_BOOST_RIGHT = 0.00
-IONIQ_5_UNWIND_TAPER_LEFT = 0.40
-IONIQ_5_UNWIND_TAPER_RIGHT = 0.70
+IONIQ_5_UNWIND_TAPER_LEFT = 0.52
+IONIQ_5_UNWIND_TAPER_RIGHT = 0.82
 IONIQ_5_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.05
 IONIQ_5_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.00
-IONIQ_5_UNWIND_THRESHOLD_INCREASE_LEFT = 0.18
-IONIQ_5_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.32
+IONIQ_5_UNWIND_THRESHOLD_INCREASE_LEFT = 0.24
+IONIQ_5_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.38
 IONIQ_5_TURN_IN_FRICTION_BOOST_LEFT = 0.02
 IONIQ_5_TURN_IN_FRICTION_BOOST_RIGHT = 0.00
-IONIQ_5_UNWIND_FRICTION_REDUCTION_LEFT = 0.15
-IONIQ_5_UNWIND_FRICTION_REDUCTION_RIGHT = 0.26
+IONIQ_5_UNWIND_FRICTION_REDUCTION_LEFT = 0.22
+IONIQ_5_UNWIND_FRICTION_REDUCTION_RIGHT = 0.32
+IONIQ_5_CENTER_TAPER_MAX = 0.08
+IONIQ_5_CENTER_TAPER_LAT = 0.16
+IONIQ_5_CENTER_TAPER_LAT_WIDTH = 0.03
+IONIQ_5_CENTER_TAPER_SPEED = 20.0
+IONIQ_5_CENTER_TAPER_SPEED_WIDTH = 2.5
 
 IONIQ_EV_OLD_BASE_LAT_ACCEL_FACTOR_MULT = 1.16
 IONIQ_EV_OLD_FF_REDUCTION_LEFT = 0.16
@@ -1216,6 +1221,13 @@ def get_ioniq_5_friction_scale(v_ego: float, desired_lateral_accel: float, desir
   return min(max(friction_scale, 0.86), 1.04)
 
 
+def get_ioniq_5_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _ioniq_5_sigmoid((v_ego - IONIQ_5_CENTER_TAPER_SPEED) / IONIQ_5_CENTER_TAPER_SPEED_WIDTH)
+  center_weight = _ioniq_5_sigmoid((IONIQ_5_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / IONIQ_5_CENTER_TAPER_LAT_WIDTH)
+  reduction = IONIQ_5_CENTER_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
+
+
 def _ioniq_ev_old_sigmoid(x: float) -> float:
   return _sigmoid(x)
 
@@ -1699,6 +1711,7 @@ class LatControlTorque(LatControl):
       kia_forte_active = self.is_kia_forte
       kia_ev6_test_active = self.is_kia_ev6 and kia_ev6_lateral_testing_ground_active()
       volt_plexy_test_active = self.is_volt_cc and volt_plexy_lateral_testing_ground_active()
+      ioniq_5_center_taper = get_ioniq_5_center_taper_scale(setpoint, CS.vEgo) if ioniq_5_active else 1.0
       volt_standard_center_taper = get_volt_standard_center_taper_scale(setpoint, CS.vEgo) if volt_standard_test_active else 1.0
       ioniq_ev_old_center_taper = get_ioniq_ev_old_center_taper_scale(setpoint, CS.vEgo) if ioniq_ev_old_active else 1.0
       ioniq_6_center_taper = get_ioniq_6_center_taper_scale(setpoint, CS.vEgo) if ioniq_6_active else 1.0
@@ -1727,9 +1740,10 @@ class LatControlTorque(LatControl):
         friction_threshold = get_genesis_g90_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_genesis_g90_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
       elif ioniq_5_active:
-        ff *= get_ioniq_5_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+        ff *= get_ioniq_5_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * ioniq_5_center_taper
         friction_threshold = get_ioniq_5_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_ioniq_5_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
+        friction_scale = 1.0 + ((friction_scale - 1.0) * ioniq_5_center_taper)
       elif ioniq_ev_old_active:
         ff *= get_ioniq_ev_old_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * ioniq_ev_old_center_taper
         friction_scale = 1.0 + ((friction_scale - 1.0) * ioniq_ev_old_center_taper)
