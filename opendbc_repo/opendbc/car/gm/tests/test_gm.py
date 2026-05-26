@@ -3,9 +3,10 @@ from types import SimpleNamespace
 from parameterized import parameterized
 
 from opendbc.can import CANPacker, CANParser
-from opendbc.car import Bus, DT_CTRL
+from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.gm import gmcan
+from opendbc.car.gm.carstate import CarState as GMCarState
 from opendbc.car.gm.carcontroller import (
   VisualAlert,
   get_acc_dashboard_fcw_alert,
@@ -130,6 +131,20 @@ class TestGMInterface:
     pt_parser = CarInterface.CarState.get_can_parsers(car_params)[Bus.pt]
     assert "ECMAcceleratorPos" not in pt_parser.vl
     assert "EBCMBrakePedalPosition" in pt_parser.vl
+
+  def test_volt_ascm_cam_parser_includes_optional_aeb_cmd(self):
+    cam_parser = GMCarState.get_can_parsers(SimpleNamespace(
+      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
+      networkLocation=structs.CarParams.NetworkLocation.fwdCamera,
+      flags=0,
+      transmissionType=structs.CarParams.TransmissionType.direct,
+      enableGasInterceptorDEPRECATED=False,
+      enableBsm=False,
+    ))[Bus.cam]
+    aeb_addr = cam_parser.dbc.name_to_msg["AEBCmd"].address
+
+    assert "AEBCmd" in cam_parser.vl
+    assert cam_parser.message_states[aeb_addr].ignore_alive
 
   def test_bolt_gen2_pedal_cancel_remap_sets_alt_exp(self):
     CarInterface = interfaces[CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL]
@@ -313,6 +328,14 @@ class TestGMCarController:
     cs = SimpleNamespace(
       stock_fcw_alert=0,
       out=SimpleNamespace(stockAeb=True, stockFcw=False),
+    )
+
+    assert get_acc_dashboard_fcw_alert(VisualAlert.none, cs) == 0x3
+
+  def test_acc_dashboard_fcw_alert_falls_back_to_stock_fcw_event(self):
+    cs = SimpleNamespace(
+      stock_fcw_alert=0,
+      out=SimpleNamespace(stockAeb=False, stockFcw=True),
     )
 
     assert get_acc_dashboard_fcw_alert(VisualAlert.none, cs) == 0x3

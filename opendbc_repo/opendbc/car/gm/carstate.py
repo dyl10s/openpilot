@@ -273,6 +273,7 @@ class CarState(CarStateBase):
     ret.cruiseState.enabled = pt_cp.vl["AcceleratorPedal2"]["CruiseState"] != AccState.OFF
     ret.cruiseState.standstill = pt_cp.vl["AcceleratorPedal2"]["CruiseState"] == AccState.STANDSTILL
     self.stock_fcw_alert = 0
+    ret.stockFcw = False
     if self.CP.networkLocation == NetworkLocation.fwdCamera and not self.CP.flags & GMFlags.NO_CAMERA.value:
       has_acc_dashboard_status = self.CP.carFingerprint not in CC_ONLY_CAR or self.CP.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL
       if has_acc_dashboard_status:
@@ -288,8 +289,9 @@ class CarState(CarStateBase):
         # Preserve the stock camera FCW level from 0x370 so the controller can
         # replay it when that message is blocked and spoofed by openpilot long.
         self.stock_fcw_alert = int(acc_dashboard_status["FCWAlert"])
+        ret.stockFcw = self.stock_fcw_alert != 0
 
-      if self.CP.carFingerprint not in (SDGM_CAR | ASCM_INT):
+      if self.CP.carFingerprint not in SDGM_CAR:
         ret.stockAeb = cam_cp.vl["AEBCmd"]["AEBCmdActive"] != 0
       else:
         ret.stockAeb = False
@@ -479,7 +481,13 @@ class CarState(CarStateBase):
         ]
         if CP.enableBsm:
           cam_messages.append(("BCMBlindSpotMonitor", 10))
-      elif CP.carFingerprint not in (SDGM_CAR | ASCM_INT):
+      elif CP.carFingerprint in ASCM_INT:
+        # Volt/ASCM-int variants don't reliably have AEBCmd present at startup,
+        # but when it appears we still want to surface OEM AEB state.
+        cam_messages += [
+          ("AEBCmd", 0),
+        ]
+      elif CP.carFingerprint not in SDGM_CAR:
         cam_messages += [
           ("AEBCmd", 10),
         ]
