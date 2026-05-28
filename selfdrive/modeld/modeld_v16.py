@@ -28,7 +28,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
-from openpilot.selfdrive.modeld.compile_modeld import POLICY_INPUTS, WARP_INPUTS, make_input_queues
+from openpilot.selfdrive.modeld.compile_modeld import POLICY_INPUTS, WARP_INPUTS, make_npy_inputs, make_tensor_inputs
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.modeld.fill_model_msg import PublishState, fill_model_msg, fill_pose_msg
 from openpilot.selfdrive.modeld.helpers import get_tg_input_devices
@@ -184,9 +184,11 @@ class ModelState:
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
     input_devices = get_tg_input_devices(PROCESS_NAME, usbgpu)
     self.WARP_DEV, self.QUEUE_DEV = input_devices["WARP_DEV"], input_devices["QUEUE_DEV"]
-    self.input_queues, self.npy = make_input_queues(
-      self.vision_input_shapes, self.policy_input_shapes, self.frame_skip, device=self.QUEUE_DEV
-    )
+    tensor_inputs = jits.get("tensor_inputs")
+    if tensor_inputs is None:
+      tensor_inputs = make_tensor_inputs(self.vision_input_shapes, self.policy_input_shapes, self.frame_skip, device=self.QUEUE_DEV)
+    self.npy, npy_tensors = make_npy_inputs(self.policy_input_shapes)
+    self.input_queues = {**tensor_inputs, **npy_tensors}
     self.full_frames: dict[str, Tensor] = {}
     self._blob_cache: dict[tuple[str, int], Tensor] = {}
     self.parser = Parser()
