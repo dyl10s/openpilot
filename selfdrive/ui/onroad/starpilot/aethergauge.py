@@ -10,22 +10,27 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.selfdrive.ui.onroad.starpilot.starpilot_border import _csc_state, _intensity, _glow_color
 
 
+# --- Scale factor (single knob for all pixel-space dimensions) ---
+
+SCALE = 1.5
+
+
 # --- Named constants ---
 
 X_MIN = 3.0
 X_MAX = 60.0
 PATH_Y_FAR_SCALE = 1800.0
 PERSPECTIVE_GAIN = 0.35
-PERSPECTIVE_MAX_OFFSET = 26.0
+PERSPECTIVE_MAX_OFFSET = 26.0 * SCALE
 PERSPECTIVE_EXPONENT = 1.8
 
-ROAD_HEIGHT = 80.0
-ROAD_SEGMENTS = 16
-ROAD_W_BOTTOM = 22.0
-ROAD_W_TOP = 14.0
-ROAD_THICKNESS = 4.0
-ROAD_HALF_SIZE = 40.0
-ROAD_EDGE_INSET = 2.0
+ROAD_HEIGHT = 80.0 * SCALE
+ROAD_SEGMENTS = 24
+ROAD_W_BOTTOM = 22.0 * SCALE
+ROAD_W_TOP = 14.0 * SCALE
+ROAD_THICKNESS = 4.0 * SCALE
+ROAD_HALF_SIZE = 40.0 * SCALE
+ROAD_EDGE_INSET = 2.0 * SCALE
 FILL_ALPHA = 35
 
 MIN_SPEED_FOR_TIME = 0.3
@@ -36,7 +41,7 @@ STOP_SNAP_THRESHOLD = 0.5
 STOP_LERP_RATE = 0.25
 STOP_DISTANCE_MAX = 60.0
 
-CHEVRON_COUNT = 4
+CHEVRON_COUNT = 6
 CHEVRON_SPACING = 0.3
 CHEVRON_STEP = 0.05
 
@@ -354,14 +359,14 @@ class AetherGauge:
       return
 
     cx = rect.x + rect.width / 2
-    cy_speed = rect.y + 180
+    cy_speed = rect.y + 180 * SCALE
 
     speed_text = str(round(current_speed))
-    speed_text_size = measure_text_cached(font_bold, speed_text, 176)
-    icon_cx = cx - speed_text_size.x / 2 - 70.0
+    speed_text_size = measure_text_cached(font_bold, speed_text, int(176 * SCALE))
+    icon_cx = cx - speed_text_size.x / 2 - 70.0 * SCALE
 
     if data.indicator_type in (IndicatorType.ROAD_CURVE, IndicatorType.FORCE_STOP, IndicatorType.LEAD, IndicatorType.STOP_LIGHT):
-      self._render_unified_road(rect, icon_cx, cy_speed - 39.5, data, font_bold, font_medium)
+      self._render_unified_road(rect, icon_cx, cy_speed - 39.5 * SCALE, data, font_bold, font_medium)
 
   def _render_unified_road(self, rect: rl.Rectangle, icx: float, icy: float, data: AetherGaugeData, font_bold: rl.Font, font_medium: rl.Font):
     bottom = icy + ROAD_HALF_SIZE
@@ -427,16 +432,16 @@ class AetherGauge:
     fade = 1.0 - t * 0.5
     glow_a = int(150 * fade)
 
-    rl.draw_line_ex(p_left, p_right, max(3.0, 7.0 * fade), _with_alpha(COLOR_STOP_LINE_GLOW, glow_a))
-    rl.draw_line_ex(p_left, p_right, max(1.5, 3.5 * fade), COLOR_STOP_LINE_CORE)
+    rl.draw_line_ex(p_left, p_right, max(3.0 * SCALE, 7.0 * SCALE * fade), _with_alpha(COLOR_STOP_LINE_GLOW, glow_a))
+    rl.draw_line_ex(p_left, p_right, max(1.5 * SCALE, 3.5 * SCALE * fade), COLOR_STOP_LINE_CORE)
 
   def _draw_lead_car(self, icx: float, bottom: float, data: AetherGaugeData):
     t_lead, cx_lead, cy_lead = _road_xy(data.indicator_value, icx, bottom, data)
     t_lead = max(0.15, min(0.85, t_lead))
 
-    scale = 0.45 + (1.0 - t_lead) * 0.55
-    W_car = 30.0 * scale
-    H_car = 18.0 * scale
+    car_scale = 0.45 + (1.0 - t_lead) * 0.55
+    W_car = 30.0 * SCALE * car_scale
+    H_car = 18.0 * SCALE * car_scale
 
     is_stopped = data.indicator_extra == "stopped"
     is_slower = data.indicator_extra == "slower"
@@ -510,8 +515,8 @@ class AetherGauge:
       cx_t = icx + offset_t
       cy_t = bottom - t * ROAD_HEIGHT
 
-      chevron_w = 12.0 - t * 5.0
-      chevron_thick = max(1.5, 3.5 - t * 1.5)
+      chevron_w = 12.0 * SCALE - t * 5.0 * SCALE
+      chevron_thick = max(1.5 * SCALE, 3.5 * SCALE - t * 1.5 * SCALE)
       lx = cx_t - chevron_w
       rx = cx_t + chevron_w
 
@@ -547,9 +552,9 @@ class AetherGauge:
       dir_right_x = -dir_up_y
       dir_right_y = dir_up_x
 
-      chevron_w = max(2.0, 14.0 - t * 6.0)
+      chevron_w = max(2.0 * SCALE, 14.0 * SCALE - t * 6.0 * SCALE)
       chevron_h = chevron_w * 0.6
-      chevron_thick = max(2.0, 4.0 - t * 2.0)
+      chevron_thick = max(2.0 * SCALE, 4.0 * SCALE - t * 2.0 * SCALE)
 
       lx = cx_t - dir_right_x * chevron_w - dir_up_x * chevron_h
       ly = cy_t - dir_right_y * chevron_w - dir_up_y * chevron_h
@@ -571,26 +576,26 @@ class AetherGauge:
     s_light = 1.0 - t_light
 
     scale_light = 0.6 + (s_light ** 2.0) * 1.4
-    cy_light = cy_road - 35.0 * s_light
-    width = 11.0 * scale_light
-    height = 27.0 * scale_light
+    cy_light = cy_road - 35.0 * SCALE * s_light
+    width = 11.0 * SCALE * scale_light
+    height = 27.0 * SCALE * scale_light
 
     rl.draw_rectangle_rounded(rl.Rectangle(cx_light - width/2, cy_light - height/2 + 1.5, width, height), 0.2, 4, rl.Color(0, 0, 0, 120))
     rect_housing = rl.Rectangle(cx_light - width/2, cy_light - height/2, width, height)
     rl.draw_rectangle_rounded(rect_housing, 0.2, 4, rl.Color(22, 22, 22, 255))
     rl.draw_rectangle_rounded_lines_ex(rect_housing, 0.2, 4, 1.0, rl.Color(80, 80, 80, 255))
 
-    r_bulb = 2.2 * scale_light
-    y_red = cy_light - 7.5 * scale_light
+    r_bulb = 2.2 * SCALE * scale_light
+    y_red = cy_light - 7.5 * SCALE * scale_light
     y_yellow = cy_light
-    y_green = cy_light + 7.5 * scale_light
+    y_green = cy_light + 7.5 * SCALE * scale_light
 
     active_light = data.indicator_extra if data.indicator_extra in ("red", "yellow", "green") else "red"
 
     if active_light == "red":
       glow_pulse = _pulse(5.0)
-      rl.draw_circle_v(rl.Vector2(cx_light, y_red), r_bulb + 3.0 * glow_pulse, rl.Color(255, 30, 60, 45))
-      rl.draw_circle_v(rl.Vector2(cx_light, y_red), r_bulb + 6.0 * glow_pulse, rl.Color(255, 30, 60, 15))
+      rl.draw_circle_v(rl.Vector2(cx_light, y_red), r_bulb + 3.0 * SCALE * glow_pulse, rl.Color(255, 30, 60, 45))
+      rl.draw_circle_v(rl.Vector2(cx_light, y_red), r_bulb + 6.0 * SCALE * glow_pulse, rl.Color(255, 30, 60, 15))
 
     c_red = rl.Color(255, 30, 60, 255) if active_light == "red" else rl.Color(50, 10, 15, 255)
     c_yellow = rl.Color(255, 200, 0, 255) if active_light == "yellow" else rl.Color(50, 40, 0, 255)
@@ -609,10 +614,10 @@ class AetherGauge:
     cx_stop = cx + offset_stop
 
     cy_road = bottom - t_stop_gauge * ROAD_HEIGHT
-    y_sign = cy_road - 25.0 * smoothed_s
+    y_sign = cy_road - 25.0 * SCALE * smoothed_s
 
-    r_min = 6.0
-    r_max = 20.0
+    r_min = 6.0 * SCALE
+    r_max = 20.0 * SCALE
     r_sign = r_min + (smoothed_s ** 2.0) * (r_max - r_min)
 
     shadow_alpha = int(min(120, r_sign * 12))
@@ -639,26 +644,26 @@ class AetherGauge:
       return
 
     if data.is_numeric:
-      val_size = measure_text_cached(font_bold, data.text, 48)
-      val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 12))
-      self._draw_text_with_shadow(font_bold, data.text, val_pos, 48, data.color)
+      val_size = measure_text_cached(font_bold, data.text, int(48 * SCALE))
+      val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 12 * SCALE))
+      self._draw_text_with_shadow(font_bold, data.text, val_pos, int(48 * SCALE), data.color)
 
       if data.reduction_text:
-        red_size = measure_text_cached(font_medium, data.reduction_text, 20)
-        red_x = cx + val_size.x / 2 + 8
-        red_y = bottom + 12 + val_size.y / 2 - red_size.y / 2
+        red_size = measure_text_cached(font_medium, data.reduction_text, int(20 * SCALE))
+        red_x = cx + val_size.x / 2 + 8 * SCALE
+        red_y = bottom + 12 * SCALE + val_size.y / 2 - red_size.y / 2
         red_pos = rl.Vector2(int(red_x), int(red_y))
-        self._draw_text_with_shadow(font_medium, data.reduction_text, red_pos, 20, rl.Color(255, 255, 255, 160))
+        self._draw_text_with_shadow(font_medium, data.reduction_text, red_pos, int(20 * SCALE), rl.Color(255, 255, 255, 160))
 
       if data.unit:
-        unit_y = bottom + 12 + val_size.y + 4
-        unit_size = measure_text_cached(font_medium, data.unit, 16)
+        unit_y = bottom + 12 * SCALE + val_size.y + 4 * SCALE
+        unit_size = measure_text_cached(font_medium, data.unit, int(16 * SCALE))
         unit_pos = rl.Vector2(int(cx - unit_size.x / 2), int(unit_y))
-        self._draw_text_with_shadow(font_medium, data.unit, unit_pos, 16, rl.Color(255, 255, 255, 160))
+        self._draw_text_with_shadow(font_medium, data.unit, unit_pos, int(16 * SCALE), rl.Color(255, 255, 255, 160))
     else:
-      val_size = measure_text_cached(font_bold, data.text, 24)
-      val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 16))
-      self._draw_text_with_shadow(font_bold, data.text, val_pos, 24, data.color)
+      val_size = measure_text_cached(font_bold, data.text, int(24 * SCALE))
+      val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 16 * SCALE))
+      self._draw_text_with_shadow(font_bold, data.text, val_pos, int(24 * SCALE), data.color)
 
   def _draw_text_with_shadow(self, font: rl.Font, text: str, pos: rl.Vector2, size: int, color: rl.Color):
     for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
