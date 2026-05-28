@@ -63,7 +63,7 @@ def test_nav_desires_turn_right_below_lane_change_speed():
   helper = DesireHelper()
   helper.nav_desires_allowed = True
   helper._update_nav_params = lambda: None
-  helper._nav_instruction_state = {"valid": True, "maneuverModifier": "right"}
+  helper._nav_instruction_state = {"valid": True, "maneuverModifier": "right", "maneuverDistance": 10.0}
 
   helper.update(
     make_car_state(vEgo=5.0),
@@ -74,6 +74,23 @@ def test_nav_desires_turn_right_below_lane_change_speed():
   )
 
   assert helper.desire == log.Desire.turnRight
+
+
+def test_nav_desires_turn_right_waits_until_turn_is_close():
+  helper = DesireHelper()
+  helper.nav_desires_allowed = True
+  helper._update_nav_params = lambda: None
+  helper._nav_instruction_state = {"valid": True, "maneuverModifier": "right", "maneuverDistance": 300.0}
+
+  helper.update(
+    make_car_state(vEgo=5.0),
+    True,
+    0.0,
+    make_plan(),
+    make_toggles(minimum_lane_change_speed=10.0),
+  )
+
+  assert helper.desire == log.Desire.none
 
 
 def test_nav_desires_do_not_override_lane_change_state_machine():

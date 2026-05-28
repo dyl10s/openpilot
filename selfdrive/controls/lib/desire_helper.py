@@ -1,5 +1,7 @@
 import json
 
+import numpy as np
+
 from cereal import log
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
@@ -10,6 +12,8 @@ LaneChangeDirection = log.LaneChangeDirection
 
 LANE_CHANGE_SPEED_MIN = 20 * CV.MPH_TO_MS
 LANE_CHANGE_TIME_MAX = 10.
+NAV_TURN_DISTANCE_SPEED_BREAKPOINTS = [0.0, 5.0, 10.0]
+NAV_TURN_DISTANCE_BREAKPOINTS = [20.0, 25.0, 30.0]
 
 DESIRES = {
   LaneChangeDirection.none: {
@@ -103,6 +107,15 @@ class DesireHelper:
       (lane_change_direction == LaneChangeDirection.right and carstate.steeringTorque < 0)
     )
 
+  @staticmethod
+  def _nav_turn_is_imminent(carstate, maneuver_distance):
+    try:
+      distance = float(maneuver_distance)
+    except (TypeError, ValueError):
+      return False
+
+    return distance <= float(np.interp(carstate.vEgo, NAV_TURN_DISTANCE_SPEED_BREAKPOINTS, NAV_TURN_DISTANCE_BREAKPOINTS))
+
   def _navigation_desire(self, carstate, lateral_active, starpilotPlan, starpilot_toggles):
     self._update_nav_params()
     if not self.nav_desires_allowed or not lateral_active or not bool(self._nav_instruction_state.get("valid", False)):
@@ -111,6 +124,8 @@ class DesireHelper:
     modifier = str(self._nav_instruction_state.get("maneuverModifier", ""))
     if modifier == "":
       return log.Desire.none
+
+    maneuver_distance = self._nav_instruction_state.get("maneuverDistance", 0.0)
 
     if modifier == "slightLeft":
       lane_change_direction = LaneChangeDirection.left
@@ -127,10 +142,10 @@ class DesireHelper:
         if self._nav_torque_applied(carstate, lane_change_direction) or nudgeless_allowed:
           return log.Desire.keepRight
     elif modifier in ("left", "sharpLeft"):
-      if not carstate.rightBlinker and not carstate.leftBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill:
+      if not carstate.rightBlinker and not carstate.leftBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill and self._nav_turn_is_imminent(carstate, maneuver_distance):
         return log.Desire.turnLeft
     elif modifier in ("right", "sharpRight"):
-      if not carstate.leftBlinker and not carstate.rightBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill:
+      if not carstate.leftBlinker and not carstate.rightBlindspot and carstate.vEgo < starpilot_toggles.minimum_lane_change_speed and not carstate.standstill and self._nav_turn_is_imminent(carstate, maneuver_distance):
         return log.Desire.turnRight
 
     return log.Desire.none
