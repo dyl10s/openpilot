@@ -58,6 +58,10 @@ NON_LINEAR_TORQUE_PARAMS = {
     "left": [3.8, 0.81, 0.24, 0.0465122],
     "right": [3.8, 0.81, 0.24, 0.0465122],
   },
+  CAR.CHEVROLET_SILVERADO_CC: {
+    "left": [3.8, 0.81, 0.24, 0.0465122],
+    "right": [3.8, 0.81, 0.24, 0.0465122],
+  },
   CAR.CHEVROLET_VOLT: {
     "left": [1.5, 1.0, 0.155, 0.0],
     "right": [1.5, 1.0, 0.155, 0.0],
@@ -456,7 +460,7 @@ class CarInterface(CarInterfaceBase):
         # ACC Bolts use pedal for full longitudinal control, not just SNG.
         ret.flags |= GMFlags.PEDAL_LONG.value
 
-    elif candidate == CAR.CHEVROLET_SILVERADO:
+    elif candidate in (CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_SILVERADO_CC):
       # On the Bolt, the ECM and camera independently check that you are either above 5 kph or at a stop
       # with foot on brake to allow engagement, but this platform only has that check in the camera.
       # TODO: check if this is split by EV/ICE with more platforms in the future

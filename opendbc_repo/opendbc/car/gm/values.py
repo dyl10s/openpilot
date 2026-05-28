@@ -329,6 +329,13 @@ class CAR(Platforms):
     ],
     GMCarSpecs(mass=2994, wheelbase=3.75, steerRatio=16.3, tireStiffnessFactor=1.0),
   )
+  CHEVROLET_SILVERADO_CC = GMPlatformConfig(
+    [
+      GMCarDocs("Chevrolet Silverado 1500 - No-ACC"),
+      GMCarDocs("GMC Sierra 1500 - No-ACC"),
+    ],
+    CHEVROLET_SILVERADO.specs,
+  )
   CHEVROLET_EQUINOX = GMPlatformConfig(
     [GMCarDocs("Chevrolet Equinox 2019-22")],
     GMCarSpecs(mass=1588, wheelbase=2.72, steerRatio=14.4, centerToFrontRatio=0.4),
@@ -554,6 +561,7 @@ CC_ONLY_CAR = {
   CAR.CADILLAC_XT5_CC,
   CAR.CHEVROLET_MALIBU_CC,
   CAR.CHEVROLET_MALIBU_HYBRID_CC,
+  CAR.CHEVROLET_SILVERADO_CC,
 }
 CC_REGEN_PADDLE_CAR = {
   CAR.CHEVROLET_BOLT_CC_2018_2021,
