@@ -353,6 +353,10 @@ class CAR(Platforms):
     [GMCarDocs("Cadillac XT4 2023", "Driver Assist Package")],
     GMCarSpecs(mass=1660, wheelbase=2.78, steerRatio=14.4, centerToFrontRatio=0.4),
   )
+  CADILLAC_XT5 = GMSDGMPlatformConfig(
+    [GMCarDocs("Cadillac XT5 2022", "Driver Assist Package")],
+    CarSpecs(mass=1810, wheelbase=2.86, steerRatio=16.34, centerToFrontRatio=0.5),
+  )
   CADILLAC_XT6 = GMPlatformConfig(
     [GMCarDocs("Cadillac XT6 2020", "Driver Assist Package")],
     GMCarSpecs(mass=2050, wheelbase=2.86, steerRatio=16.5, centerToFrontRatio=0.4),
@@ -383,7 +387,7 @@ class CAR(Platforms):
   )
   CADILLAC_XT5_CC = GMPlatformConfig(
     [GMCarDocs("Cadillac XT5 - No-ACC")],
-    CarSpecs(mass=1810, wheelbase=2.86, steerRatio=16.34, centerToFrontRatio=0.5),
+    CADILLAC_XT5.specs,
   )
   CHEVROLET_EQUINOX_CC = GMPlatformConfig(
     [GMCarDocs("Chevrolet Equinox 2019-22 - No-ACC")],
@@ -527,6 +531,7 @@ ALT_ACCS = {CAR.GMC_YUKON, CAR.GMC_YUKON_CC}
 # We're integrated at the Safety Data Gateway Module on these cars
 SDGM_CAR = {
   CAR.CADILLAC_XT4,
+  CAR.CADILLAC_XT5,
   CAR.CADILLAC_XT6,
   CAR.CHEVROLET_TRAVERSE,
   CAR.CHEVROLET_BLAZER,

@@ -6,6 +6,7 @@ from opendbc.car.hyundai.values import HyundaiFlags, CAR, CarControllerParams, \
                                                    CANFD_SECURITYACCESS_CAR, \
                                                    CANFD_RADAR_LIVE_LONGITUDINAL_CAR, \
                                                    UNSUPPORTED_LONGITUDINAL_CAR, HyundaiSafetyFlags, \
+                                                   HyundaiStarPilotSafetyFlags, \
                                                    hyundai_cancel_button_enables_cruise
 from opendbc.car.hyundai.radar_interface import get_radar_track_config
 from opendbc.car.interfaces import CarInterfaceBase, ACCEL_MIN
@@ -144,7 +145,9 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & HyundaiFlags.CAMERA_SCC:
         ret.safetyConfigs[0].safetyParam |= HyundaiSafetyFlags.CAMERA_SCC.value
 
-      # These cars have the LFA button on the steering wheel
+      # These cars expose an LKAS/LFA steering-wheel button that StarPilot can customize.
+      if 0x391 in fingerprint[0] or ret.flags & HyundaiFlags.CAN_CANFD_BLENDED:
+        ret.safetyConfigs[-1].safetyParam |= HyundaiStarPilotSafetyFlags.HAS_LDA_BUTTON.value
       if ret.flags & HyundaiFlags.CAN_CANFD_BLENDED:
         ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.CAN_CANFD_BLENDED.value
       if hyundai_cancel_button_enables_cruise(candidate):

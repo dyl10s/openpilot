@@ -163,6 +163,30 @@ class TestGMInterface:
     assert car_params.alternativeExperience & ALTERNATIVE_EXPERIENCE.GM_REMAP_CANCEL_TO_DISTANCE
     assert car_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_BOLT_2022_PEDAL.value
 
+  def test_cadillac_xt5_sdgm_sascm_gates_alpha_long(self):
+    CarInterface = interfaces[CAR.CADILLAC_XT5]
+    fingerprint = _empty_fingerprint()
+    fingerprint[0][0xBE] = 6
+
+    stock_params = CarInterface.get_params(CAR.CADILLAC_XT5, fingerprint, [], alpha_long=True, is_release=False,
+                                           docs=False, starpilot_toggles=_test_starpilot_toggles())
+
+    assert stock_params.networkLocation == structs.CarParams.NetworkLocation.fwdCamera
+    assert stock_params.pcmCruise
+    assert stock_params.alphaLongitudinalAvailable is False
+    assert stock_params.openpilotLongitudinalControl is False
+    assert stock_params.safetyConfigs[0].safetyParam & GMSafetyFlags.HW_SDGM.value
+
+    fingerprint[0][0x2FF] = 8
+    sascm_params = CarInterface.get_params(CAR.CADILLAC_XT5, fingerprint, [], alpha_long=True, is_release=False,
+                                           docs=False, starpilot_toggles=_test_starpilot_toggles())
+
+    assert sascm_params.flags & GMFlags.SASCM.value
+    assert sascm_params.alphaLongitudinalAvailable
+    assert sascm_params.openpilotLongitudinalControl
+    assert not sascm_params.pcmCruise
+    assert sascm_params.safetyConfigs[0].safetyParam & GMSafetyFlags.HW_CAM_LONG.value
+
 
 class TestGMCarController:
   def test_dash_speed_spoof_respects_live_stock_acc_toggles(self):
