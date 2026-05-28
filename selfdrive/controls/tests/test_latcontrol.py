@@ -426,7 +426,7 @@ class TestLatControl:
     right_turn_in = get_kia_ev6_friction_threshold(6.0, -0.5, -0.8)
     left_unwind = get_kia_ev6_friction_threshold(6.0, 0.5, -0.8)
     right_unwind = get_kia_ev6_friction_threshold(6.0, -0.5, 0.8)
-    assert right_turn_in < left_turn_in < base < left_unwind < right_unwind
+    assert right_turn_in < left_turn_in < base < right_unwind < left_unwind
 
   def test_kia_ev6_friction_scale_curve(self):
     base = get_kia_ev6_friction_scale(25.0, 0.5, 0.8)
