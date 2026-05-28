@@ -382,6 +382,11 @@ class StarPilotLongitudinalTuneLayout(_SettingsPage):
                    get_state=lambda: self._params.get_bool("TacoTune"),
                    set_state=lambda s: self._params.put_bool("TacoTune", s),
                    visible=self._longitudinal_enabled),
+        SettingRow("NavLongitudinalAllowed", "toggle", tr_noop("Use Route Speed Control"),
+                   subtitle=tr_noop("Allow an active navigation route to reduce cruise speed for upcoming turns, ramps, and roundabouts."),
+                   get_state=lambda: self._params.get_bool("NavLongitudinalAllowed"),
+                   set_state=lambda s: self._params.put_bool("NavLongitudinalAllowed", s),
+                   visible=self._longitudinal_enabled),
       ], column_pair="detection_tune"),
     ]
     self._manager_view = AetherSettingsView(

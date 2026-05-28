@@ -263,6 +263,7 @@ class Navigationd:
       "maneuverDistance": float(payload.get("maneuverDistance") or 0.0),
       "nextManeuverType": str(next_maneuver.get("type") or ""),
       "nextManeuverModifier": str(next_maneuver.get("modifier") or ""),
+      "nextManeuverDistance": float(next_maneuver.get("distance") or 0.0),
     }
     if state != self._last_nav_state:
       self.params_memory.put_nonblocking("NavInstructionState", state)

@@ -1032,6 +1032,14 @@
         "parent_key": "LongitudinalTune"
       },
       {
+        "key": "NavLongitudinalAllowed",
+        "label": "Use Route Speed Control",
+        "description": "Allow an active navigation route to reduce cruise speed for upcoming turns, ramps, and roundabouts.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "LongitudinalTune"
+      },
+      {
         "key": "QOLLongitudinal",
         "label": "Quality of Life",
         "description": "Miscellaneous acceleration and braking control changes to fine-tune how openpilot drives.",
