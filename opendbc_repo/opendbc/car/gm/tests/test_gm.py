@@ -132,6 +132,30 @@ class TestGMInterface:
     assert "ECMAcceleratorPos" not in pt_parser.vl
     assert "EBCMBrakePedalPosition" in pt_parser.vl
 
+  @parameterized.expand(VOLT_CARS)
+  def test_volt_bsm_is_enabled_without_fingerprint_match(self, car_model):
+    CarInterface = interfaces[car_model]
+    car_params = CarInterface.get_params(car_model, _empty_fingerprint(), [], alpha_long=False, is_release=False, docs=False,
+                                         starpilot_toggles=_test_starpilot_toggles())
+
+    assert car_params.enableBsm
+
+  def test_volt_bsm_parser_is_optional(self):
+    cp = SimpleNamespace(
+      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
+      networkLocation=structs.CarParams.NetworkLocation.fwdCamera,
+      flags=0,
+      transmissionType=structs.CarParams.TransmissionType.direct,
+      enableGasInterceptorDEPRECATED=False,
+      enableBsm=True,
+    )
+
+    pt_parser = GMCarState.get_can_parsers(cp)[Bus.pt]
+    bsm_addr = pt_parser.dbc.name_to_msg["BCMBlindSpotMonitor"].address
+
+    assert "BCMBlindSpotMonitor" in pt_parser.vl
+    assert pt_parser.message_states[bsm_addr].ignore_alive
+
   def test_volt_ascm_cam_parser_includes_optional_aeb_cmd(self):
     cam_parser = GMCarState.get_can_parsers(SimpleNamespace(
       carFingerprint=CAR.CHEVROLET_VOLT_ASCM,

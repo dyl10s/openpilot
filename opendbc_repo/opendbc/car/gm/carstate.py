@@ -438,7 +438,7 @@ class CarState(CarStateBase):
         ("ASCMSteeringButton", 33),
       ]
       if CP.enableBsm:
-        pt_messages.append(("BCMBlindSpotMonitor", 10))
+        pt_messages.append(("BCMBlindSpotMonitor", 0))
 
     if CP.flags & GMFlags.NO_ACCELERATOR_POS_MSG.value:
       if ("ECMAcceleratorPos", 80) in pt_messages:
@@ -480,7 +480,7 @@ class CarState(CarStateBase):
           ("ASCMSteeringButton", 33),
         ]
         if CP.enableBsm:
-          cam_messages.append(("BCMBlindSpotMonitor", 10))
+          cam_messages.append(("BCMBlindSpotMonitor", 0))
       elif CP.carFingerprint in ASCM_INT:
         # Volt/ASCM-int variants don't reliably have AEBCmd present at startup,
         # but when it appears we still want to surface OEM AEB state.

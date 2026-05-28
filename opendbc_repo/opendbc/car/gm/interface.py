@@ -93,6 +93,14 @@ VOLT_LONG_TEST_TUNE_CARS = {
   CAR.CHEVROLET_VOLT_CC,
 }
 
+VOLT_BSM_CARS = {
+  CAR.CHEVROLET_VOLT,
+  CAR.CHEVROLET_VOLT_2019,
+  CAR.CHEVROLET_VOLT_ASCM,
+  CAR.CHEVROLET_VOLT_CAMERA,
+  CAR.CHEVROLET_VOLT_CC,
+}
+
 BOLT_PEDAL_LONG_CARS = {
   CAR.CHEVROLET_BOLT_CC_2017,
   CAR.CHEVROLET_BOLT_CC_2018_2021,
@@ -209,7 +217,8 @@ class CarInterface(CarInterfaceBase):
     ret.brand = "gm"
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.gm)]
     ret.autoResumeSng = False
-    ret.enableBsm = 0x142 in fingerprint[CanBus.POWERTRAIN]
+    # Some Volt installs don't expose the BSM frame during startup fingerprinting.
+    ret.enableBsm = 0x142 in fingerprint[CanBus.POWERTRAIN] or candidate in VOLT_BSM_CARS
     has_sascm = 0x2FF in fingerprint[CanBus.POWERTRAIN]
     if has_sascm:
       ret.flags |= GMFlags.SASCM.value
