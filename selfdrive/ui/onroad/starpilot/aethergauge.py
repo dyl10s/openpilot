@@ -643,17 +643,18 @@ class AetherGauge:
       val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 12))
       self._draw_text_with_shadow(font_bold, data.text, val_pos, 48, data.color)
 
-      unit_y = bottom + 12 + val_size.y * 0.8
-      if data.unit:
-        unit_size = measure_text_cached(font_medium, data.unit, 20)
-        unit_pos = rl.Vector2(int(cx - unit_size.x / 2), int(unit_y))
-        self._draw_text_with_shadow(font_medium, data.unit, unit_pos, 20, rl.Color(255, 255, 255, 200))
-        unit_y = unit_pos.y
-
       if data.reduction_text:
         red_size = measure_text_cached(font_medium, data.reduction_text, 20)
-        red_pos = rl.Vector2(int(cx - red_size.x / 2), int(unit_y + 18))
-        rl.draw_text_ex(font_medium, data.reduction_text, red_pos, 20, 0, rl.Color(255, 255, 255, 160))
+        red_x = cx + val_size.x / 2 + 8
+        red_y = bottom + 12 + val_size.y / 2 - red_size.y / 2
+        red_pos = rl.Vector2(int(red_x), int(red_y))
+        self._draw_text_with_shadow(font_medium, data.reduction_text, red_pos, 20, rl.Color(255, 255, 255, 160))
+
+      if data.unit:
+        unit_y = bottom + 12 + val_size.y + 4
+        unit_size = measure_text_cached(font_medium, data.unit, 16)
+        unit_pos = rl.Vector2(int(cx - unit_size.x / 2), int(unit_y))
+        self._draw_text_with_shadow(font_medium, data.unit, unit_pos, 16, rl.Color(255, 255, 255, 160))
     else:
       val_size = measure_text_cached(font_bold, data.text, 24)
       val_pos = rl.Vector2(int(cx - val_size.x / 2), int(bottom + 16))
