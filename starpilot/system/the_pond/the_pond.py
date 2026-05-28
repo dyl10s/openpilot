@@ -3444,10 +3444,14 @@ def setup(app):
 
   @app.route("/api/navigation", methods=["GET"])
   def navigation():
-    last_position = json.loads(
-      params.get("LastGPSPosition", encoding="utf8") or
-      "{\"latitude\": 51.276824158421331, \"longitude\": 30.221928335547232, \"altitude\": 111.0}"
-    )
+    last_position_raw = params.get("LastGPSPosition", encoding="utf8") or ""
+    try:
+      last_position = json.loads(last_position_raw) if last_position_raw else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+      last_position = {}
+
+    if not isinstance(last_position, dict):
+      last_position = {}
 
     return {
       "amap1Key": params.get("AMapKey1", encoding="utf8") or "",
@@ -3455,8 +3459,8 @@ def setup(app):
       "destination": params.get("NavDestination", encoding="utf8") or "",
       "isMetric": params.get_bool("IsMetric"),
       "lastPosition": {
-        "latitude": str(last_position["latitude"]),
-        "longitude": str(last_position["longitude"])
+        "latitude": str(last_position.get("latitude", "")),
+        "longitude": str(last_position.get("longitude", ""))
       },
       "mapboxPublic": params.get("MapboxPublicKey", encoding="utf8") or "",
       "mapboxSecret": params.get("MapboxSecretKey", encoding="utf8") or "",
