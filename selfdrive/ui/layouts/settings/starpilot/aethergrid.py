@@ -2558,7 +2558,6 @@ class ToggleTile(AetherTile):
     title: str,
     get_state: Callable[[], bool],
     set_state: Callable[[bool], None],
-    icon_path: str | None = None,
     bg_color: rl.Color | str | None = None,
     desc: str = "",
     is_enabled: Callable[[], bool] | None = None,
@@ -2573,7 +2572,6 @@ class ToggleTile(AetherTile):
     self.get_state = get_state
     self.set_state = set_state
     self.set_enabled(is_enabled or True)
-    self._icon = starpilot_texture(icon_path, 80, 80) if icon_path else None
     self._font = gui_app.font(FontWeight.BOLD)
     self._font_desc = gui_app.font(FontWeight.NORMAL)
     self._active_color = self.surface_color
@@ -2607,7 +2605,6 @@ class ToggleTile(AetherTile):
     self._draw_signal_edge(face, self._active_color if enabled and active else self.surface_color, width=TILE_SIGNAL_WIDTH, alpha=62 if enabled and active else 28)
     self._render_tile_stack(
       face,
-      icon=self._icon,
       title=self.title,
       primary=state_text,
       desc=self.desc,
@@ -2625,7 +2622,6 @@ class ValueTile(AetherTile):
     title: str,
     get_value: Callable[[], str],
     on_click: Callable,
-    icon_path: str | None = None,
     bg_color: rl.Color | str | None = None,
     is_enabled: Callable[[], bool] | None = None,
     desc: str = "",
@@ -2635,7 +2631,6 @@ class ValueTile(AetherTile):
     self.desc = desc
     self.get_value = get_value
     self.set_enabled(is_enabled or (lambda: True))
-    self._icon = starpilot_texture(icon_path, 80, 80) if icon_path else None
     self._font = gui_app.font(FontWeight.BOLD)
     self._font_desc = gui_app.font(FontWeight.NORMAL)
     self._active_color = self.surface_color
@@ -2652,7 +2647,6 @@ class ValueTile(AetherTile):
     self._draw_signal_edge(face, self._active_color if enabled else self._disabled_color, width=TILE_SIGNAL_WIDTH, alpha=38 if enabled else 20)
     self._render_tile_stack(
       face,
-      icon=self._icon,
       title=self.title,
       primary=val_text,
       desc=self.desc,
@@ -2676,7 +2670,6 @@ class SliderTile(AetherTile):
         min_val: float,
         max_val: float,
         step: float,
-        icon_path: str | None = None,
         bg_color: rl.Color | str | None = None,
         is_enabled: Callable[[], bool] | None = None,
         desc: str = "",
@@ -2696,7 +2689,6 @@ class SliderTile(AetherTile):
         self.labels = labels or {}
         self.on_test = on_test
         self.set_enabled(is_enabled or (lambda: True))
-        self._icon = starpilot_texture(icon_path, 80, 80) if icon_path else None
         self._font = gui_app.font(FontWeight.BOLD)
         self._font_desc = gui_app.font(FontWeight.NORMAL)
         self._active_color = self.surface_color
@@ -2795,7 +2787,6 @@ class SliderTile(AetherTile):
         val_str = self.labels.get(current_val, f"{int(current_val)}{self.unit}")
         self._render_tile_stack(
             face,
-            icon=self._icon,
             title=self.title,
             primary=val_str,
             desc=self.desc,

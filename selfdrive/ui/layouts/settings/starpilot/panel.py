@@ -140,10 +140,10 @@ class StarPilotPanel(Widget):
                 setter(state)
                 self._rebuild_grid()
 
-            return ToggleTile(title=tr(cat["title"]), get_state=cat["get_state"], set_state=on_toggle, icon_path=cat.get("icon"), bg_color=cat.get("color"), desc=tr(cat.get("desc", "")), is_enabled=cat.get("is_enabled"), disabled_label=cat.get("disabled_label", ""))
+            return ToggleTile(title=tr(cat["title"]), get_state=cat["get_state"], set_state=on_toggle, bg_color=cat.get("color"), desc=tr(cat.get("desc", "")), is_enabled=cat.get("is_enabled"), disabled_label=cat.get("disabled_label", ""))
 
         if tile_type == "value":
-            return ValueTile(title=tr(cat["title"]), get_value=cat["get_value"], on_click=cat["on_click"], icon_path=cat.get("icon"), bg_color=cat.get("color"), is_enabled=cat.get("is_enabled"), desc=tr(cat.get("desc", "")))
+            return ValueTile(title=tr(cat["title"]), get_value=cat["get_value"], on_click=cat["on_click"], bg_color=cat.get("color"), is_enabled=cat.get("is_enabled"), desc=tr(cat.get("desc", "")))
 
         if tile_type == "slider":
             return SliderTile(
@@ -155,7 +155,6 @@ class StarPilotPanel(Widget):
                 step=cat["step"],
                 unit=cat.get("unit", ""),
                 labels=cat.get("labels", {}),
-                icon_path=cat.get("icon"),
                 bg_color=cat.get("color"),
                 is_enabled=cat.get("is_enabled"),
                 desc=tr(cat.get("desc", "")),
