@@ -11,6 +11,7 @@ from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget, DialogResult
 from openpilot.system.ui.widgets.label import gui_label
 from openpilot.selfdrive.ui.layouts.settings.starpilot.asset_loader import starpilot_texture
+from openpilot.selfdrive.ui.layouts.settings.starpilot.scribble import draw_custom_icon
 
 
 GEOMETRY_OFFSET = 10
@@ -2338,6 +2339,9 @@ class AetherTile(Widget):
       "desc_bottom": desc_y + desc_block,
     }
 
+  def _draw_custom_icon(self, key: str, x: float, y: float, s: float, color: rl.Color):
+    draw_custom_icon(key, x, y, s, color)
+
   def _render_tile_stack(
     self,
     face: rl.Rectangle,
@@ -2352,6 +2356,7 @@ class AetherTile(Widget):
     title_size: int,
     primary_size: int,
     desc_size: int = 18,
+    custom_icon_key: str | None = None,
   ):
     content_pad = SPACING.tile_content
     max_w = face.width - (content_pad * 2)
@@ -2360,8 +2365,14 @@ class AetherTile(Widget):
     primary_size = max(18, int(round(primary_size * scale)))
     desc_size = max(14, int(round(desc_size * scale)))
     title_lines = self._wrap_text(title_font, title, max_w, title_size, max_lines=2)
-    icon_scale = min(0.80, max(0.56, scale * 0.72)) if icon else 0.0
-    icon_height = (icon.height * icon_scale) if icon else 0.0
+    has_icon = (icon is not None) or (custom_icon_key is not None)
+    icon_scale = min(0.80, max(0.56, scale * 0.72)) if has_icon else 0.0
+    if custom_icon_key:
+      icon_height = 100.0 * icon_scale
+    elif icon:
+      icon_height = icon.height * icon_scale
+    else:
+      icon_height = 0.0
     desc_lines = self._wrap_text(desc_font, desc, max_w, desc_size, max_lines=3) if desc else []
     layout = self._measure_tile_stack(
       face,
@@ -2373,7 +2384,11 @@ class AetherTile(Widget):
       desc_size=desc_size,
     )
 
-    if icon:
+    if custom_icon_key:
+      icon_width = 100.0 * icon_scale
+      icon_x = face.x + (face.width - icon_width) / 2
+      self._draw_custom_icon(custom_icon_key, icon_x, layout["top"], icon_scale * 1.6667, rl.WHITE)
+    elif icon:
       icon_width = icon.width * icon_scale
       icon_x = face.x + (face.width - icon_width) / 2
       rl.draw_texture_pro(
@@ -2440,8 +2455,12 @@ class HubTile(AetherTile):
     self.get_status = get_status
     self.title = title
     self.desc = desc
+    self.custom_icon_key = None
     if icon_path:
-      if starpilot_icon:
+      if icon_path in ["sound", "steering", "navigate", "system", "display", "vehicle"]:
+        self.custom_icon_key = icon_path
+        self._icon = None
+      elif starpilot_icon:
         self._icon = starpilot_texture(icon_path, 100, 100)
       else:
         self._icon = gui_app.texture(icon_path, 100, 100)
@@ -2482,6 +2501,7 @@ class HubTile(AetherTile):
       desc_font=self._font_desc,
       title_size=30,
       primary_size=18,
+      custom_icon_key=self.custom_icon_key,
     )
 
 
