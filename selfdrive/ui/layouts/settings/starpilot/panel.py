@@ -267,44 +267,6 @@ def create_tile_panel(categories: list[dict], sub_panels: dict[str, Widget] | No
     return panel
 
 
-def create_master_toggle_panel(toggle_specs: list[dict], sub_panels: dict[str, Widget] | None = None,
-                                extra_categories: list[dict] | None = None) -> StarPilotPanel:
-    panel = create_tile_panel([], sub_panels)
-    categories: list[dict] = []
-
-    for spec in toggle_specs:
-        get_state = spec["get_state"]
-        visible = spec.get("visible")
-        manage_enabled = spec.get("manage_enabled", get_state)
-
-        categories.append({
-            "title": spec["title"],
-            "desc": spec.get("desc", ""),
-            "type": "toggle",
-            "get_state": get_state,
-            "set_state": spec["set_state"],
-            "icon": spec.get("icon"),
-            "color": spec.get("color"),
-            "visible": visible,
-        })
-
-        categories.append({
-            "title": spec.get("manage_title", "Settings"),
-            "desc": spec.get("manage_desc", ""),
-            "type": "value",
-            "get_value": lambda enabled=get_state, active_label=spec.get("manage_label", "Manage"), inactive_label=spec.get("disabled_label", "Enable First"): tr(active_label) if enabled() else tr(inactive_label),
-            "on_click": lambda sub_panel=spec["panel"]: panel._navigate_to(sub_panel),
-            "is_enabled": manage_enabled,
-            "icon": spec.get("manage_icon", spec.get("icon")),
-            "color": spec.get("color"),
-            "visible": visible,
-        })
-
-    panel.CATEGORIES = categories + list(extra_categories or [])
-    panel._rebuild_grid()
-    return panel
-
-
 # ═══════════════════════════════════════════════════════════════
 # _SettingsPage — shared base for AetherSettingsView-backed panels
 # ═══════════════════════════════════════════════════════════════
