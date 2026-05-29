@@ -336,6 +336,46 @@ class TestHyundaiFingerprint:
     assert canfd_alt_buttons_cp.flags & HyundaiFlags.CANFD_ALT_BUTTONS
     assert not canfd_alt_buttons_fpcp.redneckCruiseAvailable
 
+  def test_hyundai_full_long_keeps_redneck_cruise_disabled(self, monkeypatch):
+    class FakeParams:
+      def __init__(self, *args, **kwargs):
+        pass
+
+      @staticmethod
+      def get_bool(key):
+        return key == "RedneckCruise"
+
+    toggles = get_test_toggles()
+    monkeypatch.setattr("opendbc.car.interfaces.Params", FakeParams)
+
+    for candidate in (CAR.HYUNDAI_SONATA, CAR.KIA_FORTE):
+      CP = CarInterface.get_params(candidate, gen_empty_fingerprint(), [], True, False, False, toggles)
+      FPCP = CarInterface.get_starpilot_params(candidate, gen_empty_fingerprint(), [], CP, toggles)
+
+      assert CP.openpilotLongitudinalControl
+      assert not FPCP.redneckCruiseAvailable
+      assert FPCP.pcmCruiseSpeed
+
+  def test_hyundai_scc_stock_long_keeps_redneck_cruise_disabled(self, monkeypatch):
+    class FakeParams:
+      def __init__(self, *args, **kwargs):
+        pass
+
+      @staticmethod
+      def get_bool(key):
+        return key == "RedneckCruise"
+
+    toggles = get_test_toggles()
+    monkeypatch.setattr("opendbc.car.interfaces.Params", FakeParams)
+
+    for candidate in (CAR.HYUNDAI_SONATA, CAR.KIA_FORTE, CAR.HYUNDAI_IONIQ_6):
+      CP = CarInterface.get_params(candidate, gen_empty_fingerprint(), [], False, False, False, toggles)
+      FPCP = CarInterface.get_starpilot_params(candidate, gen_empty_fingerprint(), [], CP, toggles)
+
+      assert not CP.openpilotLongitudinalControl
+      assert not FPCP.redneckCruiseAvailable
+      assert FPCP.pcmCruiseSpeed
+
   def test_palisade_2023_pause_resume_button_maps_to_enable(self):
     toggles = get_test_toggles()
     CP = CarInterface.get_params(CAR.HYUNDAI_PALISADE_2023, gen_empty_fingerprint(), [], True, False, False, toggles)

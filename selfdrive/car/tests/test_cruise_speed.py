@@ -309,7 +309,7 @@ class TestVCruiseHelper:
 class TestVCruiseHelperRedneck:
   def setup_method(self):
     self.CP = car.CarParams(pcmCruise=True)
-    self.FPCP = SimpleNamespace(pcmCruiseSpeed=False)
+    self.FPCP = SimpleNamespace(pcmCruiseSpeed=False, redneckCruiseAvailable=True)
     self.v_cruise_helper = VCruiseHelper(self.CP, self.FPCP)
     self.starpilot_toggles = SimpleNamespace(
       cruise_increase=1,

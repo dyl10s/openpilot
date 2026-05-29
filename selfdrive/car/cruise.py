@@ -41,7 +41,9 @@ class VCruiseHelper:
     self.button_change_states = {btn: {"standstill": False, "enabled": False} for btn in self.button_timers}
 
     self.gm_cc_only = self.CP.carFingerprint in CC_ONLY_CAR and self.CP.flags & GMFlags.CC_LONG.value
-    self.redneck_non_pcm = bool(FPCP is not None and not getattr(FPCP, "pcmCruiseSpeed", True))
+    self.redneck_non_pcm = bool(FPCP is not None and
+                                getattr(FPCP, "redneckCruiseAvailable", False) and
+                                not getattr(FPCP, "pcmCruiseSpeed", True))
 
   def _get_short_press_delta(self, is_metric, starpilot_toggles: SimpleNamespace) -> float:
     base_delta = 1. if is_metric else IMPERIAL_INCREMENT
