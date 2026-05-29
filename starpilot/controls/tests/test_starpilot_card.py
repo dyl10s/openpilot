@@ -94,6 +94,27 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
   assert ret.pauseLateral is False
 
 
+def test_hyundai_lkas_button_still_toggles_aol_with_cruise_button_events(monkeypatch, tmp_path):
+  monkeypatch.setattr(spc, "Params", FakeParams)
+  monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)
+  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
+
+  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai"), SimpleNamespace(alternativeExperience=0))
+
+  car_state = make_car_state(button_events=[
+    SimpleNamespace(type=spc.ButtonType.decelCruise, pressed=True),
+    SimpleNamespace(type=spc.ButtonType.lkas, pressed=True),
+  ])
+  starpilot_car_state = SimpleNamespace(distancePressed=False)
+  sm = make_sm()
+  toggles = make_toggles(always_on_lateral_lkas=True)
+
+  ret = card.update(car_state, starpilot_car_state, sm, toggles)
+
+  assert ret.alwaysOnLateralAllowed is True
+  assert ret.pauseLateral is False
+
+
 def test_honda_lkas_button_pauses_lateral_when_cruise_is_active(monkeypatch, tmp_path):
   monkeypatch.setattr(spc, "Params", FakeParams)
   monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)

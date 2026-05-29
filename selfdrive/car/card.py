@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import copy
 import math
 import os
 import time
@@ -216,12 +217,17 @@ class Car:
     if self.CP.brand == 'mock':
       CS, FPCS = self.mock_carstate.update(CS, FPCS)
 
-    self._filter_redneck_button_events(CS)
-
     # Update radar tracks from CAN
     RD: structs.RadarDataT | None = self.RI.update(can_list)
 
     self.sm.update(0)
+
+    self._advance_redneck_button_feedback_filter()
+    original_button_events = CS.buttonEvents
+    filtered_button_events = self._get_filtered_redneck_button_events(CS)
+    using_filtered_button_events = filtered_button_events is not original_button_events
+    if using_filtered_button_events:
+      CS.buttonEvents = filtered_button_events
 
     can_rcv_valid = len(can_strs) > 0
 
@@ -278,6 +284,9 @@ class Car:
       self.resume_prev_button = True
     elif any(be.type in (ButtonType.decelCruise, ButtonType.setCruise) for be in CS.buttonEvents):
       self.resume_prev_button = False
+
+    if using_filtered_button_events:
+      CS.buttonEvents = original_button_events
 
     FPCS = self.starpilot_card.update(CS, FPCS, self.sm, self.starpilot_toggles)
 
@@ -382,6 +391,13 @@ class Car:
     if self.redneck_cruise is None:
       return
 
+    original_button_events = CS.buttonEvents
+    filtered_button_events = self._get_filtered_redneck_button_events(CS)
+    using_filtered_button_events = filtered_button_events is not original_button_events
+    if using_filtered_button_events:
+      CS = copy.copy(CS)
+      CS.buttonEvents = filtered_button_events
+
     send_button, v_target = self.redneck_cruise.run(CS, CC, self._get_redneck_target_speed(CS), self.is_metric)
     self.CI.CS.redneck_send_button = send_button
     self.CI.CS.redneck_v_target = v_target
@@ -405,24 +421,30 @@ class Car:
 
     return fallback_target_speed
 
-  def _filter_redneck_button_events(self, CS: car.CarState) -> None:
+  def _advance_redneck_button_feedback_filter(self) -> None:
     if self.redneck_cruise is None:
       return
 
     for button_type in self.redneck_button_event_filter_frames:
       self.redneck_button_event_filter_frames[button_type] = max(0, self.redneck_button_event_filter_frames[button_type] - 1)
 
-    if len(CS.buttonEvents) == 0:
-      return
+  def _get_filtered_redneck_button_events(self, CS: car.CarState):
+    if self.redneck_cruise is None or len(CS.buttonEvents) == 0:
+      return CS.buttonEvents
+
+    if not any(self.redneck_button_event_filter_frames.values()):
+      return CS.buttonEvents
 
     filtered_button_events = []
+    filtered_any = False
     for event in CS.buttonEvents:
       button_type = event.type.raw if hasattr(event.type, "raw") else int(event.type)
       if self.redneck_button_event_filter_frames.get(button_type, 0) > 0:
+        filtered_any = True
         continue
       filtered_button_events.append(event)
 
-    CS.buttonEvents = filtered_button_events
+    return filtered_button_events if filtered_any else CS.buttonEvents
 
   def _record_redneck_button_feedback_filter(self) -> None:
     if self.redneck_cruise is None:
