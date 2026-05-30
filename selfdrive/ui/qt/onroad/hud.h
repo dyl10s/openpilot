@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QPainter>
 #include <QPixmap>
@@ -15,7 +16,8 @@ public:
   HudRenderer();
   void updateState(const UIState &s);
   void draw(QPainter &p, const QRect &surface_rect);
-  bool handleNavigationTap(const QPoint &pos);
+  bool handleNavigationPress(const QPoint &pos);
+  bool handleNavigationRelease(const QPoint &pos);
 
   StarPilotAnnotatedCameraWidget *starpilot_nvg;
 
@@ -30,6 +32,7 @@ private:
   QString formatNavDistance(float distance_m) const;
   QString navigationIconFilename(const QString &maneuver_type, const QString &modifier) const;
   QPixmap getNavigationIcon(const QString &maneuver_type, const QString &modifier, int size);
+  void cancelNavigation();
 
   float speed = 0;
   float set_speed = 0;
@@ -51,6 +54,8 @@ private:
   QString nav_next_modifier;
   QRect nav_hit_rect;
   QHash<QString, QPixmap> nav_icon_cache;
+  QElapsedTimer nav_press_timer;
+  bool nav_press_active = false;
   Params params;
   Params params_memory{"", true};
 };

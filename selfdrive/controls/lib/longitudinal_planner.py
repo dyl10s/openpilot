@@ -224,6 +224,18 @@ FAR_LEAD_COMFORT_BRAKE_CAP_FULL_HEADWAY_MARGIN = 1.00
 FAR_LEAD_COMFORT_BRAKE_CAP_MIN_DECEL = 0.05
 FAR_LEAD_COMFORT_BRAKE_CAP_MAX_DECEL = 0.18
 FAR_LEAD_COMFORT_BRAKE_CAP_FULL_RELAX_DECEL = 0.05
+MATCHED_FOLLOW_TRANSITION_MIN_SPEED = 20.0
+MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN = 0.25
+MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN = 0.75
+MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB = 0.9
+MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE = 0.18
+MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED = 1.75
+MATCHED_FOLLOW_TRANSITION_MIN_TTC = 12.0
+MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP = 0.08
+MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP = 0.18
+MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP = 0.08
+MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP = 0.16
+MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP = 0.10
 TRACKED_VISION_MODEL_FLOOR_MIN_SPEED = 10.0
 TRACKED_VISION_MODEL_FLOOR_MIN_MODEL_PROB = 0.95
 TRACKED_VISION_MODEL_FLOOR_MIN_MODEL_DECEL = 0.80
@@ -1186,6 +1198,74 @@ class LongitudinalPlanner:
     ))
     return -max(0.0, cap_decel - relax_decel)
 
+  def get_matched_follow_transition_target(self, lead, v_ego, base_t_follow, prev_output_a_target, output_a_target):
+    if lead is None or not lead.status:
+      return None
+    if float(v_ego) < MATCHED_FOLLOW_TRANSITION_MIN_SPEED:
+      return None
+
+    lead_prob = float(getattr(lead, "modelProb", 0.0))
+    if lead_prob < MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB:
+      return None
+
+    lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
+    if lead_brake > MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE:
+      return None
+
+    relative_speed = float(v_ego) - float(lead.vLead)
+    if not (STEADY_FOLLOW_BRAKE_CAP_MIN_REL_SPEED <= relative_speed <= STEADY_FOLLOW_SMOOTHING_MAX_CLOSING_SPEED):
+      return None
+
+    closing_speed = max(0.0, relative_speed)
+    if closing_speed > MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED:
+      return None
+
+    ttc = float(lead.dRel) / max(closing_speed, 0.1) if closing_speed > 0.1 else float("inf")
+    if ttc < MATCHED_FOLLOW_TRANSITION_MIN_TTC:
+      return None
+
+    actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
+    headway_margin = actual_headway - float(base_t_follow)
+    if headway_margin < MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN:
+      return None
+    if actual_headway > float(base_t_follow) + STEADY_FOLLOW_BRAKE_CAP_MAX_HEADWAY_ABOVE_TARGET:
+      return None
+
+    target_delta = float(output_a_target) - float(prev_output_a_target)
+    if abs(target_delta) < 1e-3:
+      return None
+
+    headway_factor = float(np.clip(
+      (headway_margin - MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN) /
+      max(MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN - MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN, 1e-3),
+      0.0,
+      1.0,
+    ))
+
+    positive_step = float(np.interp(
+      max(float(lead.vLead) - float(v_ego), 0.0),
+      [0.0, 1.0],
+      [MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP, MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP],
+    ))
+    negative_step = float(np.interp(
+      closing_speed,
+      [0.0, MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED],
+      [MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP, MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP],
+    ))
+
+    # The more space we still have, the less abrupt the comfort path should be.
+    positive_step = float(np.interp(headway_factor, [0.0, 1.0], [positive_step, MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP]))
+    negative_step = float(np.interp(headway_factor, [0.0, 1.0], [negative_step, MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP]))
+
+    if float(prev_output_a_target) * float(output_a_target) < 0.0:
+      positive_step = min(positive_step, MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP)
+      negative_step = min(negative_step, MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP)
+
+    lower = float(prev_output_a_target) - negative_step
+    upper = float(prev_output_a_target) + positive_step
+    smoothed_target = float(np.clip(output_a_target, lower, upper))
+    return smoothed_target if abs(smoothed_target - float(output_a_target)) > 1e-6 else None
+
   def get_tracked_vision_model_brake_floor(self, lead, v_ego, accel_min, t_follow, model_desired):
     if lead is None or not lead.status or bool(getattr(lead, "radar", False)):
       return None
@@ -1885,6 +1965,21 @@ class LongitudinalPlanner:
       if tracked_vision_model_brake_cap is not None:
         self.a_desired = max(self.a_desired, tracked_vision_model_brake_cap)
         output_a_target = max(output_a_target, tracked_vision_model_brake_cap)
+
+    if optional_far_lead_comfort and follow_control_lead is not None and not panic_bypass and not output_should_stop and not vision_low_speed_stop_active:
+      matched_follow_transition_target = self.get_matched_follow_transition_target(
+        follow_control_lead,
+        scene_v_ego,
+        effective_t_follow,
+        prev_output_a_target,
+        output_a_target,
+      )
+      if matched_follow_transition_target is not None:
+        if matched_follow_transition_target < output_a_target:
+          self.a_desired = min(self.a_desired, matched_follow_transition_target)
+        else:
+          self.a_desired = max(self.a_desired, matched_follow_transition_target)
+        output_a_target = matched_follow_transition_target
 
     output_accel_max = no_throttle_output_max if not self.allow_throttle else accel_limits_turns[1]
     output_a_target = float(np.clip(output_a_target, output_accel_min, output_accel_max))

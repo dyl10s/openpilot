@@ -927,10 +927,20 @@ CANCEL_BUTTON_ENABLE_CARS = frozenset({
 })
 
 
-# No classic HKG platforms are currently opted into the synthetic alt-bus LKAS
-# button path. The G90 regression is mitigated by falling back to the standard
-# Hyundai LKAS button handling until a route-proven alt-bus implementation is ready.
-ALT_BUS_LDA_BUTTON_CARS = frozenset()
+# These classic HKG platforms publish the LKAS button on CLU13 over the alt bus.
+# Keep G90 excluded until its alt-bus path is route-proven without the recent
+# engage/disengage regression.
+ALT_BUS_LDA_BUTTON_CARS = frozenset({
+  CAR.HYUNDAI_SONATA,
+  CAR.HYUNDAI_SONATA_HYBRID,
+})
+
+# On these Sonata layouts the alt-bus LKAS button pulses through the CLU13
+# steering-wheel-status field instead of the dedicated LKAS bit.
+ALT_BUS_LDA_BUTTON_SWL_STAT_CARS = frozenset({
+  CAR.HYUNDAI_SONATA,
+  CAR.HYUNDAI_SONATA_HYBRID,
+})
 
 
 def hyundai_cancel_button_enables_cruise(car_fingerprint) -> bool:

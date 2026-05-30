@@ -629,6 +629,43 @@ class TestHyundaiFingerprint:
     ret = update(0, 3)
     assert any(be.type == ButtonType.lkas and not be.pressed for be in ret.buttonEvents)
 
+  def test_sonata_hybrid_uses_alt_bus_lkas_parser(self):
+    toggles = get_test_toggles()
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[0][0x391] = 8
+    fingerprint[1][0x50C] = 8
+    CP = CarInterface.get_params(CAR.HYUNDAI_SONATA_HYBRID, fingerprint, [], False, False, False, toggles)
+    FPCP = CarInterface.get_starpilot_params(CAR.HYUNDAI_SONATA_HYBRID, fingerprint, [], CP, toggles)
+
+    car_state = CarState(CP, FPCP)
+    can_parsers = car_state.get_can_parsers(CP)
+
+    assert Bus.alt in can_parsers
+
+  def test_sonata_hybrid_alt_bus_clu13_lkas_button_event(self):
+    toggles = get_test_toggles()
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[0][0x391] = 8
+    fingerprint[1][0x50C] = 8
+    CP = CarInterface.get_params(CAR.HYUNDAI_SONATA_HYBRID, fingerprint, [], False, False, False, toggles)
+    FPCP = CarInterface.get_starpilot_params(CAR.HYUNDAI_SONATA_HYBRID, fingerprint, [], CP, toggles)
+
+    car_state = CarState(CP, FPCP)
+    can_parsers = car_state.get_can_parsers(CP)
+    packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
+
+    def update(lkas_button: int, frame: int):
+      msg = packer.make_can_msg("CLU13", 1, {
+        "CF_Clu_SWL_Stat": lkas_button,
+      })
+      can_parsers[Bus.alt].update([(frame, [msg])])
+      return car_state.update(can_parsers, toggles)[0]
+
+    update(0, 1)
+    ret = update(4, 2)
+    assert any(be.type == ButtonType.lkas and be.pressed for be in ret.buttonEvents)
+    assert any(be.type == ButtonType.lkas and not be.pressed for be in ret.buttonEvents)
+
   def test_genesis_g90_does_not_use_alt_bus_lkas_parser(self):
     toggles = get_test_toggles()
     CP = CarInterface.get_params(CAR.GENESIS_G90, gen_empty_fingerprint(), [], False, False, False, toggles)

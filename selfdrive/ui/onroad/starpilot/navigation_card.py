@@ -14,6 +14,7 @@ from openpilot.system.ui.widgets import Widget
 
 ASSETS_PATH = Path(__file__).resolve().parents[4] / "starpilot" / "assets" / "navigation"
 FALLBACK_ICON = "direction_turn_straight.png"
+NAV_CANCEL_HOLD_SECONDS = 0.65
 
 
 def _format_distance(distance_m: float, is_metric: bool) -> str:
@@ -77,8 +78,7 @@ class NavigationCardRenderer(Widget):
     self._collapsed_param_supported: bool | None = None
     self._interactive_rect = rl.Rectangle(0, 0, 0, 0)
     self._click_delay = 0.15
-
-    self.set_click_callback(self._toggle_collapsed)
+    self._press_started_at: float | None = None
 
   @property
   def _hit_rect(self) -> rl.Rectangle:
@@ -97,6 +97,45 @@ class NavigationCardRenderer(Widget):
       self._collapsed_param_supported = False
       self._collapsed_fallback = new_state
       self._collapsed = new_state
+
+  def _cancel_navigation(self) -> None:
+    try:
+      ui_state.params.remove("NavDestination")
+    except Exception:
+      pass
+
+    try:
+      ui_state.params_memory.remove("NavInstructionState")
+    except Exception:
+      pass
+
+    try:
+      ui_state.params_memory.remove("NavInstructionCollapsed")
+      self._collapsed_param_supported = True
+    except UnknownKeyName:
+      self._collapsed_param_supported = False
+
+    self._collapsed_fallback = False
+    self._collapsed = False
+    self._valid = False
+
+  def _handle_mouse_press(self, mouse_pos) -> None:
+    self._press_started_at = rl.get_time()
+
+  def _handle_mouse_release(self, mouse_pos) -> None:
+    if self._click_delay is not None:
+      self._click_release_time = rl.get_time() + self._click_delay
+
+    if not self._valid or self._press_started_at is None:
+      self._press_started_at = None
+      return
+
+    held_seconds = rl.get_time() - self._press_started_at
+    self._press_started_at = None
+    if held_seconds >= NAV_CANCEL_HOLD_SECONDS:
+      self._cancel_navigation()
+    else:
+      self._toggle_collapsed()
 
   def _icon_filename(self, maneuver_type: str, modifier: str) -> str:
     normalized_type = _normalize_maneuver_type(maneuver_type)

@@ -9,16 +9,52 @@
 #include "selfdrive/ui/qt/util.h"
 
 constexpr int SET_SPEED_NA = 255;
+constexpr int NAV_CANCEL_HOLD_MS = 650;
 
 HudRenderer::HudRenderer() {}
 
-bool HudRenderer::handleNavigationTap(const QPoint &pos) {
+bool HudRenderer::handleNavigationPress(const QPoint &pos) {
   if (!navigation_valid || !nav_hit_rect.contains(pos)) {
     return false;
   }
 
-  params_memory.putBool("NavInstructionCollapsed", !navigation_collapsed);
+  nav_press_active = true;
+  nav_press_timer.restart();
   return true;
+}
+
+bool HudRenderer::handleNavigationRelease(const QPoint &pos) {
+  if (!nav_press_active) {
+    return false;
+  }
+
+  nav_press_active = false;
+  if (!nav_hit_rect.contains(pos)) {
+    return true;
+  }
+
+  if (nav_press_timer.isValid() && nav_press_timer.elapsed() >= NAV_CANCEL_HOLD_MS) {
+    cancelNavigation();
+  } else {
+    params_memory.putBool("NavInstructionCollapsed", !navigation_collapsed);
+  }
+  return true;
+}
+
+void HudRenderer::cancelNavigation() {
+  params.remove("NavDestination");
+  params_memory.remove("NavInstructionState");
+  params_memory.remove("NavInstructionCollapsed");
+  navigation_valid = false;
+  navigation_collapsed = false;
+  nav_hit_rect = QRect();
+  nav_primary_text.clear();
+  nav_secondary_text.clear();
+  nav_distance.clear();
+  nav_maneuver_type.clear();
+  nav_modifier.clear();
+  nav_next_maneuver_type.clear();
+  nav_next_modifier.clear();
 }
 
 void HudRenderer::updateState(const UIState &s) {

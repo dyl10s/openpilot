@@ -115,6 +115,7 @@ class StarPilotPlanner:
       "speed": v_ego,
       "hasFix": bool(getattr(gps_location, "hasFix", False)),
       "updatedAtMonotonic": time.monotonic(),
+      "updatedAtSec": time.time(),
     }
     self.gps_valid = self.gps_position["hasFix"] and (self.gps_position["latitude"] != 0 or self.gps_position["longitude"] != 0)
     bearing = self.gps_position["bearing"]

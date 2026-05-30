@@ -303,8 +303,7 @@ export function NavDestination() {
       state.destination = JSON.parse(data.destination);
     } catch { }
 
-    state.lastPosition = parseCoordinatePair(data.lastPosition) ??
-      parseCoordinatePair(state.destination);
+    state.lastPosition = parseCoordinatePair(data.lastPosition);
 
     try {
       const prev = JSON.parse(data.previousDestinations);

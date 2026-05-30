@@ -113,7 +113,7 @@ void OnroadWindow::paintEvent(QPaintEvent *event) {
 }
 
 void OnroadWindow::mousePressEvent(QMouseEvent* mouseEvent) {
-  if (nvg->handleHudTap(mouseEvent->pos())) {
+  if (nvg->handleHudPress(mouseEvent->pos())) {
     mouseEvent->accept();
     return;
   }
@@ -126,4 +126,13 @@ void OnroadWindow::mousePressEvent(QMouseEvent* mouseEvent) {
 
   // propagation event to parent(HomeWindow)
   QWidget::mousePressEvent(mouseEvent);
+}
+
+void OnroadWindow::mouseReleaseEvent(QMouseEvent* mouseEvent) {
+  if (nvg->handleHudRelease(mouseEvent->pos())) {
+    mouseEvent->accept();
+    return;
+  }
+
+  QWidget::mouseReleaseEvent(mouseEvent);
 }

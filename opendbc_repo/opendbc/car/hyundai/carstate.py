@@ -8,7 +8,7 @@ from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, HyundaiStarPilotFlags, HyundaiStarPilotSafetyFlags, CAR, DBC, Buttons, CarControllerParams, \
-                                       hyundai_cancel_button_enables_cruise, ALT_BUS_LDA_BUTTON_CARS
+                                       hyundai_cancel_button_enables_cruise, ALT_BUS_LDA_BUTTON_CARS, ALT_BUS_LDA_BUTTON_SWL_STAT_CARS
 from opendbc.car.interfaces import CarStateBase
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -175,8 +175,12 @@ class CarState(CarStateBase):
     return False
 
   def create_alt_bus_lda_button_events(self, cp_source: CANParser) -> list[structs.CarState.ButtonEvent]:
-    raw_lda_button = int(cp_source.vl["CLU13"]["CF_Clu_LdwsLkasSW"])
-    raw_lda_button_ts_nanos = cp_source.ts_nanos["CLU13"]["CF_Clu_LdwsLkasSW"]
+    if self.CP.carFingerprint in ALT_BUS_LDA_BUTTON_SWL_STAT_CARS:
+      raw_lda_button = int(cp_source.vl["CLU13"]["CF_Clu_SWL_Stat"] == 4)
+      raw_lda_button_ts_nanos = cp_source.ts_nanos["CLU13"]["CF_Clu_SWL_Stat"]
+    else:
+      raw_lda_button = int(cp_source.vl["CLU13"]["CF_Clu_LdwsLkasSW"])
+      raw_lda_button_ts_nanos = cp_source.ts_nanos["CLU13"]["CF_Clu_LdwsLkasSW"]
     button_events: list[structs.CarState.ButtonEvent] = []
 
     # Some alt-bus LKAS button layouts pulse several times per physical press burst.

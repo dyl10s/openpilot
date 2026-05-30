@@ -462,6 +462,9 @@ KEYS = {
   "secret": ("secret", "sk.", "MapboxSecretKey", "Secret key", 80),
 }
 
+NAVIGATION_MEMORY_LOCATION_STALE_SECONDS = 10.0
+NAVIGATION_PERSISTED_LOCATION_BOOT_SKEW_SECONDS = 5.0
+
 TMUX_LOGS_PATH = Path("/data/tmux_logs")
 
 MODEL_DOWNLOAD_PARAM = "ModelToDownload"
@@ -472,6 +475,82 @@ MODEL_SORT_MODE_PARAM = "ModelSortMode"
 MODEL_USER_FAVORITES_PARAM = "UserFavorites"
 MAPS_DOWNLOAD_PARAM = "DownloadMaps"
 MAPS_CANCEL_DOWNLOAD_PARAM = "CancelDownloadMaps"
+
+
+def _parse_last_gps_position(raw_value):
+  if not raw_value:
+    return None
+
+  try:
+    payload = json.loads(raw_value)
+  except (TypeError, ValueError, json.JSONDecodeError):
+    return None
+
+  if not isinstance(payload, dict):
+    return None
+
+  latitude = payload.get("latitude")
+  longitude = payload.get("longitude")
+  has_fix = payload.get("hasFix", False)
+  try:
+    latitude = float(latitude or 0.0)
+    longitude = float(longitude or 0.0)
+  except (TypeError, ValueError):
+    return None
+
+  if not has_fix or (abs(latitude) < 1e-6 and abs(longitude) < 1e-6):
+    return None
+
+  payload["latitude"] = latitude
+  payload["longitude"] = longitude
+  return payload
+
+
+def _last_gps_position_is_live(payload):
+  if not isinstance(payload, dict):
+    return False
+
+  try:
+    updated_at_monotonic = float(payload.get("updatedAtMonotonic", 0.0) or 0.0)
+  except (TypeError, ValueError):
+    updated_at_monotonic = 0.0
+
+  if updated_at_monotonic <= 0.0:
+    return False
+
+  return (time.monotonic() - updated_at_monotonic) <= NAVIGATION_MEMORY_LOCATION_STALE_SECONDS
+
+
+def _last_gps_position_is_current_boot(payload):
+  if not isinstance(payload, dict):
+    return False
+
+  try:
+    updated_at_sec = float(payload.get("updatedAtSec", 0.0) or 0.0)
+  except (TypeError, ValueError):
+    updated_at_sec = 0.0
+
+  if updated_at_sec <= 0.0:
+    return False
+
+  now_sec = time.time()
+  boot_started_at_sec = now_sec - time.monotonic()
+  if updated_at_sec > (now_sec + 60.0):
+    return False
+
+  return updated_at_sec >= (boot_started_at_sec - NAVIGATION_PERSISTED_LOCATION_BOOT_SKEW_SECONDS)
+
+
+def _get_navigation_last_position():
+  memory_position = _parse_last_gps_position(params_memory.get("LastGPSPosition", encoding="utf8") or "")
+  if _last_gps_position_is_live(memory_position):
+    return memory_position
+
+  persisted_position = _parse_last_gps_position(params.get("LastGPSPosition", encoding="utf8") or "")
+  if _last_gps_position_is_current_boot(persisted_position):
+    return persisted_position
+
+  return None
 
 FINGERPRINT_MAKE_LABELS = [
   "Acura",
@@ -3444,14 +3523,7 @@ def setup(app):
 
   @app.route("/api/navigation", methods=["GET"])
   def navigation():
-    last_position_raw = params.get("LastGPSPosition", encoding="utf8") or ""
-    try:
-      last_position = json.loads(last_position_raw) if last_position_raw else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-      last_position = {}
-
-    if not isinstance(last_position, dict):
-      last_position = {}
+    last_position = _get_navigation_last_position() or {}
 
     return {
       "amap1Key": params.get("AMapKey1", encoding="utf8") or "",

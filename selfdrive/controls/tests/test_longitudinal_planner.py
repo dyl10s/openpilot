@@ -1748,3 +1748,39 @@ def test_far_lead_soft_brake_cap_limits_high_confidence_distant_vision_lead():
   assert cap is not None
   assert cap > -0.2
   assert cap < -0.05
+
+
+def test_matched_follow_transition_target_damps_large_comfort_sign_flip():
+  v_ego = 20.3
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(status=True, d_rel=45.6, v_lead=19.19, a_lead=0.0, radar=False, model_prob=0.99)
+
+  smoothed = planner.get_matched_follow_transition_target(
+    lead,
+    v_ego,
+    1.45,
+    prev_output_a_target=0.12,
+    output_a_target=-0.40,
+  )
+
+  assert smoothed is not None
+  assert smoothed > -0.05
+  assert smoothed < 0.12
+
+
+def test_matched_follow_transition_target_skips_urgent_closure():
+  v_ego = 31.5
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(status=True, d_rel=35.0, v_lead=28.0, a_lead=0.0, radar=False, model_prob=0.99)
+
+  smoothed = planner.get_matched_follow_transition_target(
+    lead,
+    v_ego,
+    1.45,
+    prev_output_a_target=0.10,
+    output_a_target=-0.60,
+  )
+
+  assert smoothed is None
