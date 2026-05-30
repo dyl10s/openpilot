@@ -247,6 +247,7 @@ class HudRenderer(Widget):
   def render_background(self) -> None:
     """Draw HUD elements that should sit behind alerts."""
     self._draw_speed_limit(self._rect)
+    self._navigation_card.render(self._rect)
 
   def render_foreground(self) -> None:
     """Draw HUD elements that should sit above alerts."""
@@ -256,7 +257,6 @@ class HudRenderer(Widget):
     if self.is_cruise_set:
       self._draw_set_speed(self._rect)
 
-    self._navigation_card.render(self._rect)
     self._draw_steering_wheel(self._rect)
     self._draw_speed_limit_prompt(self._rect)
 
