@@ -114,6 +114,7 @@ void OnroadWindow::paintEvent(QPaintEvent *event) {
 
 void OnroadWindow::mousePressEvent(QMouseEvent* mouseEvent) {
   if (nvg->handleHudPress(mouseEvent->pos())) {
+    grabMouse();
     mouseEvent->accept();
     return;
   }
@@ -129,7 +130,12 @@ void OnroadWindow::mousePressEvent(QMouseEvent* mouseEvent) {
 }
 
 void OnroadWindow::mouseReleaseEvent(QMouseEvent* mouseEvent) {
-  if (nvg->handleHudRelease(mouseEvent->pos())) {
+  const bool handled = nvg->handleHudRelease(mouseEvent->pos());
+  if (QWidget::mouseGrabber() == this) {
+    releaseMouse();
+  }
+
+  if (handled) {
     mouseEvent->accept();
     return;
   }

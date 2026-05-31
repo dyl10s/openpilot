@@ -168,6 +168,9 @@ class NavigationCardRenderer(Widget):
     if not self._enabled:
       return
 
+    if not (ui_state.params.get("NavDestination") or ""):
+      return
+
     raw_state = ui_state.params_memory.get("NavInstructionState") or {}
     if isinstance(raw_state, str):
       try:

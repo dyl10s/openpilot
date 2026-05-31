@@ -107,6 +107,10 @@ void HudRenderer::updateState(const UIState &s) {
     return;
   }
 
+  if (params.get("NavDestination").empty()) {
+    return;
+  }
+
   const std::string nav_state_raw = params_memory.get("NavInstructionState");
   if (nav_state_raw.empty()) {
     return;

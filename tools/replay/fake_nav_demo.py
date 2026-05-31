@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import time
 from itertools import cycle
 
@@ -154,6 +155,15 @@ def build_route(pm: messaging.PubMaster) -> None:
   pm.send("navRoute", msg)
 
 
+def build_destination(scenario: dict) -> dict:
+  return {
+    "place_name": str(scenario["primary"]),
+    "latitude": float(ROUTE_COORDS[-1]["latitude"]),
+    "longitude": float(ROUTE_COORDS[-1]["longitude"]),
+    "routeId": "fake-nav-demo",
+  }
+
+
 def main() -> None:
   parser = argparse.ArgumentParser(description="Publish fake navigation instructions for desktop onroad replay.")
   parser.add_argument("--hold-seconds", type=float, default=3.0, help="How long each maneuver stays active.")
@@ -161,6 +171,7 @@ def main() -> None:
   args = parser.parse_args()
 
   pm = messaging.PubMaster(["navInstruction", "navRoute"])
+  params = Params()
   params_memory = Params(memory=True)
   try:
     params_memory.put_bool("NavInstructionCollapsed", False)
@@ -169,6 +180,7 @@ def main() -> None:
 
   scenario_cycle = cycle(SCENARIOS)
   current = next(scenario_cycle)
+  params.put("NavDestination", json.dumps(build_destination(current)))
   next_switch = time.monotonic() + args.hold_seconds
   print(f"showing: {current['type']} / {current['modifier']} -> {current['next_type']} / {current['next_modifier']}", flush=True)
 
@@ -177,6 +189,7 @@ def main() -> None:
       now = time.monotonic()
       if now >= next_switch:
         current = next(scenario_cycle)
+        params.put("NavDestination", json.dumps(build_destination(current)))
         next_switch = now + args.hold_seconds
         print(f"showing: {current['type']} / {current['modifier']} -> {current['next_type']} / {current['next_modifier']}", flush=True)
 
@@ -185,6 +198,7 @@ def main() -> None:
       build_route(pm)
       time.sleep(args.publish_interval)
   finally:
+    params.remove("NavDestination")
     params_memory.remove("NavInstructionState")
     try:
       params_memory.remove("NavInstructionCollapsed")
