@@ -7,11 +7,12 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pyray as rl
 
 from openpilot.system.hardware import HARDWARE
-from openpilot.system.ui.lib.application import gui_app, FontWeight, MouseEvent, MousePos
+from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.lib.scroll_panel2 import GuiScrollPanel2
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -31,7 +32,6 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   AetherSegmentedControl,
   AetherListColors,
   panel_style_from_color,
-  _point_hits,
   init_list_panel,
   draw_list_group_shell,
   draw_list_scroll_fades,
@@ -41,6 +41,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   draw_settings_panel_header,
   draw_soft_card,
   draw_tab_bar,
+  AetherSliderDialog,
 )
 from openpilot.starpilot.common.connect_server import prepare_konik_server_switch
 
@@ -98,7 +99,7 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
   ACTION_PILL_WIDTH = 132
   DANGER_PILL_WIDTH = 112
 
-  def __init__(self, controller: "StarPilotSystemLayout"):
+  def __init__(self, controller: StarPilotSystemLayout):
     super().__init__()
     self._controller = controller
     self._scroll_panel = GuiScrollPanel2(horizontal=False)
@@ -113,11 +114,13 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
     self._power_slider_keys = ["DeviceShutdown", "LowVoltageShutdown"]
 
     shutdown_labels = {0: tr("5 mins")}
-    for i in range(1, 4): shutdown_labels[i] = f"{i * 15} mins"
-    for i in range(4, 34): shutdown_labels[i] = f"{i - 3} " + (tr("hour") if i == 4 else tr("hours"))
+    for i in range(1, 4):
+      shutdown_labels[i] = f"{i * 15} mins"
+    for i in range(4, 34):
+      shutdown_labels[i] = f"{i - 3} " + (tr("hour") if i == 4 else tr("hours"))
     brightness_labels = {101: tr("Auto"), 0: tr("Off")}
 
-    self._slider_specs = {
+    self._slider_specs: dict[str, dict[str, Any]] = {
       "ScreenBrightness": {
         "title": tr("Offroad Brightness"),
         "subtitle": tr("Primary screen brightness while parked."),
@@ -198,9 +201,10 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
       },
     }
 
+    def make_set_active(k: str):
+      return lambda active: self._show_system_slider(k) if active else None
+
     for key, spec in self._slider_specs.items():
-      on_change = (lambda value, setter=spec["set"]: setter(value)) if spec.get("live") else (lambda _value: None)
-      on_commit = None if spec.get("live") else (lambda value, setter=spec["set"]: setter(value))
       adjustor = self._child(
         AetherAdjustorRow(
           spec["title"],
@@ -209,18 +213,18 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
           spec["max"],
           spec["step"],
           spec["get"],
-          on_change,
-          on_commit=on_commit,
+          on_change=lambda _v: None,
+          on_commit=None,
           unit=spec["unit"],
           labels=spec["labels"],
           presets=spec.get("presets", []),
-          is_active=lambda key=key: self._active_adjustor_key == key,
-          set_active=lambda active, key=key: self._set_active_adjustor(key, active),
+          is_active=lambda: False,
+          set_active=make_set_active(key),
           style=PANEL_STYLE,
           color=PANEL_STYLE.accent,
         )
       )
-      adjustor.set_touch_valid_callback(lambda adjustor=adjustor: self._scroll_panel.is_touch_valid() or adjustor.is_interacting)
+      adjustor.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
       self._adjustor_rows[key] = adjustor
 
     self._toggle_defs = [
@@ -230,13 +234,6 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
         "subtitle": tr("Keep the device ready for faster wake-ups."),
         "get": lambda: self._controller._params.get_bool("StandbyMode"),
         "set": lambda v: self._controller._params.put_bool("StandbyMode", v),
-      },
-      {
-        "id": "IncreaseThermalLimits",
-        "title": tr("Raise Thermal Limits"),
-        "subtitle": tr("Allow the device to run warmer before backing off."),
-        "get": lambda: self._controller._params.get_bool("IncreaseThermalLimits"),
-        "set": lambda v: self._controller._params.put_bool("IncreaseThermalLimits", v),
       },
       {
         "id": "UseKonikServer",
@@ -337,7 +334,7 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
       {
         "id": "device_controls",
         "title": tr("Device Controls"),
-        "toggle_ids": ["StandbyMode", "IncreaseThermalLimits", "UseKonikServer", "DebugMode", "ShowFPS"],
+        "toggle_ids": ["StandbyMode", "UseKonikServer", "DebugMode", "ShowFPS"],
       },
       {
         "id": "uploads_logging",
@@ -396,18 +393,41 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
     spec = self._slider_specs[key]
     current_val = spec["get"]()
     if current_val in spec["labels"]:
-      return spec["labels"][current_val]
+      return str(spec["labels"][current_val])
     if spec["step"] < 1:
       return f"{current_val:.1f}{spec['unit']}"
     return f"{int(current_val)}{spec['unit']}"
 
-  def _set_active_adjustor(self, key: str, active: bool):
-    if active:
-      self._active_adjustor_key = key
-      self._ensure_visible_key = key
-    elif self._active_adjustor_key == key:
-      self._active_adjustor_key = None
-      self._ensure_visible_key = None
+  def _show_system_slider(self, key: str):
+    spec = self._slider_specs[key]
+    original_val = spec["get"]()
+
+    def on_close(res, val):
+      if res == DialogResult.CONFIRM:
+        spec["set"](val)
+      else:
+        if spec.get("live"):
+          spec["set"](original_val)
+
+    def on_change(val):
+      if spec.get("live"):
+        spec["set"](val)
+
+    gui_app.push_widget(
+      AetherSliderDialog(
+        title=spec["title"],
+        min_val=float(spec["min"]),
+        max_val=float(spec["max"]),
+        step=float(spec["step"]),
+        current_val=float(original_val),
+        on_close=on_close,
+        presets=[float(p) for p in spec.get("presets", [])],
+        unit=spec["unit"],
+        labels=spec["labels"],
+        color=PANEL_STYLE.accent,
+        on_change=on_change if spec.get("live") else None,
+      )
+    )
 
   def _set_timeout(self, key: str, value: float):
     self._controller._params.put_int(key, int(value))
@@ -415,9 +435,12 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
 
   def _get_drive_mode_index(self):
     state = self._controller._get_force_drive_state()
-    if state == tr("Default"): return 0
-    if state == tr("Onroad"): return 1
-    if state == tr("Offroad"): return 2
+    if state == tr("Default"):
+      return 0
+    if state == tr("Onroad"):
+      return 1
+    if state == tr("Offroad"):
+      return 2
     return 0
 
   def _on_drive_mode_change(self, idx):
@@ -662,7 +685,11 @@ class SystemSettingsManagerView(AetherInteractiveMixin, Widget):
     toggle_rect = rl.Rectangle(x, y, width, self._section_height(len(toggles), ROW_HEIGHT))
     draw_list_group_shell(toggle_rect, style=PANEL_STYLE)
     for index, toggle_def in enumerate(toggles):
-      self._draw_toggle_row(rl.Rectangle(toggle_rect.x, toggle_rect.y + index * ROW_HEIGHT, toggle_rect.width, ROW_HEIGHT), toggle_def, is_last=index == len(toggles) - 1)
+      self._draw_toggle_row(
+        rl.Rectangle(toggle_rect.x, toggle_rect.y + index * ROW_HEIGHT, toggle_rect.width, ROW_HEIGHT),
+        toggle_def,
+        is_last=index == len(toggles) - 1,
+      )
     return y + toggle_rect.height
 
   def _draw_toggle_row(self, rect: rl.Rectangle, toggle_def: dict, is_last: bool):
@@ -823,7 +850,7 @@ class StarPilotSystemLayout(_SettingsPage):
     threading.Thread(target=refresh_worker, daemon=True).start()
 
   def storage_summary(self) -> str:
-    return self._storage_text
+    return str(self._storage_text)
 
   def backup_count_text(self) -> str:
     count = len(self._get_backups("backups"))
@@ -1003,7 +1030,7 @@ class StarPilotSystemLayout(_SettingsPage):
         gui_app.push_widget(alert_dialog(tr("Error logs deleted.")))
     gui_app.push_widget(ConfirmDialog(tr("Delete all error logs?"), tr("Delete"), callback=_do_delete))
 
-  def _get_backups(self, folder="backups"):
+  def _get_backups(self, folder: str = "backups") -> list[str]:
     b_dir = Path(f"/data/{folder}")
     if not b_dir.exists():
       return []
