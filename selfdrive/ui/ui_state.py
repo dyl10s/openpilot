@@ -272,8 +272,8 @@ class Device:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    timeout_onroad = self._params.get_int("ScreenTimeoutOnroad")
-    timeout_offroad = self._params.get_int("ScreenTimeout")
+    timeout_onroad = self._params.get_int("ScreenTimeoutOnroad", return_default=True)
+    timeout_offroad = self._params.get_int("ScreenTimeout", return_default=True)
 
     if timeout_onroad <= 0:
       timeout_onroad = 10 if gui_app.big_ui() else 5
