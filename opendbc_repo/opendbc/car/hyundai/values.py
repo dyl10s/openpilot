@@ -254,8 +254,12 @@ class HyundaiCanFDPlatformConfig(PlatformConfig):
 @dataclass
 class HyundaiNonSccPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_kia_generic"})
+  radar_dbc: str | None = None
 
   def init(self):
+    if self.radar_dbc is not None:
+      self.dbc_dict = {Bus.pt: "hyundai_kia_generic", Bus.radar: self.radar_dbc}
+
     self.flags |= HyundaiFlags.NON_SCC
 
     if self.flags & HyundaiFlags.MIN_STEER_32_MPH:
@@ -882,6 +886,7 @@ class CAR(Platforms):
     [HyundaiNonSccCarDocs("Hyundai Kona Non-SCC 2019", car_parts=CarParts.common([CarHarness.hyundai_b]))],
     HYUNDAI_KONA.specs,
     flags=HyundaiFlags.ALT_LIMITS,
+    radar_dbc=HYUNDAI_MRREVO14F_RADAR_DBC,
   )
   HYUNDAI_KONA_EV_NON_SCC = HyundaiNonSccPlatformConfig(
     [HyundaiNonSccCarDocs("Hyundai Kona Electric Non-SCC 2019", car_parts=CarParts.common([CarHarness.hyundai_g]))],
@@ -1104,6 +1109,7 @@ FW_QUERY_CONFIG = FwQueryConfig(
     Ecu.abs: [CAR.HYUNDAI_PALISADE, CAR.HYUNDAI_SONATA, CAR.HYUNDAI_SANTA_FE_2022, CAR.KIA_K5_2021, CAR.HYUNDAI_ELANTRA_2021,
               CAR.HYUNDAI_SANTA_FE, CAR.HYUNDAI_KONA_EV_2022, CAR.HYUNDAI_KONA_EV, CAR.HYUNDAI_CUSTIN_1ST_GEN, CAR.KIA_SORENTO,
               CAR.KIA_CEED, CAR.KIA_SELTOS],
+    Ecu.fwdRadar: [CAR.HYUNDAI_KONA_NON_SCC],
   },
   extra_ecus=[
     (Ecu.adas, 0x730, None),              # ADAS Driving ECU on platforms with LKA steering

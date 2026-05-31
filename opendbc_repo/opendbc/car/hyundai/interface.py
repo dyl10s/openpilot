@@ -24,6 +24,7 @@ ENABLE_BUTTONS = (ButtonType.accelCruise, ButtonType.decelCruise, ButtonType.can
 
 # Track when ECU disable happened - used to permanently suppress CAN errors from disabled ECU
 ECU_DISABLE_TIMESTAMP = 0.0
+KONA_NON_SCC_FCA_RADAR_ADDR = 0x602
 
 
 def apply_platform_longitudinal_params(ret: structs.CarParams) -> None:
@@ -43,6 +44,18 @@ def apply_ecu_disable_failure_fallback(CP: structs.CarParams, params) -> None:
   CP.safetyConfigs[-1].safetyParam &= ~HyundaiSafetyFlags.LONG.value
   CP.openpilotLongitudinalControl = False
   CP.pcmCruise = True
+
+
+def detect_kona_non_scc_radar_fca(candidate, fingerprint, car_fw) -> bool:
+  if candidate != CAR.HYUNDAI_KONA_NON_SCC:
+    return False
+
+  if any(fw.ecu == Ecu.fwdRadar for fw in car_fw):
+    return True
+
+  # Some non-SCC Kona trims have FCA radar tracks without SCC. Use PT FCA11
+  # status on those cars; camera-bus FCA11 is not continuously published.
+  return KONA_NON_SCC_FCA_RADAR_ADDR in fingerprint[1]
 
 
 class CarInterface(CarInterfaceBase):
@@ -136,6 +149,8 @@ class CarInterface(CarInterfaceBase):
       # These cars use the FCA11 message for the AEB and FCW signals, all others use SCC12
       if 0x38d in fingerprint[CAN.ECAN] or 0x38d in fingerprint[CAN.CAM]:
         ret.flags |= HyundaiFlags.USE_FCA.value
+      if detect_kona_non_scc_radar_fca(candidate, fingerprint, car_fw):
+        ret.flags |= HyundaiFlags.NON_SCC_RADAR_FCA.value
 
       if ret.flags & HyundaiFlags.LEGACY:
         # these cars require a special panda safety mode due to missing counters and checksums in the messages

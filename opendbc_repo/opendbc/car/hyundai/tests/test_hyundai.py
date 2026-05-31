@@ -289,6 +289,21 @@ class TestHyundaiFingerprint:
     elantra_hev = CarInterface.get_params(CAR.HYUNDAI_ELANTRA_HEV_2022_NON_SCC, gen_empty_fingerprint(), [], True, False, False, None)
     assert elantra_hev.flags & HyundaiFlags.HYBRID
 
+    kona = CarInterface.get_params(CAR.HYUNDAI_KONA_NON_SCC, gen_empty_fingerprint(), [], True, False, False, None)
+    assert not (kona.flags & HyundaiFlags.NON_SCC_RADAR_FCA)
+    assert kona.radarUnavailable
+
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[0][0x38d] = 8
+    fingerprint[1][MRREVO14F_RADAR_START_ADDR] = 8
+    kona_radar_fca = CarInterface.get_params(CAR.HYUNDAI_KONA_NON_SCC, fingerprint, [], True, False, False, None)
+    assert kona_radar_fca.flags & HyundaiFlags.NON_SCC_RADAR_FCA
+    assert not kona_radar_fca.radarUnavailable
+
+    car_fw = [CarParams.CarFw(ecu=Ecu.fwdRadar, fwVersion=b"", address=0x7d0, brand="hyundai")]
+    kona_radar_fw = CarInterface.get_params(CAR.HYUNDAI_KONA_NON_SCC, gen_empty_fingerprint(), car_fw, True, False, False, None)
+    assert kona_radar_fw.flags & HyundaiFlags.NON_SCC_RADAR_FCA
+
     forte_2019 = CarInterface.get_params(CAR.KIA_FORTE_2019_NON_SCC, gen_empty_fingerprint(), [], True, False, False, None)
     assert forte_2019.flags & HyundaiFlags.NON_SCC_NO_FCA
     assert not (forte_2019.flags & HyundaiFlags.NON_SCC_RADAR_FCA)
@@ -486,6 +501,24 @@ class TestHyundaiFingerprint:
 
   def test_kona_ev_non_scc_has_no_dedicated_fw_coverage(self):
     assert CAR.HYUNDAI_KONA_EV_NON_SCC not in FW_VERSIONS
+
+  def test_kona_non_scc_fca_radar_fw_is_optional(self):
+    fw_versions = FW_VERSIONS[CAR.HYUNDAI_KONA_NON_SCC]
+    car_fw = [
+      CarParams.CarFw(
+        ecu=ecu,
+        fwVersion=versions[0],
+        address=address,
+        subAddress=0 if sub_address is None else sub_address,
+        brand="hyundai",
+      )
+      for (ecu, address, sub_address), versions in fw_versions.items()
+      if ecu != Ecu.fwdRadar
+    ]
+
+    exact, matches = match_fw_to_car(car_fw, "", allow_exact=True, allow_fuzzy=False, log=False)
+    assert exact
+    assert CAR.HYUNDAI_KONA_NON_SCC in matches
 
   def test_kia_forte_2019_non_scc_does_not_require_fca11_or_scc12(self):
     toggles = get_test_toggles()
