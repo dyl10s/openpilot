@@ -1784,3 +1784,29 @@ def test_matched_follow_transition_target_skips_urgent_closure():
   )
 
   assert smoothed is None
+
+
+def test_near_duplicate_lead_source_hysteresis_prefers_previous_source():
+  v_ego = 27.0
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=46.2, v_lead=25.5, a_lead=-0.05, radar=False, model_prob=0.99)
+  lead_two = make_lead(status=True, d_rel=46.8, v_lead=25.55, a_lead=-0.03, radar=False, model_prob=0.99)
+
+  lead_0_bias, lead_1_bias = planner.mpc.get_near_duplicate_lead_source_hysteresis("lead0", lead_one, lead_two, v_ego)
+
+  assert lead_0_bias == 0.0
+  assert lead_1_bias > 0.0
+
+
+def test_near_duplicate_lead_source_hysteresis_skips_distinct_leads():
+  v_ego = 27.0
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=41.0, v_lead=23.8, a_lead=0.0, radar=False, model_prob=0.99)
+  lead_two = make_lead(status=True, d_rel=48.0, v_lead=25.4, a_lead=0.0, radar=False, model_prob=0.99)
+
+  lead_0_bias, lead_1_bias = planner.mpc.get_near_duplicate_lead_source_hysteresis("lead0", lead_one, lead_two, v_ego)
+
+  assert lead_0_bias == 0.0
+  assert lead_1_bias == 0.0
