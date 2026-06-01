@@ -231,6 +231,12 @@ SetupWidget::SetupWidget(QWidget* parent) : QFrame(parent) {
   QVBoxLayout *content_layout = new QVBoxLayout(content);
   content_layout->setContentsMargins(0, 0, 0, 0);
   content_layout->setSpacing(30);
+
+  QLabel *logo = new QLabel;
+  QPixmap logo_pix("../assets/images/StarPilotLogo.png");
+  logo->setPixmap(logo_pix.scaled(750, 770, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  logo->setAlignment(Qt::AlignCenter);
+  content_layout->addWidget(logo, 0, Qt::AlignCenter);
   content_layout->addStretch();
 
   mainLayout->addWidget(content);
