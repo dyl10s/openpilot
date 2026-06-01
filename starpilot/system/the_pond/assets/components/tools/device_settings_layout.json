@@ -98,14 +98,6 @@
         "is_parent_toggle": true
       },
       {
-        "key": "AlwaysOnLateralLKAS",
-        "label": "Enable With LKAS",
-        "description": "Enable \"Always On Lateral\" whenever \"LKAS\" is on, even when openpilot is not engaged.",
-        "data_type": "bool",
-        "ui_type": "toggle",
-        "parent_key": "AlwaysOnLateral"
-      },
-      {
         "key": "PauseAOLOnBrake",
         "label": "Pause on Brake Press Below",
         "description": "Pause \"Always On Lateral\" below the set speed while the brake pedal is pressed.",
@@ -2693,6 +2685,31 @@
           {
             "value": 8,
             "label": "Create Bookmark"
+          },
+          {
+            "value": 9,
+            "label": "Toggle Always On Lateral"
+          }
+        ]
+      },
+      {
+        "key": "MainCruiseButtonControl",
+        "label": "CC Main Button",
+        "description": "Action performed when the cruise control main button is pressed.",
+        "data_type": "int",
+        "ui_type": "dropdown",
+        "options": [
+          {
+            "value": 0,
+            "label": "No Action"
+          },
+          {
+            "value": 9,
+            "label": "Toggle Always On Lateral"
+          },
+          {
+            "value": 10,
+            "label": "Adopt Current Speed Limit"
           }
         ]
       },

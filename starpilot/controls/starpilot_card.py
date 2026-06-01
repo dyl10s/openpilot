@@ -85,9 +85,6 @@ class StarPilotCard:
 
   def update(self, carState, starpilotCarState, sm, starpilot_toggles):
     self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
-    hyundai_main_cruise_can_toggle_aol = self.CP.brand == "hyundai" and starpilot_toggles.always_on_lateral and (
-      starpilot_toggles.always_on_lateral_lkas or starpilot_toggles.always_on_lateral_main
-    )
 
     if self.CP.brand == "hyundai" or starpilot_toggles.lkas_allowed_for_aol:
       for be in carState.buttonEvents:
@@ -96,12 +93,9 @@ class StarPilotCard:
           if carState.cruiseState.enabled or self.pause_lateral:
             self.pause_lateral = not self.always_on_lateral_allowed
         elif be.type == ButtonType.mainCruise and be.pressed:
-          # Hyundai owners use both the LKAS button and the cruise main button
-          # as AOL engage inputs. Keep the safety-derived LKAS capability while
-          # still honoring the cruise main button as a shared AOL toggle.
-          if hyundai_main_cruise_can_toggle_aol or starpilot_toggles.always_on_lateral_main:
+          if starpilot_toggles.main_cruise_aol_toggle or starpilot_toggles.always_on_lateral_main:
             self.always_on_lateral_allowed = not self.always_on_lateral_allowed
-          elif starpilot_toggles.speed_limit_controller:
+          elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
             self.params_memory.put_bool("SLCAdoptSpeedLimit", True)
     elif starpilot_toggles.always_on_lateral_main:
       if pacifica_hybrid_aol_requires_set_press(self.CP.carFingerprint, self.CP.pcmCruise):

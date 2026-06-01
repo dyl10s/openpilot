@@ -135,6 +135,8 @@ BUTTON_FUNCTIONS = {
   "TRAFFIC_MODE": 6,
   "SWITCHBACK_MODE": 7,
   "BOOKMARK": 8,
+  "AOL_TOGGLE": 9,
+  "SLC_ADOPT": 10,
 }
 
 CANCEL_BUTTON_MIGRATION_KEY = "CancelButtonControlsMigrated"
@@ -143,6 +145,8 @@ CANCEL_BUTTON_MAPPINGS = (
   ("LongDistanceButtonControl", "LongCancelButtonControl"),
   ("VeryLongDistanceButtonControl", "VeryLongCancelButtonControl"),
 )
+
+AOL_LKAS_MIGRATION_KEY = "AOLLKASMigratedToButtonControl"
 
 DEVELOPER_SIDEBAR_METRICS = {
   "NONE": 0,
@@ -341,12 +345,26 @@ def migrate_cancel_button_controls(params: Params | None = None) -> bool:
   params.put_bool(CANCEL_BUTTON_MIGRATION_KEY, True)
   return True
 
+
+def migrate_aol_lkas_to_button_control(params: Params | None = None) -> bool:
+  params = params or Params(return_defaults=True)
+  if params.get_bool(AOL_LKAS_MIGRATION_KEY):
+    return False
+
+  if params.get_bool("AlwaysOnLateral") and params.get_bool("AlwaysOnLateralLKAS"):
+    params.put_int("LKASButtonControl", BUTTON_FUNCTIONS["AOL_TOGGLE"])
+
+  params.put_bool(AOL_LKAS_MIGRATION_KEY, True)
+  return True
+
+
 class StarPilotVariables:
   def __init__(self):
     self.params = Params(return_defaults=True)
     self.params_raw = Params()
     self.params_memory = Params(memory=True)
     migrate_cancel_button_controls(self.params)
+    migrate_aol_lkas_to_button_control(self.params)
 
     self.starpilot_toggles = SimpleNamespace()
     toggle = self.starpilot_toggles
@@ -665,9 +683,14 @@ class StarPilotVariables:
     toggle.warningImmediate_volume = max(self.get_value("WarningImmediateVolume", cast=float, condition=toggle.alert_volume_controller, default=25), 25)
 
     toggle.always_on_lateral = self.get_value("AlwaysOnLateral")
-    toggle.always_on_lateral_lkas = toggle.always_on_lateral and toggle.lkas_allowed_for_aol and self.get_value("AlwaysOnLateralLKAS")
+    lkas_button_assigned_to_aol = self.get_value("LKASButtonControl", cast=float) == BUTTON_FUNCTIONS["AOL_TOGGLE"]
+    toggle.always_on_lateral_lkas = toggle.always_on_lateral and toggle.lkas_allowed_for_aol and lkas_button_assigned_to_aol
     toggle.always_on_lateral_main = toggle.always_on_lateral and not prohibited_main_aol and not toggle.always_on_lateral_lkas
     toggle.always_on_lateral_pause_speed = self.get_value("PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral)
+
+    main_cruise_button_control = self.get_value("MainCruiseButtonControl", cast=float)
+    toggle.main_cruise_aol_toggle = main_cruise_button_control == BUTTON_FUNCTIONS["AOL_TOGGLE"]
+    toggle.main_cruise_slc_adopt = main_cruise_button_control == BUTTON_FUNCTIONS["SLC_ADOPT"]
 
     toggle.automatic_updates = self.get_value("AutomaticUpdates") and not BACKUP_PATH.is_file()
 

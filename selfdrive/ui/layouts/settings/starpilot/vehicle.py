@@ -49,6 +49,8 @@ ACTION_OPTIONS = [
   {"id": 6, "name": tr_noop("Toggle Traffic"), "requires_longitudinal": True},
   {"id": 7, "name": tr_noop("Toggle Switchback")},
   {"id": 8, "name": tr_noop("Create Bookmark")},
+  {"id": 9, "name": tr_noop("Toggle Always On Lateral")},
+  {"id": 10, "name": tr_noop("Adopt Current Speed Limit")},
 ]
 ACTION_NAMES = [o["name"] for o in ACTION_OPTIONS]
 ACTION_IDS = {o["name"]: o["id"] for o in ACTION_OPTIONS}
@@ -144,8 +146,8 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
       if cs.isHKGCanFd and cs.hasOpenpilotLongitudinal: count += 1
       return tr("{} settings").format(count)
     if tab_id == "controls":
-      count = 7
-      if not cs.isSubaru and not (cs.lkasAllowedForAOL and self._controller._params.get_bool("AlwaysOnLateral") and self._controller._params.get_bool("AlwaysOnLateralLKAS")):
+      count = 8
+      if not cs.isSubaru:
         count += 1
       if cs.hasModeStarButtons: count += 6
       return tr("{} buttons").format(count)
@@ -426,9 +428,11 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
       for key in ("CancelButtonControl", "LongCancelButtonControl", "VeryLongCancelButtonControl"):
         rows.append({"target_id": f"select:{key}", "type": "select", "title": tr(self._controller._action_title(key)),
                       "get_value": lambda k=key: self._controller._get_action_name(k), "pill_width": 140})
-    if not cs.isSubaru and not (cs.lkasAllowedForAOL and self._controller._params.get_bool("AlwaysOnLateral") and self._controller._params.get_bool("AlwaysOnLateralLKAS")):
+    if not cs.isSubaru:
       rows.append({"target_id": "select:LKASButtonControl", "type": "select", "title": tr("LKAS Button"),
                     "get_value": lambda: self._controller._get_action_name("LKASButtonControl"), "pill_width": 140})
+    rows.append({"target_id": "select:MainCruiseButtonControl", "type": "select", "title": tr("CC Main Button"),
+                  "get_value": lambda: self._controller._get_action_name("MainCruiseButtonControl"), "pill_width": 140})
     if cs.hasModeStarButtons:
       for key in ("ModeButtonControl", "LongModeButtonControl", "VeryLongModeButtonControl",
                    "StarButtonControl", "LongStarButtonControl", "VeryLongStarButtonControl"):
@@ -453,6 +457,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       "VeryLongCancelButtonControl": "Cancel (Very Long)",
       "VeryLongDistanceButtonControl": "Distance (Very Long)",
       "LKASButtonControl": "LKAS Button",
+      "MainCruiseButtonControl": "CC Main Button",
       "ModeButtonControl": "Mode Button",
       "LongModeButtonControl": "Mode (Long Press)",
       "VeryLongModeButtonControl": "Mode (Very Long)",
@@ -468,7 +473,14 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
 
   def _get_available_actions(self, key: str | None = None) -> list[str]:
     cs = starpilot_state.car_state
-    return [tr(o["name"]) for o in ACTION_OPTIONS if cs.hasOpenpilotLongitudinal or not o.get("requires_longitudinal", False)]
+    if key == "MainCruiseButtonControl":
+      allowed_ids = {0, 9, 10}
+      return [tr(o["name"]) for o in ACTION_OPTIONS if o["id"] in allowed_ids]
+    allowed_ids = set(range(9))
+    if key == "LKASButtonControl" and cs.lkasAllowedForAOL:
+      allowed_ids.add(9)
+    return [tr(o["name"]) for o in ACTION_OPTIONS
+            if o["id"] in allowed_ids and (cs.hasOpenpilotLongitudinal or not o.get("requires_longitudinal", False))]
 
   def _on_toggle(self, param_key: str):
     if param_key == "DisableOpenpilotLongitudinal":

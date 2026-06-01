@@ -243,7 +243,8 @@ class CarInterfaceBase(ABC):
         if hyundai_has_lda_button:
           fp_ret.safetyConfigs[-1].safetyParam |= HyundaiStarPilotSafetyFlags.HAS_LDA_BUTTON.value
 
-        if params.get_bool("AlwaysOnLateral") and params.get_bool("AlwaysOnLateralLKAS"):
+        # LKASButtonControl == 9 means BUTTON_FUNCTIONS["AOL_TOGGLE"] in starpilot_variables.
+        if params.get_bool("AlwaysOnLateral") and params.get_int("LKASButtonControl") == 9:
           fp_ret.safetyConfigs[-1].safetyParam |= HyundaiStarPilotSafetyFlags.AOL_LKAS_ON_ENGAGE.value
       elif platform in TOYOTA:
         fp_ret.canUsePedal = not CP.autoResumeSng

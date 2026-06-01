@@ -42,7 +42,6 @@ StarPilotLateralPanel::StarPilotLateralPanel(StarPilotSettingsWindow *parent, bo
     {"ForceTorqueController", tr("Force Torque Controller"), tr("<b>Use torque-based steering control instead of angle-based control for smoother lane keeping, especially in curves.</b>"), ""},
 
     {"AlwaysOnLateral", tr("Always On Lateral"), tr("<b>openpilot's steering remains active even when the accelerator or brake pedals are pressed.</b>"), "../../starpilot/assets/toggle_icons/icon_always_on_lateral.png"},
-    {"AlwaysOnLateralLKAS", tr("Enable With LKAS"), tr("<b>Enable \"Always On Lateral\" whenever \"LKAS\" is on, even when openpilot is not engaged.</b>"), ""},
     {"PauseAOLOnBrake", tr("Pause on Brake Press Below"), tr("<b>Pause \"Always On Lateral\" below the set speed while the brake pedal is pressed.</b>"), ""},
 
     {"LaneChanges", tr("Lane Changes"), tr("<b>Allow openpilot to change lanes.</b>"), "../../starpilot/assets/toggle_icons/icon_lane.png"},
@@ -358,11 +357,7 @@ void StarPilotLateralPanel::updateToggles() {
     bool setVisible = showAllToggles || parent->tuningLevel >= parent->starpilotToggleLevels[key].toDouble();
 
     if (!showAllToggles) {
-      if (key == "AlwaysOnLateralLKAS") {
-        setVisible &= parent->lkasAllowedForAOL;
-      }
-
-      else if (key == "ForceAutoTune") {
+      if (key == "ForceAutoTune") {
         setVisible &= !parent->hasAutoTune;
         setVisible &= !parent->isAngleCar;
         setVisible &= parent->isTorqueCar || forcingTorqueController || usingNNFF;
