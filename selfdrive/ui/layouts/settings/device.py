@@ -23,6 +23,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 DESCRIPTIONS = {
   'pair_device': tr_noop("Pair your device with comma connect (connect.comma.ai) and claim your comma prime offer."),
   'driver_camera': tr_noop("Preview the driver facing camera to ensure that driver monitoring has good visibility. (vehicle must be off)"),
+  'reset_driver_monitoring': tr_noop("Clears the saved driver monitoring wheel-side calibration and any manual right-hand-driving override."),
   'reset_calibration': tr_noop("openpilot requires the device to be mounted within 4° left or right and within 5° up or 9° down."),
   'review_guide': tr_noop("Review the rules, features, and limitations of openpilot"),
 }
@@ -61,6 +62,8 @@ class DeviceLayout(Widget):
       self._pair_device_btn,
       button_item(lambda: tr("Driver Camera"), lambda: tr("PREVIEW"), lambda: tr(DESCRIPTIONS['driver_camera']),
                   callback=self._show_driver_camera, enabled=ui_state.is_offroad),
+      button_item(lambda: tr("Reset Driver Monitoring"), lambda: tr("RESET"), lambda: tr(DESCRIPTIONS['reset_driver_monitoring']),
+                  callback=self._reset_driver_monitoring_prompt, enabled=ui_state.is_offroad),
       self._reset_calib_btn,
       button_item(lambda: tr("Review Training Guide"), lambda: tr("REVIEW"), lambda: tr(DESCRIPTIONS['review_guide']),
                   self._on_review_training_guide, enabled=ui_state.is_offroad),
@@ -118,6 +121,23 @@ class DeviceLayout(Widget):
 
     dialog = ConfirmDialog(tr("Are you sure you want to reset calibration?"), tr("Reset"))
     gui_app.set_modal_overlay(dialog, callback=reset_calibration)
+
+  def _reset_driver_monitoring_prompt(self):
+    if ui_state.engaged:
+      gui_app.set_modal_overlay(alert_dialog(tr("Disengage to Reset Driver Monitoring")))
+      return
+
+    def reset_driver_monitoring(result: int):
+      if ui_state.engaged or result != DialogResult.CONFIRM:
+        return
+
+      self._params.remove("IsRhdDetected")
+      self._params.remove("IsRHD")
+      self._params.remove("IsRHDOverride")
+      self._params.put_bool("OnroadCycleRequested", True)
+
+    dialog = ConfirmDialog(tr("Are you sure you want to reset driver monitoring calibration?"), tr("Reset"))
+    gui_app.set_modal_overlay(dialog, callback=reset_driver_monitoring)
 
   def _update_calib_description(self):
     desc = tr(DESCRIPTIONS['reset_calibration'])

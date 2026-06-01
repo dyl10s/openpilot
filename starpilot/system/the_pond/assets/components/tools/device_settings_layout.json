@@ -2188,6 +2188,13 @@
         "ui_type": "toggle"
       },
       {
+        "key": "IsRHD",
+        "label": "Right Hand Driving",
+        "description": "Use right-hand-drive driver monitoring. This follows the auto-detected side until changed manually.",
+        "data_type": "bool",
+        "ui_type": "toggle"
+      },
+      {
         "key": "DisableOpenpilotLongitudinal",
         "label": "Disable openpilot Longitudinal",
         "description": "Use the vehicle's stock longitudinal control instead of openpilot longitudinal control. This can stop openpilot from sending cruise-control acceleration and braking commands on supported vehicles.",

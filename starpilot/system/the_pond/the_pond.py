@@ -2029,6 +2029,8 @@ _cached_param_types = None
 _cached_default_values = None
 _cached_static_default_values = None
 
+POND_MANUAL_BOOL_PARAM_KEYS = {"IsRHD", "IsRHDOverride"}
+
 def _get_param_type_info():
   global _cached_allowed_keys, _cached_param_types
   if _cached_allowed_keys is None:
@@ -2049,6 +2051,12 @@ def _get_param_type_info():
     for k, dt in _get_layout_type_overrides().items():
       if k in types and dt in ("int", "float") and types[k] == bool:
         types[k] = float if dt == "float" else int
+      elif k in types and dt == "bool":
+        types[k] = bool
+
+    for k in POND_MANUAL_BOOL_PARAM_KEYS:
+      if k in _cached_allowed_keys:
+        types[k] = bool
 
     # Keep legacy aliases editable for older payloads/UI clients.
     alias_to_key = {
@@ -2222,6 +2230,9 @@ def _get_runtime_default_param_overrides():
 def _get_current_param_value(key, value_type, defaults_lookup=None):
   if key == CUSTOM_ACCEL_PROFILE_INITIALIZED_KEY:
     return _get_custom_accel_profile_initialized()
+
+  if key == "IsRHD" and not _safe_params_get_bool("IsRHDOverride"):
+    return _safe_params_get_bool("IsRhdDetected")
 
   if key in CUSTOM_ACCEL_PROFILE_PARAM_KEYS and not _get_custom_accel_profile_initialized():
     if defaults_lookup is None:
@@ -3790,6 +3801,32 @@ def setup(app):
           },
         }), 200
 
+      if key == "IsRHD":
+        enabled = str_val.strip() in ("1", "true", "True")
+        params.put_bool("IsRHD", enabled)
+        params.put_bool("IsRHDOverride", True)
+        return jsonify({
+          "message": "Right Hand Driving override updated successfully.",
+          "updated": {
+            "IsRHD": enabled,
+            "IsRHDOverride": True,
+          },
+        }), 200
+
+      if key == "IsRHDOverride":
+        enabled = str_val.strip() in ("1", "true", "True")
+        params.put_bool("IsRHDOverride", enabled)
+        updated = {"IsRHDOverride": enabled}
+        if not enabled:
+          auto_rhd = params.get_bool("IsRhdDetected")
+          params.put_bool("IsRHD", auto_rhd)
+          updated["IsRHD"] = auto_rhd
+
+        return jsonify({
+          "message": "Right Hand Driving auto detection restored." if not enabled else "Right Hand Driving override enabled.",
+          "updated": updated,
+        }), 200
+
       if key == "CarMake":
         catalog = _get_fingerprint_catalog()
         normalized_make = _normalize_fingerprint_make_key(str_val)
@@ -3933,6 +3970,8 @@ def setup(app):
       return _serialize_param_write_value(defaults_lookup.get(request_key)), 200
     if request_key == CUSTOM_ACCEL_PROFILE_INITIALIZED_KEY:
       return _serialize_param_write_value(_get_custom_accel_profile_initialized()), 200
+    if request_key == "IsRHD" and not params.get_bool("IsRHDOverride"):
+      return ("1" if params.get_bool("IsRhdDetected") else "0"), 200
     value = params.get(request_key) or ""
     if request_key in ("Model", "DrivingModel"):
       if isinstance(value, bytes):

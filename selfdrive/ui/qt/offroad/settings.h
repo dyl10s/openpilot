@@ -116,6 +116,7 @@ private:
   std::map<std::string, ParamControl*> toggles;
   ButtonParamControl *long_personality_setting;
 
+  void syncRhdToggle();
   void updateToggles();
 };
 
