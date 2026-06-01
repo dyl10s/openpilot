@@ -477,7 +477,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       allowed_ids = {0, 9, 10}
       return [tr(o["name"]) for o in ACTION_OPTIONS if o["id"] in allowed_ids]
     allowed_ids = set(range(9))
-    if key == "LKASButtonControl" and cs.lkasAllowedForAOL:
+    if key == "LKASButtonControl":
       allowed_ids.add(9)
     return [tr(o["name"]) for o in ACTION_OPTIONS
             if o["id"] in allowed_ids and (cs.hasOpenpilotLongitudinal or not o.get("requires_longitudinal", False))]

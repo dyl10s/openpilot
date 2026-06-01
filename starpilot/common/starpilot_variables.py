@@ -685,7 +685,7 @@ class StarPilotVariables:
     toggle.always_on_lateral = self.get_value("AlwaysOnLateral")
     lkas_button_assigned_to_aol = self.get_value("LKASButtonControl", cast=float) == BUTTON_FUNCTIONS["AOL_TOGGLE"]
     toggle.always_on_lateral_lkas = toggle.always_on_lateral and toggle.lkas_allowed_for_aol and lkas_button_assigned_to_aol
-    toggle.always_on_lateral_main = toggle.always_on_lateral and not prohibited_main_aol and not toggle.always_on_lateral_lkas
+    toggle.always_on_lateral_main = toggle.always_on_lateral and not prohibited_main_aol
     toggle.always_on_lateral_pause_speed = self.get_value("PauseAOLOnBrake", cast=float, condition=toggle.always_on_lateral)
 
     main_cruise_button_control = self.get_value("MainCruiseButtonControl", cast=float)

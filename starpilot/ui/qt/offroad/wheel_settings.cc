@@ -38,13 +38,13 @@ QMap<int, QString> getMainCruiseFunctionsMap() {
   };
 }
 
-QString getWheelFunctionLabel(Params &params, const QString &key, bool lkasAllowedForAOL = false) {
+QString getWheelFunctionLabel(Params &params, const QString &key) {
   QMap<int, QString> functionsMap;
   if (key == "MainCruiseButtonControl") {
     functionsMap = getMainCruiseFunctionsMap();
   } else {
     functionsMap = getMergedWheelFunctionsMap();
-    if (key == "LKASButtonControl" && lkasAllowedForAOL) {
+    if (key == "LKASButtonControl") {
       functionsMap[9] = QObject::tr("Toggle Always On Lateral");
     }
   }
@@ -102,7 +102,7 @@ StarPilotWheelPanel::StarPilotWheelPanel(StarPilotSettingsWindow *parent, bool f
             functionsMap[it.key()] = it.value();
           }
         }
-        if (key == "LKASButtonControl" && parent->lkasAllowedForAOL) {
+        if (key == "LKASButtonControl") {
           functionsMap[9] = tr("Toggle Always On Lateral");
         }
       }
@@ -114,7 +114,7 @@ StarPilotWheelPanel::StarPilotWheelPanel(StarPilotSettingsWindow *parent, bool f
         updateStarPilotToggles();
       }
     });
-    wheelToggle->setValue(getWheelFunctionLabel(params, param, parent->lkasAllowedForAOL));
+    wheelToggle->setValue(getWheelFunctionLabel(params, param));
 
     toggles[param] = wheelToggle;
 
@@ -170,7 +170,7 @@ void StarPilotWheelPanel::updateToggles() {
     }
 
     if (ButtonControl *wheelToggle = qobject_cast<ButtonControl*>(toggle)) {
-      wheelToggle->setValue(getWheelFunctionLabel(params, key, parent->lkasAllowedForAOL));
+      wheelToggle->setValue(getWheelFunctionLabel(params, key));
     }
 
     toggle->setVisible(setVisible);

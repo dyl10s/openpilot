@@ -93,7 +93,7 @@ class StarPilotCard:
           if carState.cruiseState.enabled or self.pause_lateral:
             self.pause_lateral = not self.always_on_lateral_allowed
         elif be.type == ButtonType.mainCruise and be.pressed:
-          if starpilot_toggles.main_cruise_aol_toggle or starpilot_toggles.always_on_lateral_main:
+          if starpilot_toggles.main_cruise_aol_toggle:
             self.always_on_lateral_allowed = not self.always_on_lateral_allowed
           elif starpilot_toggles.main_cruise_slc_adopt and starpilot_toggles.speed_limit_controller:
             self.params_memory.put_bool("SLCAdoptSpeedLimit", True)
