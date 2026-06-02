@@ -130,7 +130,9 @@ def laplacian_pdf(x: float, mu: float, b: float):
 
 
 def g90_radar_lead_lateral_sane(track: Track) -> bool:
-  max_y = min(6.0, max(2.5, 1.5 + 0.08 * max(track.dRel, 0.0)))
+  # The G90 extended radar channels can report close side ghosts in tight turns.
+  # Keep the gate tight at close range, then widen gradually with distance.
+  max_y = min(6.0, 1.5 + 0.08 * max(track.dRel, 0.0))
   return abs(track.yRel) <= max_y
 
 
