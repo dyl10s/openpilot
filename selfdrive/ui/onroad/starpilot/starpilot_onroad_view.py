@@ -59,7 +59,16 @@ class StarPilotOnroadView(AugmentedRoadView):
     self._personality_button.render()
     self._render_standstill_timer()
     self._render_developer_metrics()
-    self._aethergauge.render(self._content_rect, self._font_bold, self._font_medium, current_speed=self._hud_renderer.speed)
+    dm = self.driver_state_renderer
+    if dm and dm.is_visible and dm.position_x != 0.0:
+      dm_top = dm.position_y - 96  # top of DM icon
+      self._aethergauge.render(
+        self._content_rect, self._font_bold, self._font_medium,
+        current_speed=self._hud_renderer.speed,
+        cx=dm.position_x, bottom=dm_top - 105
+      )
+    else:
+      self._aethergauge.render(self._content_rect, self._font_bold, self._font_medium, current_speed=self._hud_renderer.speed)
     self._render_bottom_row_widgets()
     self._render_pedals()
 

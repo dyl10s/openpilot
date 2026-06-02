@@ -99,10 +99,14 @@ def _with_alpha(color: rl.Color, a: int) -> rl.Color:
 def _pulse(freq: float) -> float:
   return 0.5 + 0.5 * math.sin(rl.get_time() * freq)
 
+def _get_road_height(data: 'AetherGaugeData | None') -> float:
+  is_curve = data.indicator_type == IndicatorType.ROAD_CURVE if data else False
+  return ROAD_HEIGHT if is_curve else (45.0 * SCALE)
+
 def _road_xy(distance: float, icx: float, bottom: float, data: 'AetherGaugeData') -> tuple[float, float, float]:
   t = max(0.0, min(1.0, _get_t_from_x(distance)))
   offset = _get_perspective_offset(t, data)
-  return t, icx + offset, bottom - t * ROAD_HEIGHT
+  return t, icx + offset, bottom - t * _get_road_height(data)
 
 def _get_t_from_x(x: float) -> float:
   x_clamped = max(X_MIN, min(X_MAX, x))
@@ -110,11 +114,8 @@ def _get_t_from_x(x: float) -> float:
 
 def _get_perspective_offset(t: float, data: 'AetherGaugeData | None') -> float:
   curvature = 0.0
-  if data:
-    if data.indicator_type == IndicatorType.ROAD_CURVE:
-      curvature = data.indicator_value
-    elif _sm_valid("starpilotPlan"):
-      curvature = ui_state.sm["starpilotPlan"].roadCurvature
+  if data and data.indicator_type == IndicatorType.ROAD_CURVE:
+    curvature = data.indicator_value
 
   path_y_far = PATH_Y_FAR_SCALE * curvature
   max_offset_top = math.tanh(path_y_far * PERSPECTIVE_GAIN) * PERSPECTIVE_MAX_OFFSET
@@ -311,7 +312,8 @@ class AetherGauge:
     ]
     if TEST_CYCLE:
       self._sources.insert(0, (_test_cycle_active, _test_cycle_data))
-    self._stop_smooth_s = 0.0
+    self._chevron_accum = 0.0
+    self._lead_chevron_accum = 0.0
 
   def get_active_data(self) -> AetherGaugeData | None:
     for is_active, get_data in self._sources:
@@ -319,42 +321,42 @@ class AetherGauge:
         return get_data()
     return None
 
-  def render(self, rect: rl.Rectangle, font_bold: rl.Font, font_medium: rl.Font, current_speed: float):
+  def render(self, rect: rl.Rectangle, font_bold: rl.Font, font_medium: rl.Font, current_speed: float, cx: float | None = None, bottom: float | None = None):
     data = self.get_active_data()
     if not data:
       return
 
-    cx = rect.x + rect.width / 2
-    cy_speed = rect.y + 180 * SCALE
-
-    speed_text = str(round(current_speed))
-    speed_text_size = measure_text_cached(font_bold, speed_text, int(176 * SCALE))
-    icon_cx = cx - speed_text_size.x / 2 - 70.0 * SCALE
+    if cx is None or bottom is None:
+      base_cx = rect.x + rect.width / 2
+      cy_speed = rect.y + 180 * SCALE
+      speed_text = str(round(current_speed))
+      speed_text_size = measure_text_cached(font_bold, speed_text, int(176 * SCALE))
+      icx = base_cx - speed_text_size.x / 2 - 70.0 * SCALE
+      icy = cy_speed - 39.5 * SCALE
+    else:
+      icx = cx
+      icy = bottom - ROAD_HALF_SIZE
 
     if data.indicator_type in (IndicatorType.ROAD_CURVE, IndicatorType.FORCE_STOP, IndicatorType.LEAD, IndicatorType.STOP_LIGHT):
-      self._render_unified_road(rect, icon_cx, cy_speed - 39.5 * SCALE, data, font_bold, font_medium)
+      self._render_unified_road(rect, icx, icy, data, font_bold, font_medium)
 
   def _render_unified_road(self, rect, icx, icy, data, font_bold, font_medium):
     bottom = icy + ROAD_HALF_SIZE
 
-    if data.indicator_type == IndicatorType.FORCE_STOP:
-      raw_s = max(0.0, min(1.0, (STOP_DISTANCE_MAX - data.indicator_value) / STOP_DISTANCE_MAX))
-      if abs(raw_s - self._stop_smooth_s) > STOP_SNAP_THRESHOLD:
-        self._stop_smooth_s = raw_s
-      else:
-        self._stop_smooth_s += (raw_s - self._stop_smooth_s) * STOP_LERP_RATE
-      distance = STOP_DISTANCE_MAX - self._stop_smooth_s * STOP_DISTANCE_MAX
+    if data.indicator_type in (IndicatorType.FORCE_STOP, IndicatorType.STOP_LIGHT):
+      distance = 15.0
     else:
       distance = data.indicator_value
 
     points_left = []
     points_right = []
+    road_h = _get_road_height(data)
 
     for i in range(ROAD_SEGMENTS + 1):
       t = i / ROAD_SEGMENTS
       offset = _get_perspective_offset(t, data)
       cx_t = icx + offset
-      y_t = bottom - t * ROAD_HEIGHT
+      y_t = bottom - t * road_h
       w_t = ROAD_W_BOTTOM - t * (ROAD_W_BOTTOM - ROAD_W_TOP)
 
       points_left.append(rl.Vector2(cx_t - w_t, y_t))
@@ -402,7 +404,7 @@ class AetherGauge:
     rl.draw_line_ex(p_left, p_right, max(1.5 * SCALE, 3.5 * SCALE * fade), COLOR_STOP_LINE_CORE)
 
   def _draw_lead_car(self, icx, bottom, data):
-    t_lead, cx_lead, cy_lead = _road_xy(data.indicator_value, icx, bottom, data)
+    t_lead, cx_lead, cy_lead = _road_xy(6.5, icx, bottom, data)
     t_lead = max(0.15, min(0.85, t_lead))
 
     car_scale = 0.45 + (1.0 - t_lead) * 0.55
@@ -415,7 +417,7 @@ class AetherGauge:
     if is_stopped:
       border_color = COLOR_LEAD_STOPPED
     elif is_slower:
-      border_color = _with_alpha(data.color, int(160 + 95 * _pulse(3.0)))
+      border_color = _with_alpha(data.color, int(160 + 95 * _pulse(1.2)))
     else:
       border_color = data.color
 
@@ -436,12 +438,12 @@ class AetherGauge:
     for tl_x, glow_x in [(int(cx_lead - W * 0.45), int(cx_lead - W * 0.38)),
                           (int(cx_lead + W * 0.3), int(cx_lead + W * 0.38))]:
       if is_stopped:
-        pulse = _pulse(8.0)
+        pulse = _pulse(2.5)
         r_glow = int(W * 0.08 * (1.0 + 0.4 * pulse))
         rl.draw_circle(glow_x, glow_y, r_glow, rl.Color(255, 30, 60, int(150 + 105 * pulse)))
         c_tl = rl.Color(255, 220, 220, 255)
       elif is_slower:
-        pulse = _pulse(3.0)
+        pulse = _pulse(1.2)
         r_glow = int(W * 0.06 * (1.0 + 0.2 * pulse))
         rl.draw_circle(glow_x, glow_y, r_glow, rl.Color(255, 140, 30, int(100 + 80 * pulse)))
         c_tl = rl.Color(255, 160, 60, int(180 + 75 * pulse))
@@ -458,12 +460,17 @@ class AetherGauge:
     rl.draw_rectangle(int(cx_lead + W * 0.28), wheel_y, wheel_w, wheel_h, wheel_c)
 
     # Following chevrons (from lead car back toward viewer)
-    progress = (rl.get_time() * 1.5) % 1.0
+    dt = rl.get_frame_time()
+    v_ego = _get_val("carState", "vEgo", 0.0)
+    flow_speed_factor = min(1.8, v_ego * 0.08)
+    self._lead_chevron_accum = (self._lead_chevron_accum + dt * flow_speed_factor * 1.8) % 1.0
+    progress = self._lead_chevron_accum
     for i in range(2):
       t = t_lead * (1.0 - ((i + progress) / 2) % 1.0)
 
       cx_t = icx + _get_perspective_offset(t, data)
-      cy_t = bottom - t * ROAD_HEIGHT
+      road_h = _get_road_height(data)
+      cy_t = bottom - t * road_h
 
       chevron_w = 12.0 * SCALE - t * 5.0 * SCALE
       chevron_thick = max(1.5 * SCALE, 3.5 * SCALE - t * 1.5 * SCALE)
@@ -473,12 +480,16 @@ class AetherGauge:
       alpha = max(0, min(255, int(data.color.a * (1.0 - t / t_lead) * math.sin(t / t_lead * math.pi))))
       c_color = _with_alpha(data.color, alpha)
 
-      rl.draw_line_ex(rl.Vector2(lx, cy_t + chevron_w * 0.5), rl.Vector2(cx_t, cy_t), chevron_thick, c_color)
-      rl.draw_line_ex(rl.Vector2(rx, cy_t + chevron_w * 0.5), rl.Vector2(cx_t, cy_t), chevron_thick, c_color)
+      rl.draw_line_ex(rl.Vector2(lx, cy_t - chevron_w * 0.5), rl.Vector2(cx_t, cy_t), chevron_thick, c_color)
+      rl.draw_line_ex(rl.Vector2(rx, cy_t - chevron_w * 0.5), rl.Vector2(cx_t, cy_t), chevron_thick, c_color)
 
   def _draw_standard_chevrons(self, icx, bottom, distance, data):
     is_stop = data.indicator_type in (IndicatorType.FORCE_STOP, IndicatorType.STOP_LIGHT)
-    progress = (rl.get_time() * 1.2) % 1.0
+    dt = rl.get_frame_time()
+    v_ego = _get_val("carState", "vEgo", 0.0)
+    flow_speed_factor = min(1.5, v_ego * 0.08)
+    self._chevron_accum = (self._chevron_accum + dt * flow_speed_factor * 1.5) % 1.0
+    progress = self._chevron_accum
     t_stop = max(0.05, min(1.0, distance / STOP_DISTANCE_MAX)) if is_stop else 1.0
     max_t = t_stop if is_stop else 1.0
 
@@ -491,8 +502,9 @@ class AetherGauge:
       cx_t = icx + _get_perspective_offset(t, data)
       cx_next = icx + _get_perspective_offset(t_next, data)
 
-      cy_t = bottom - t * ROAD_HEIGHT
-      cy_next = bottom - t_next * ROAD_HEIGHT
+      road_h = _get_road_height(data)
+      cy_t = bottom - t * road_h
+      cy_next = bottom - t_next * road_h
 
       dx = cx_next - cx_t
       dy = cy_next - cy_t
@@ -506,10 +518,10 @@ class AetherGauge:
       chevron_h = chevron_w * 0.6
       chevron_thick = max(2.0 * SCALE, 4.0 * SCALE - t * 2.0 * SCALE)
 
-      lx = cx_t - dir_right_x * chevron_w - dir_up_x * chevron_h
-      ly = cy_t - dir_right_y * chevron_w - dir_up_y * chevron_h
-      rx = cx_t + dir_right_x * chevron_w - dir_up_x * chevron_h
-      ry = cy_t + dir_right_y * chevron_w - dir_up_y * chevron_h
+      lx = cx_t - dir_right_x * chevron_w + dir_up_x * chevron_h
+      ly = cy_t - dir_right_y * chevron_w + dir_up_y * chevron_h
+      rx = cx_t + dir_right_x * chevron_w + dir_up_x * chevron_h
+      ry = cy_t + dir_right_y * chevron_w + dir_up_y * chevron_h
 
       alpha_factor = math.sin((t / max_t) * math.pi) if max_t > 0.01 else 0.0
       alpha = max(0, min(255, int(data.color.a * alpha_factor)))
@@ -545,7 +557,7 @@ class AetherGauge:
     ]
     for y, name, active_c, inactive_c in bulbs:
       if name == "red" and active_light == "red":
-        glow_pulse = _pulse(5.0)
+        glow_pulse = _pulse(1.5)
         rl.draw_circle_v(rl.Vector2(cx_light, y), r_bulb + 3.0 * SCALE * glow_pulse, rl.Color(255, 30, 60, 45))
         rl.draw_circle_v(rl.Vector2(cx_light, y), r_bulb + 6.0 * SCALE * glow_pulse, rl.Color(255, 30, 60, 15))
       c = active_c if active_light == name else inactive_c
@@ -558,7 +570,8 @@ class AetherGauge:
     offset_stop = _get_perspective_offset(t_stop_gauge, data) if data else 0.0
     cx_stop = cx + offset_stop
 
-    cy_road = bottom - t_stop_gauge * ROAD_HEIGHT
+    road_h = _get_road_height(data)
+    cy_road = bottom - t_stop_gauge * road_h
     y_sign = cy_road - 25.0 * SCALE * smoothed_s
 
     r_min = 6.0 * SCALE
