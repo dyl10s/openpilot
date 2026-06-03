@@ -1778,6 +1778,8 @@ def test_matched_follow_transition_target_damps_large_comfort_sign_flip():
     1.45,
     prev_output_a_target=0.12,
     output_a_target=-0.40,
+    current_source="cruise",
+    tracking_lead_active=True,
   )
 
   assert smoothed is not None
@@ -1797,6 +1799,66 @@ def test_matched_follow_transition_target_skips_urgent_closure():
     1.45,
     prev_output_a_target=0.10,
     output_a_target=-0.60,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert smoothed is None
+
+
+def test_matched_follow_transition_target_damps_low_speed_tracking_cruise_throttle_jitter():
+  v_ego = 14.5
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(status=True, d_rel=31.1, v_lead=14.5, a_lead=0.0, radar=False, model_prob=0.999)
+
+  smoothed = planner.get_matched_follow_transition_target(
+    lead,
+    v_ego,
+    1.45,
+    prev_output_a_target=0.08,
+    output_a_target=0.46,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert smoothed is not None
+  assert smoothed == pytest.approx(0.14, abs=1e-6)
+
+
+def test_matched_follow_transition_target_skips_low_speed_without_tracking():
+  v_ego = 14.5
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(status=True, d_rel=31.1, v_lead=14.5, a_lead=0.0, radar=False, model_prob=0.999)
+
+  smoothed = planner.get_matched_follow_transition_target(
+    lead,
+    v_ego,
+    1.45,
+    prev_output_a_target=0.08,
+    output_a_target=0.46,
+    current_source="cruise",
+    tracking_lead_active=False,
+  )
+
+  assert smoothed is None
+
+
+def test_matched_follow_transition_target_skips_low_speed_real_braking():
+  v_ego = 14.5
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(status=True, d_rel=29.0, v_lead=13.6, a_lead=0.0, radar=False, model_prob=0.999)
+
+  smoothed = planner.get_matched_follow_transition_target(
+    lead,
+    v_ego,
+    1.45,
+    prev_output_a_target=0.08,
+    output_a_target=-0.30,
+    current_source="cruise",
+    tracking_lead_active=True,
   )
 
   assert smoothed is None

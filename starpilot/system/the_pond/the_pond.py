@@ -78,6 +78,7 @@ from openpilot.starpilot.common.testing_grounds import (
   TESTING_GROUNDS_STATE_PATH as SHARED_TESTING_GROUNDS_STATE_PATH,
 )
 from openpilot.starpilot.navigation.destination_store import normalize_destination_payload, update_recent_destinations
+from openpilot.starpilot.system.the_pond.factory_reset import remove_path as _run_factory_reset_delete
 from openpilot.starpilot.system.the_pond import utilities
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -633,7 +634,6 @@ _FAST_UPDATE_REBOOT_NOTICE_SECONDS = 6.0
 _FAST_UPDATE_FETCH_TIMEOUT_S = 60
 _FAST_BRANCH_SWITCH_FETCH_TIMEOUT_S = 60
 _FAST_ROLLBACK_FETCH_TIMEOUT_S = 60
-_FACTORY_RESET_DELETE_TIMEOUT_S = 1800
 _GIT_PROGRESS_PERCENT_RE = re.compile(r'([A-Za-z][A-Za-z /_-]+):\s*([0-9]{1,3})%')
 _GIT_SUBMODULE_SECTION_RE = re.compile(r'^\s*\[submodule\s+"[^"]+"\]\s*$', re.MULTILINE)
 _ROLLBACK_REF = "refs/starpilot/rollback"
@@ -1571,18 +1571,6 @@ def _set_fast_update_error_state(message, exception):
     progressLabel="Failed",
     progressDetail="Update failed. See Last Error below.",
   )
-
-def _run_factory_reset_delete(path):
-  result = subprocess.run(
-    ["sudo", "rm", "-rf", path],
-    capture_output=True,
-    text=True,
-    timeout=_FACTORY_RESET_DELETE_TIMEOUT_S,
-    check=False,
-  )
-  if result.returncode != 0:
-    error_text = (result.stderr or result.stdout or "sudo rm -rf failed").strip()
-    raise RuntimeError(f"Failed to remove {path}: {error_text}")
 
 def _factory_reset_worker():
   started_at = time.time()

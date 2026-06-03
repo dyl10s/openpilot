@@ -237,6 +237,21 @@ MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP = 0.18
 MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP = 0.08
 MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP = 0.16
 MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP = 0.10
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_SPEED = 10.0
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_SPEED = MATCHED_FOLLOW_TRANSITION_MIN_SPEED
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN = 0.45
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN = 1.00
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB = 0.98
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE = 0.08
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED = 1.25
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_TTC = 18.0
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP = 0.06
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP = 0.10
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP = 0.05
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP = 0.08
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP = 0.06
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_TARGET = -0.12
+LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_DELTA_A = 0.12
 NEAR_DUPLICATE_LEAD_TRANSITION_MIN_SPEED = 20.0
 NEAR_DUPLICATE_LEAD_TRANSITION_MIN_MODEL_PROB = 0.95
 NEAR_DUPLICATE_LEAD_TRANSITION_MAX_LEAD_BRAKE = 0.35
@@ -1215,18 +1230,26 @@ class LongitudinalPlanner:
     ))
     return -max(0.0, cap_decel - relax_decel)
 
-  def get_matched_follow_transition_target(self, lead, v_ego, base_t_follow, prev_output_a_target, output_a_target):
+  def get_matched_follow_transition_target(self, lead, v_ego, base_t_follow, prev_output_a_target, output_a_target,
+                                           current_source, tracking_lead_active):
     if lead is None or not lead.status:
       return None
-    if float(v_ego) < MATCHED_FOLLOW_TRANSITION_MIN_SPEED:
+    low_speed_extension_active = (
+      bool(tracking_lead_active) and
+      current_source == "cruise" and
+      LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_SPEED <= float(v_ego) < LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_SPEED
+    )
+    if float(v_ego) < MATCHED_FOLLOW_TRANSITION_MIN_SPEED and not low_speed_extension_active:
       return None
 
     lead_prob = float(getattr(lead, "modelProb", 0.0))
-    if lead_prob < MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB:
+    min_model_prob = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MIN_MODEL_PROB
+    if lead_prob < min_model_prob:
       return None
 
     lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
-    if lead_brake > MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE:
+    max_lead_brake = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MAX_LEAD_BRAKE
+    if lead_brake > max_lead_brake:
       return None
 
     relative_speed = float(v_ego) - float(lead.vLead)
@@ -1234,49 +1257,65 @@ class LongitudinalPlanner:
       return None
 
     closing_speed = max(0.0, relative_speed)
-    if closing_speed > MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED:
+    max_closing_speed = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED
+    if closing_speed > max_closing_speed:
       return None
 
     ttc = float(lead.dRel) / max(closing_speed, 0.1) if closing_speed > 0.1 else float("inf")
-    if ttc < MATCHED_FOLLOW_TRANSITION_MIN_TTC:
+    min_ttc = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_TTC if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MIN_TTC
+    if ttc < min_ttc:
       return None
 
     actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
     headway_margin = actual_headway - float(base_t_follow)
-    if headway_margin < MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN:
+    min_headway_margin = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN
+    full_headway_margin = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN
+    if headway_margin < min_headway_margin:
       return None
     if actual_headway > float(base_t_follow) + STEADY_FOLLOW_BRAKE_CAP_MAX_HEADWAY_ABOVE_TARGET:
       return None
 
     target_delta = float(output_a_target) - float(prev_output_a_target)
-    if abs(target_delta) < 1e-3:
+    if low_speed_extension_active:
+      if float(prev_output_a_target) < LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_TARGET:
+        return None
+      if float(output_a_target) < LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_TARGET:
+        return None
+      if abs(target_delta) < LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_DELTA_A:
+        return None
+    elif abs(target_delta) < 1e-3:
       return None
 
     headway_factor = float(np.clip(
-      (headway_margin - MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN) /
-      max(MATCHED_FOLLOW_TRANSITION_FULL_HEADWAY_MARGIN - MATCHED_FOLLOW_TRANSITION_MIN_HEADWAY_MARGIN, 1e-3),
+      (headway_margin - min_headway_margin) /
+      max(full_headway_margin - min_headway_margin, 1e-3),
       0.0,
       1.0,
     ))
 
+    min_positive_step = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP
+    max_positive_step = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP
     positive_step = float(np.interp(
       max(float(lead.vLead) - float(v_ego), 0.0),
       [0.0, 1.0],
-      [MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP, MATCHED_FOLLOW_TRANSITION_MAX_POSITIVE_STEP],
+      [min_positive_step, max_positive_step],
     ))
+    min_negative_step = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP
+    max_negative_step = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP
     negative_step = float(np.interp(
       closing_speed,
-      [0.0, MATCHED_FOLLOW_TRANSITION_MAX_CLOSING_SPEED],
-      [MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP, MATCHED_FOLLOW_TRANSITION_MAX_NEGATIVE_STEP],
+      [0.0, max_closing_speed],
+      [min_negative_step, max_negative_step],
     ))
 
     # The more space we still have, the less abrupt the comfort path should be.
-    positive_step = float(np.interp(headway_factor, [0.0, 1.0], [positive_step, MATCHED_FOLLOW_TRANSITION_MIN_POSITIVE_STEP]))
-    negative_step = float(np.interp(headway_factor, [0.0, 1.0], [negative_step, MATCHED_FOLLOW_TRANSITION_MIN_NEGATIVE_STEP]))
+    positive_step = float(np.interp(headway_factor, [0.0, 1.0], [positive_step, min_positive_step]))
+    negative_step = float(np.interp(headway_factor, [0.0, 1.0], [negative_step, min_negative_step]))
 
     if float(prev_output_a_target) * float(output_a_target) < 0.0:
-      positive_step = min(positive_step, MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP)
-      negative_step = min(negative_step, MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP)
+      sign_cross_step = LOW_SPEED_MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP if low_speed_extension_active else MATCHED_FOLLOW_TRANSITION_SIGN_CROSS_STEP
+      positive_step = min(positive_step, sign_cross_step)
+      negative_step = min(negative_step, sign_cross_step)
 
     lower = float(prev_output_a_target) - negative_step
     upper = float(prev_output_a_target) + positive_step
@@ -2042,6 +2081,8 @@ class LongitudinalPlanner:
         effective_t_follow,
         prev_output_a_target,
         output_a_target,
+        self.mpc.source,
+        bool(getattr(sm["starpilotPlan"], "trackingLead", False)),
       )
       if matched_follow_transition_target is not None:
         if matched_follow_transition_target < output_a_target:

@@ -6,6 +6,7 @@ from cereal import log
 from opendbc.car.gm.values import CAR as GM_CAR
 from opendbc.car.honda.values import CAR as HONDA_CAR, HondaFlags
 from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR
+from opendbc.car.toyota.values import CAR as TOYOTA_CAR
 from opendbc.car.lateral import get_friction
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY, CV
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -142,6 +143,9 @@ KIA_EV6_CARS = (
 )
 KIA_FORTE_CARS = (
   HYUNDAI_CAR.KIA_FORTE,
+)
+PRIUS_CARS = (
+  TOYOTA_CAR.TOYOTA_PRIUS,
 )
 
 BOLT_2017_LATERAL_TESTING_GROUND_ID = testing_ground.id_3
@@ -551,6 +555,28 @@ VOLT_PLEXY_TURN_IN_FRICTION_BOOST_LEFT = 0.08
 VOLT_PLEXY_TURN_IN_FRICTION_BOOST_RIGHT = 0.06
 VOLT_PLEXY_UNWIND_FRICTION_REDUCTION_LEFT = 0.16
 VOLT_PLEXY_UNWIND_FRICTION_REDUCTION_RIGHT = 0.40
+PRIUS_TRANSITION_SPEED = 10.0
+PRIUS_PHASE_SCALE = 0.09
+PRIUS_FF_GAIN_LEFT = 0.10
+PRIUS_FF_GAIN_RIGHT = 0.14
+PRIUS_FF_ONSET = 0.16
+PRIUS_FF_ONSET_WIDTH = 0.08
+PRIUS_FF_CUTOFF = 1.25
+PRIUS_FF_CUTOFF_WIDTH = 0.30
+PRIUS_FRICTION_LAT_RISE = 0.18
+PRIUS_FRICTION_JERK_RISE = 0.22
+PRIUS_TURN_IN_BOOST_LEFT = 0.48
+PRIUS_TURN_IN_BOOST_RIGHT = 0.62
+PRIUS_UNWIND_TAPER_LEFT = 0.44
+PRIUS_UNWIND_TAPER_RIGHT = 0.72
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.18
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.24
+PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT = 0.28
+PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.44
+PRIUS_TURN_IN_FRICTION_BOOST_LEFT = 0.08
+PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.12
+PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.14
+PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.24
 
 
 def _sigmoid(x: float) -> float:
@@ -565,6 +591,74 @@ def _sigmoid(x: float) -> float:
 def get_friction_threshold(v_ego: float) -> float:
   # Keep the speed-scaled friction threshold behavior.
   return float(np.interp(v_ego, [1 * CV.MPH_TO_MS, 20 * CV.MPH_TO_MS, 75 * CV.MPH_TO_MS], [0.16, 0.19, 0.27]))
+
+
+def _prius_sigmoid(x: float) -> float:
+  return _sigmoid(x)
+
+
+def _prius_low_speed_factor(v_ego: float) -> float:
+  return 1.0 / (1.0 + (max(v_ego, 0.0) / PRIUS_TRANSITION_SPEED) ** 2)
+
+
+def _prius_transition_phase(desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+  return math.tanh((desired_lateral_accel * desired_lateral_jerk) / PRIUS_PHASE_SCALE)
+
+
+def _prius_side_value(desired_lateral_accel: float, left_value: float, right_value: float) -> float:
+  return left_value if desired_lateral_accel >= 0.0 else right_value
+
+
+def _prius_transition_envelope(v_ego: float, desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+  lat_factor = 1.0 - math.exp(-abs(desired_lateral_accel) / PRIUS_FRICTION_LAT_RISE)
+  jerk_factor = 1.0 - math.exp(-abs(desired_lateral_jerk) / PRIUS_FRICTION_JERK_RISE)
+  return _prius_low_speed_factor(v_ego) * lat_factor * jerk_factor
+
+
+def get_prius_ff_scale(desired_lateral_accel: float, desired_lateral_jerk: float, v_ego: float) -> float:
+  if desired_lateral_accel == 0.0:
+    return 1.0
+
+  gain = _prius_side_value(desired_lateral_accel, PRIUS_FF_GAIN_LEFT, PRIUS_FF_GAIN_RIGHT)
+  abs_lateral_accel = abs(desired_lateral_accel)
+  onset = _prius_sigmoid((abs_lateral_accel - PRIUS_FF_ONSET) / PRIUS_FF_ONSET_WIDTH)
+  cutoff = _prius_sigmoid((PRIUS_FF_CUTOFF - abs_lateral_accel) / PRIUS_FF_CUTOFF_WIDTH)
+  extra_scale = gain * onset * cutoff
+  phase = _prius_transition_phase(desired_lateral_accel, desired_lateral_jerk)
+  turn_in_weight = max(phase, 0.0)
+  unwind_weight = max(-phase, 0.0)
+  low_speed_factor = _prius_low_speed_factor(v_ego)
+  turn_in_boost = 1.0 + (_prius_side_value(desired_lateral_accel, PRIUS_TURN_IN_BOOST_LEFT, PRIUS_TURN_IN_BOOST_RIGHT) *
+                          turn_in_weight * (0.35 + 0.65 * low_speed_factor))
+  unwind_taper = 1.0 - (_prius_side_value(desired_lateral_accel, PRIUS_UNWIND_TAPER_LEFT, PRIUS_UNWIND_TAPER_RIGHT) *
+                         unwind_weight * (0.35 + 0.65 * low_speed_factor))
+  return 1.0 + (extra_scale * turn_in_boost * max(unwind_taper, 0.0))
+
+
+def get_prius_friction_threshold(v_ego: float, desired_lateral_accel: float = 0.0, desired_lateral_jerk: float = 0.0) -> float:
+  base_threshold = get_friction_threshold(v_ego)
+  transition_envelope = _prius_transition_envelope(v_ego, desired_lateral_accel, desired_lateral_jerk)
+  phase = _prius_transition_phase(desired_lateral_accel, desired_lateral_jerk)
+  turn_in_weight = max(phase, 0.0)
+  unwind_weight = max(-phase, 0.0)
+  threshold_scale = 1.0 - (_prius_side_value(desired_lateral_accel, PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT, PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT) *
+                           transition_envelope * turn_in_weight)
+  threshold_scale += (_prius_side_value(desired_lateral_accel, PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT, PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT) *
+                      transition_envelope * unwind_weight)
+  return base_threshold * min(max(threshold_scale, 0.86), 1.16)
+
+
+def get_prius_friction_scale(v_ego: float, desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+  transition_envelope = _prius_transition_envelope(v_ego, desired_lateral_accel, desired_lateral_jerk)
+  phase = _prius_transition_phase(desired_lateral_accel, desired_lateral_jerk)
+  turn_in_weight = max(phase, 0.0)
+  unwind_weight = max(-phase, 0.0)
+  friction_scale = 1.0
+  friction_scale += (_prius_side_value(desired_lateral_accel, PRIUS_TURN_IN_FRICTION_BOOST_LEFT, PRIUS_TURN_IN_FRICTION_BOOST_RIGHT) *
+                     transition_envelope * turn_in_weight)
+  friction_scale -= (_prius_side_value(desired_lateral_accel, PRIUS_UNWIND_FRICTION_REDUCTION_LEFT, PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT) *
+                     transition_envelope * unwind_weight)
+  return min(max(friction_scale, 0.90), 1.14)
 
 
 def civic_bosch_modified_lateral_testing_ground_active() -> bool:
@@ -1748,6 +1842,7 @@ class LatControlTorque(LatControl):
     self.is_volt_standard = CP.carFingerprint in VOLT_STANDARD_CARS
     self.is_genesis_g90 = CP.carFingerprint in GENESIS_G90_CARS
     self.is_palisade = CP.carFingerprint in PALISADE_CARS
+    self.is_prius = CP.carFingerprint in PRIUS_CARS
     self.is_ioniq_5 = CP.carFingerprint in IONIQ_5_CARS
     self.is_ioniq_ev_old = CP.carFingerprint in IONIQ_EV_OLD_CARS
     self.is_ioniq_6 = CP.carFingerprint in IONIQ_6_CARS
@@ -1880,6 +1975,7 @@ class LatControlTorque(LatControl):
       volt_standard_test_active = self.is_volt_standard and volt_standard_lateral_testing_ground_active()
       genesis_g90_test_active = self.is_genesis_g90 and genesis_g90_lateral_testing_ground_active()
       palisade_active = self.is_palisade
+      prius_active = self.is_prius
       ioniq_5_active = self.is_ioniq_5
       ioniq_ev_old_active = self.is_ioniq_ev_old
       ioniq_6_active = self.is_ioniq_6
@@ -1922,6 +2018,10 @@ class LatControlTorque(LatControl):
         ff *= get_palisade_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
         friction_threshold = get_palisade_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_palisade_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
+      elif prius_active:
+        ff *= get_prius_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+        friction_threshold = get_prius_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
+        friction_scale = get_prius_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
       elif ioniq_5_active:
         ff *= get_ioniq_5_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * ioniq_5_center_taper
         friction_threshold = get_ioniq_5_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)

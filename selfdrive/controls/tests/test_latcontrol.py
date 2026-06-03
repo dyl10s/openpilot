@@ -43,6 +43,9 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_palisade_ff_scale,
   get_palisade_friction_scale,
   get_palisade_friction_threshold,
+  get_prius_ff_scale,
+  get_prius_friction_scale,
+  get_prius_friction_threshold,
   get_ioniq_5_ff_scale,
   get_ioniq_5_friction_scale,
   get_ioniq_5_friction_threshold,
@@ -362,6 +365,41 @@ class TestLatControl:
     right_unwind = get_palisade_friction_scale(6.0, -0.7, 0.8)
     assert left_turn_in > right_turn_in > base
     assert base > left_unwind > right_unwind
+
+  def test_prius_ff_scale_curve(self):
+    assert get_prius_ff_scale(0.0, 0.0, 20.0) == 1.0
+    steady_left = get_prius_ff_scale(0.7, 0.0, 8.0)
+    steady_right = get_prius_ff_scale(-0.7, 0.0, 8.0)
+    turn_in_left = get_prius_ff_scale(0.7, 0.8, 8.0)
+    turn_in_right = get_prius_ff_scale(-0.7, -0.8, 8.0)
+    unwind_left = get_prius_ff_scale(0.7, -0.8, 8.0)
+    unwind_right = get_prius_ff_scale(-0.7, 0.8, 8.0)
+    assert steady_left > 1.0
+    assert steady_right > steady_left
+    assert turn_in_left > steady_left
+    assert turn_in_right > steady_right
+    assert unwind_left < steady_left
+    assert unwind_right < steady_right
+    assert unwind_right < unwind_left
+
+  def test_prius_friction_curves(self):
+    base_threshold = get_friction_threshold(12.0)
+    left_turn_in_threshold = get_prius_friction_threshold(6.0, 0.7, 0.8)
+    right_turn_in_threshold = get_prius_friction_threshold(6.0, -0.7, -0.8)
+    left_unwind_threshold = get_prius_friction_threshold(6.0, 0.7, -0.8)
+    right_unwind_threshold = get_prius_friction_threshold(6.0, -0.7, 0.8)
+    assert left_turn_in_threshold < base_threshold
+    assert right_turn_in_threshold < left_turn_in_threshold
+    assert left_unwind_threshold > base_threshold
+    assert right_unwind_threshold >= left_unwind_threshold
+
+    base_scale = get_prius_friction_scale(25.0, 0.7, 0.8)
+    left_turn_in_scale = get_prius_friction_scale(6.0, 0.7, 0.8)
+    right_turn_in_scale = get_prius_friction_scale(6.0, -0.7, -0.8)
+    left_unwind_scale = get_prius_friction_scale(6.0, 0.7, -0.8)
+    right_unwind_scale = get_prius_friction_scale(6.0, -0.7, 0.8)
+    assert right_turn_in_scale > left_turn_in_scale > base_scale
+    assert base_scale > left_unwind_scale > right_unwind_scale
 
   def test_ioniq_5_ff_scale_curve(self):
     assert get_ioniq_5_ff_scale(0.0, 0.0, 20.0) == 1.0
