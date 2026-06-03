@@ -1167,11 +1167,11 @@ class TestHyundaiFingerprint:
     assert parser.vl["FCA12"]["FCA_DrvSetState"] == 2
     assert parser.vl["FCA12"]["FCA_USM"] == 2
 
-  def test_sportage_angle_steering_uses_lfa_and_adas_cmd_with_send_lfa(self):
+  def test_angle_steering_uses_adas_cmd_with_send_lfa(self):
     fingerprint = gen_empty_fingerprint()
     cam_can = CanBus(None, fingerprint).CAM
     fingerprint[cam_can][0xCB] = 24
-    CP = CarInterface.get_params(CAR.KIA_SPORTAGE_HEV_2026, fingerprint, [], False, False, False, None)
+    CP = CarInterface.get_params(CAR.HYUNDAI_SANTA_FE_HEV_5TH_GEN, fingerprint, [], False, False, False, None)
 
     assert CP.flags & HyundaiFlags.SEND_LFA
     assert CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING
@@ -1180,7 +1180,6 @@ class TestHyundaiFingerprint:
     can_bus = CanBus(CP)
     msgs = hyundaicanfd.create_steering_messages(packer, CP, can_bus, True, True, 1.0, 12.3)
     assert [(packer.dbc.addr_to_msg[addr].name, bus) for addr, _, bus in msgs] == [
-      ("LFA", can_bus.ECAN),
       ("ADAS_CMD_35_10ms", can_bus.ECAN),
     ]
 
@@ -1473,34 +1472,6 @@ class TestHyundaiFingerprint:
       (0x31A, bytes.fromhex("851828f0f0ffff03898aff0a098678ff000000007e0055550000000000000000"), can_bus.ECAN),
     ]
     assert hyundaicanfd.create_ioniq_6_cluster_lane_change_messages(can_bus, 5, "none") == []
-
-  def test_sportage_angle_jerk_override_is_scoped(self):
-    sportage = CarParams.new_message()
-    sportage.carFingerprint = CAR.KIA_SPORTAGE_HEV_2026
-    sportage.flags = int(HyundaiFlags.CANFD | HyundaiFlags.CANFD_ANGLE_STEERING)
-
-    comparison_angle = CarParams.new_message()
-    comparison_angle.carFingerprint = CAR.KIA_EV6
-    comparison_angle.flags = int(HyundaiFlags.CANFD | HyundaiFlags.CANFD_ANGLE_STEERING)
-
-    ioniq6 = CarParams.new_message()
-    ioniq6.carFingerprint = CAR.HYUNDAI_IONIQ_6
-    ioniq6.flags = int(HyundaiFlags.CANFD | HyundaiFlags.CANFD_LKA_STEERING | HyundaiFlags.CANFD_LKA_STEERING_ALT)
-
-    sportage_params = CarControllerParams(sportage)
-    sportage_low_speed_params = CarControllerParams(sportage, vEgoRaw=5.0)
-    sportage_high_speed_params = CarControllerParams(sportage, vEgoRaw=20.0)
-    comparison_params = CarControllerParams(comparison_angle)
-    ioniq6_params = CarControllerParams(ioniq6)
-
-    assert sportage_params.ANGLE_LIMITS.MAX_LATERAL_JERK < comparison_params.ANGLE_LIMITS.MAX_LATERAL_JERK
-    assert sportage_high_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK == sportage_params.ANGLE_LIMITS.MAX_LATERAL_JERK
-    assert sportage_low_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK > sportage_high_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK
-    assert sportage_low_speed_params.ANGLE_LIMITS.MAX_LATERAL_JERK < comparison_params.ANGLE_LIMITS.MAX_LATERAL_JERK
-    assert sportage_params.ANGLE_LIMITS.STEER_ANGLE_MAX > comparison_params.ANGLE_LIMITS.STEER_ANGLE_MAX
-    assert sportage_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL > comparison_params.ANGLE_LIMITS.MAX_LATERAL_ACCEL
-    assert sportage_params.ANGLE_LIMITS.MAX_ANGLE_RATE > comparison_params.ANGLE_LIMITS.MAX_ANGLE_RATE
-    assert comparison_params.ANGLE_LIMITS.MAX_LATERAL_JERK == ioniq6_params.ANGLE_LIMITS.MAX_LATERAL_JERK
 
   def test_ioniq_5_canfd_aux_messages_are_optional(self):
     toggles = get_test_toggles()

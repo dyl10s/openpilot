@@ -1,9 +1,9 @@
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import IntFlag
 
 from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, uds
-from opendbc.car.lateral import AngleSteeringLimits, ISO_LATERAL_ACCEL, ISO_LATERAL_JERK
+from opendbc.car.lateral import AngleSteeringLimits, ISO_LATERAL_ACCEL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.structs import CarParams
 from opendbc.car.docs_definitions import CarHarness, CarDocs, CarParts, SupportType
@@ -11,13 +11,6 @@ from opendbc.car.fw_query_definitions import FwQueryConfig, Request, p16
 
 Ecu = CarParams.Ecu
 AVERAGE_ROAD_ROLL = 0.06  # conservative roll margin used by Hyundai CAN-FD angle steering safety
-SPORTAGE_HEV_2026_MAX_LATERAL_ACCEL = 3.6
-SPORTAGE_HEV_2026_BASE_LATERAL_JERK = 3.25
-SPORTAGE_HEV_2026_LOW_SPEED_JERK_BOOST = 0.55
-SPORTAGE_HEV_2026_LOW_SPEED_JERK_SPEED = 11.0
-SPORTAGE_HEV_2026_LOW_SPEED_JERK_WIDTH = 5.0
-SPORTAGE_HEV_2026_MAX_ANGLE_RATE = 6.5
-SPORTAGE_HEV_2026_STEER_ANGLE_MAX = 220.0
 HYUNDAI_MANDO_FRONT_RADAR_DBC = "hyundai_kia_mando_front_radar_generated"
 HYUNDAI_MRREVO14F_RADAR_DBC = "hyundai_mrrevo14f_radar_generated"
 HYUNDAI_MRR30_RADAR_DBC = "hyundai_mrr30_radar_generated"
@@ -28,16 +21,13 @@ class CarControllerParams:
   ACCEL_MIN = -3.5 # m/s
   ACCEL_MAX = 3.5 # m/s
   ANGLE_LIMITS: AngleSteeringLimits = AngleSteeringLimits(
-    180,
+    360,
     ([], []),
     ([], []),
     MAX_LATERAL_ACCEL=ISO_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
-    MAX_LATERAL_JERK=ISO_LATERAL_JERK + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
+    MAX_LATERAL_JERK=3.0 + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
     MAX_ANGLE_RATE=5,
   )
-  ANGLE_MAX_TORQUE_REDUCTION_GAIN = 1.0
-  ANGLE_MIN_TORQUE_REDUCTION_GAIN = 0.6
-  ANGLE_ACTIVE_TORQUE_REDUCTION_GAIN = 0.6
 
   def __init__(self, CP, vEgoRaw=100.):
     self.ANGLE_LIMITS = self.ANGLE_LIMITS
@@ -63,21 +53,6 @@ class CarControllerParams:
 
     if CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
       self.STEER_THRESHOLD = 175
-
-      # The Sportage angle port still needs more authority in real turns than the
-      # fully calmed branch-wide ceiling allows, but the old low-speed jerk boost
-      # made the 3-20 degree band angry and ping-pongy as the car slowed down.
-      # Split the difference:
-      # - keep a calmer low-speed boost that fades out earlier
-      # - give the car a little more true turn headroom through accel/rate limits
-      if CP.carFingerprint == CAR.KIA_SPORTAGE_HEV_2026:
-        sportage_low_speed_weight = min(max((SPORTAGE_HEV_2026_LOW_SPEED_JERK_SPEED - vEgoRaw) / SPORTAGE_HEV_2026_LOW_SPEED_JERK_WIDTH, 0.0), 1.0)
-        sportage_lateral_jerk = SPORTAGE_HEV_2026_BASE_LATERAL_JERK + (SPORTAGE_HEV_2026_LOW_SPEED_JERK_BOOST * sportage_low_speed_weight)
-        self.ANGLE_LIMITS = replace(self.ANGLE_LIMITS,
-                                    STEER_ANGLE_MAX=SPORTAGE_HEV_2026_STEER_ANGLE_MAX,
-                                    MAX_LATERAL_ACCEL=SPORTAGE_HEV_2026_MAX_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
-                                    MAX_LATERAL_JERK=sportage_lateral_jerk + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),
-                                    MAX_ANGLE_RATE=SPORTAGE_HEV_2026_MAX_ANGLE_RATE)
 
     # To determine the limit for your car, find the maximum value that the stock LKAS will request.
     # If the max stock LKAS request is <384, add your car to this list.
