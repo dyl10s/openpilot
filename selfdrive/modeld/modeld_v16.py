@@ -18,6 +18,7 @@ from msgq.visionipc import VisionBuf, VisionIpcClient, VisionStreamType
 from opendbc.car.car_helpers import get_demo_car_params
 from setproctitle import setproctitle
 from tinygrad.dtype import dtypes
+from tinygrad.engine.jit import get_out_buffers_for_ei
 from tinygrad.tensor import Tensor
 
 from openpilot.common.file_chunker import read_file_chunked
@@ -214,6 +215,23 @@ class ModelState:
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     return {key: model_outputs[np.newaxis, value] for key, value in output_slices.items()}
 
+  def read_captured_outputs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    captured = getattr(self.run_policy, "captured", None)
+    ret_output_map = getattr(captured, "ret_output_map", None)
+    if captured is None or ret_output_map is None or len(ret_output_map) != 3:
+      return None
+
+    jit_outs = []
+    for ji in captured.jit_cache:
+      jit_outs.extend(get_out_buffers_for_ei(ji))
+
+    outputs = []
+    for idx in ret_output_map:
+      if idx is None or idx >= len(jit_outs):
+        return None
+      outputs.append(np.frombuffer(bytes(jit_outs[idx].as_memoryview()), dtype=np.float32).copy())
+    return tuple(outputs)
+
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
     inputs[self.desire_key][0] = 0
     self.npy["desire"][:] = np.where(inputs[self.desire_key] - self.prev_desire > 0.99, inputs[self.desire_key], 0)
@@ -245,9 +263,13 @@ class ModelState:
       big_img=self.vision_inputs["big_img"],
     )
 
-    vision_output = vision_output.numpy().flatten()
-    policy_output = policy_output.numpy().flatten()
-    off_policy_output = off_policy_output.numpy().flatten()
+    captured_outputs = self.read_captured_outputs()
+    if captured_outputs is not None:
+      vision_output, policy_output, off_policy_output = captured_outputs
+    else:
+      vision_output = vision_output.numpy().flatten()
+      policy_output = policy_output.numpy().flatten()
+      off_policy_output = off_policy_output.numpy().flatten()
 
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(vision_output, self.vision_output_slices))
     off_policy_outputs_dict = self.parser.parse_off_policy_outputs(self.slice_outputs(off_policy_output, self.off_policy_output_slices))
