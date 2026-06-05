@@ -392,13 +392,16 @@ class Car:
       return
 
     filtered_CS = self._get_button_event_filtered_state(CS)
-    send_button, v_target = self.redneck_cruise.run(filtered_CS, CC, self._get_redneck_target_speed(CS), self.is_metric)
+    v_target_ms, lead_present = self._get_redneck_target_speed(CS)
+    send_button, v_target = self.redneck_cruise.run(filtered_CS, CC, v_target_ms, self.is_metric, lead_present=lead_present)
     self.CI.CS.redneck_send_button = send_button
     self.CI.CS.redneck_v_target = v_target
 
-  def _get_redneck_target_speed(self, CS: car.CarState) -> float:
+  def _get_redneck_target_speed(self, CS: car.CarState) -> tuple[float, bool]:
     starpilot_target_speed = 0.0
     allow_plan_decrease = False
+    lead_present = False
+    lookahead_points = REDNECK_DECREASE_LOOKAHEAD_POINTS
     if self.sm.seen['starpilotPlan'] and self.sm.valid['starpilotPlan']:
       starpilot_target_speed = float(self.sm['starpilotPlan'].vCruise)
 
@@ -406,17 +409,21 @@ class Car:
     if self.sm.seen['longitudinalPlan'] and self.sm.valid['longitudinalPlan']:
       longitudinal_plan = self.sm['longitudinalPlan']
       plan_speeds = [float(speed) for speed in longitudinal_plan.speeds if math.isfinite(float(speed))]
-      allow_plan_decrease = bool(longitudinal_plan.hasLead or longitudinal_plan.shouldStop or
+      lead_present = bool(longitudinal_plan.hasLead)
+      allow_plan_decrease = bool(lead_present or longitudinal_plan.shouldStop or
                                  str(longitudinal_plan.longitudinalPlanSource) != "cruise")
+      if lead_present and len(plan_speeds) > 0:
+        lookahead_points = len(plan_speeds)
 
     return select_redneck_target_speed(
       float(getattr(CS, "vCruise", 0.0)),
       float(CS.cruiseState.speedCluster),
       starpilot_target_speed,
       plan_speeds,
-      REDNECK_DECREASE_LOOKAHEAD_POINTS,
+      lookahead_points,
       allow_plan_decrease=allow_plan_decrease,
-    )
+      lead_present=lead_present,
+    ), lead_present
 
   def _advance_redneck_button_feedback_filter(self) -> None:
     if self.redneck_cruise is None:
