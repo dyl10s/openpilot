@@ -617,7 +617,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       if new_state:
         migrate_cancel_button_controls(self._params)
       return
-    current = self._params.get_bool(param_key) if self._params.get(param_key, encoding="utf-8") is not None else False
+    current = self._params.get_bool(param_key) if self._params.get(param_key) is not None else False
     self._params.put_bool(param_key, not current)
 
   def _on_select(self, key: str):
@@ -637,13 +637,13 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     if not makes:
       gui_app.push_widget(ConfirmDialog(tr("No fingerprint list available."), tr("OK")))
       return
-    current_make = self._params.get("CarMake", encoding="utf-8") or ""
+    current_make = self._params.get("CarMake") or ""
     default_make = current_make if current_make in makes else makes[0]
 
     def on_select(res):
       if res == DialogResult.CONFIRM and dialog.selection:
         self._params.put("CarMake", dialog.selection)
-        current_model = self._params.get("CarModel", encoding="utf-8") or ""
+        current_model = self._params.get("CarModel") or ""
         available = {o.value for o in self._models_by_make.get(dialog.selection, ())}
         if current_model not in available:
           self._params.remove("CarModel")
@@ -654,7 +654,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     gui_app.push_widget(dialog)
 
   def _on_select_model(self):
-    make = self._params.get("CarMake", encoding="utf-8") or ""
+    make = self._params.get("CarMake") or ""
     if not make:
       gui_app.push_widget(ConfirmDialog(tr("Please select a Car Make first!"), tr("OK")))
       return
@@ -664,8 +664,8 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       return
     option_labels = [o.option_label for o in model_options]
     selected_by_label = {o.option_label: o for o in model_options}
-    current_model = self._params.get("CarModel", encoding="utf-8") or ""
-    current_model_name = self._params.get("CarModelName", encoding="utf-8") or ""
+    current_model = self._params.get("CarModel") or ""
+    current_model_name = self._params.get("CarModelName") or ""
     default_option = next((o.option_label for o in model_options if o.value == current_model and o.label == current_model_name), None)
     if default_option is None:
       default_option = next((o.option_label for o in model_options if o.value == current_model), option_labels[0])
@@ -711,10 +711,10 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
                                             self._params.get_float("ClusterOffset"), on_close, unit="x", color=PANEL_STYLE.accent))
 
   def _get_display_make(self) -> str:
-    make = self._params.get("CarMake", encoding="utf-8") or ""
+    make = self._params.get("CarMake") or ""
     if make:
       return make
-    model = self._params.get("CarModel", encoding="utf-8") or ""
+    model = self._params.get("CarModel") or ""
     if model:
       return self._make_by_model.get(model, tr("None"))
     return tr("None")
@@ -723,9 +723,9 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     selected = self._get_selected_model_option()
     if selected is not None:
       return selected.button_label
-    model = self._params.get("CarModel", encoding="utf-8") or ""
-    model_name = self._params.get("CarModelName", encoding="utf-8") or ""
-    make = self._params.get("CarMake", encoding="utf-8") or self._make_by_model.get(model, "")
+    model = self._params.get("CarModel") or ""
+    model_name = self._params.get("CarModelName") or ""
+    make = self._params.get("CarMake") or self._make_by_model.get(model, "")
     if model_name:
       return shorten_model_label(make, model_name) if make else model_name
     if model and model in self._models_by_value:
@@ -733,11 +733,11 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     return tr("None")
 
   def _get_selected_model_option(self) -> FingerprintModelOption | None:
-    model = self._params.get("CarModel", encoding="utf-8") or ""
+    model = self._params.get("CarModel") or ""
     if not model:
       return None
-    model_name = self._params.get("CarModelName", encoding="utf-8") or ""
-    make = self._params.get("CarMake", encoding="utf-8") or self._make_by_model.get(model, "")
+    model_name = self._params.get("CarModelName") or ""
+    make = self._params.get("CarMake") or self._make_by_model.get(model, "")
     if make and model_name:
       for option in self._models_by_make.get(make, ()):
         if option.value == model and option.label == model_name:
