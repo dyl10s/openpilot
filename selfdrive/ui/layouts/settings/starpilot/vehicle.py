@@ -648,6 +648,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
         if current_model not in available:
           self._params.remove("CarModel")
           self._params.remove("CarModelName")
+        starpilot_state.update()
 
     dialog = MultiOptionDialog(tr("Select Make"), makes, default_make, callback=on_select)
     gui_app.push_widget(dialog)
@@ -675,6 +676,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
         self._params.put("CarModel", opt.value)
         self._params.put("CarModelName", opt.label)
         self._params.put("CarMake", make)
+        starpilot_state.update()
 
     dialog = MultiOptionDialog(tr("Select Model"), option_labels, default_option, callback=on_select)
     gui_app.push_widget(dialog)

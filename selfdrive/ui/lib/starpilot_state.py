@@ -77,12 +77,8 @@ class StarPilotState:
         self.update()
 
     def _apply_desktop_fallback(self, starpilot_toggles: dict):
-        fallback_make = starpilot_toggles.get("car_make", "")
-        fallback_model = starpilot_toggles.get("car_model", "")
-        if not fallback_make:
-            fallback_make = "gm"
-        if not fallback_model:
-            fallback_model = "CHEVROLET_BOLT_ACC_2022_2023"
+        fallback_make = starpilot_toggles.get("car_make") or self.params.get("CarMake", encoding="utf-8") or "gm"
+        fallback_model = starpilot_toggles.get("car_model") or self.params.get("CarModel", encoding="utf-8") or "CHEVROLET_BOLT_ACC_2022_2023"
 
         self.car_state.hasModeStarButtons = self.car_state.isHKGCanFd
         self.car_state.hasPedal = starpilot_toggles.get("has_pedal", True)
