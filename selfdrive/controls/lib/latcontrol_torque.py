@@ -328,6 +328,12 @@ KIA_FORTE_TURN_IN_BOOST_LEFT = 0.10
 KIA_FORTE_TURN_IN_BOOST_RIGHT = 0.00
 KIA_FORTE_UNWIND_TAPER_LEFT = 0.26
 KIA_FORTE_UNWIND_TAPER_RIGHT = 0.04
+KIA_FORTE_CRAWL_TURN_IN_FF_BOOST_LEFT = 0.10
+KIA_FORTE_CRAWL_TURN_IN_FF_BOOST_RIGHT = 0.14
+KIA_FORTE_CRAWL_TURN_IN_FF_SPEED = 4.5
+KIA_FORTE_CRAWL_TURN_IN_FF_SPEED_WIDTH = 0.8
+KIA_FORTE_CRAWL_TURN_IN_FF_LAT = 0.10
+KIA_FORTE_CRAWL_TURN_IN_FF_LAT_WIDTH = 0.05
 KIA_FORTE_CENTER_TAPER_MAX = 0.14
 KIA_FORTE_CENTER_TAPER_LAT = 0.16
 KIA_FORTE_CENTER_TAPER_LAT_WIDTH = 0.03
@@ -1269,7 +1275,15 @@ def get_kia_forte_ff_scale(desired_lateral_accel: float, desired_lateral_jerk: f
                          turn_in_weight * (0.35 + 0.65 * low_speed_factor))
   unwind_taper = 1.0 - (_kia_forte_side_value(desired_lateral_accel, KIA_FORTE_UNWIND_TAPER_LEFT, KIA_FORTE_UNWIND_TAPER_RIGHT) *
                         unwind_weight * (0.35 + 0.65 * low_speed_factor))
-  return (1.0 - base_reduction) * turn_in_boost * max(unwind_taper, 0.0)
+  crawl_turn_in_scale = 0.0
+  if desired_lateral_accel * desired_lateral_jerk > 0.0:
+    crawl_speed_weight = _kia_forte_sigmoid((KIA_FORTE_CRAWL_TURN_IN_FF_SPEED - max(v_ego, 0.0)) /
+                                            KIA_FORTE_CRAWL_TURN_IN_FF_SPEED_WIDTH)
+    crawl_lat_weight = _kia_forte_sigmoid((abs_lateral_accel - KIA_FORTE_CRAWL_TURN_IN_FF_LAT) /
+                                          KIA_FORTE_CRAWL_TURN_IN_FF_LAT_WIDTH)
+    crawl_turn_in_scale = _kia_forte_side_value(desired_lateral_accel, KIA_FORTE_CRAWL_TURN_IN_FF_BOOST_LEFT,
+                                                KIA_FORTE_CRAWL_TURN_IN_FF_BOOST_RIGHT) * crawl_speed_weight * crawl_lat_weight
+  return ((1.0 - base_reduction) * turn_in_boost * max(unwind_taper, 0.0)) + crawl_turn_in_scale
 
 
 def get_kia_forte_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:

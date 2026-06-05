@@ -296,10 +296,13 @@ class TestLatControl:
     assert steady_left < 1.0
     assert steady_right < steady_left
     assert turn_in_left > steady_left
-    assert turn_in_right == pytest.approx(steady_right)
+    assert turn_in_right > steady_right
     assert unwind_left < steady_left
     assert unwind_right < steady_right
     assert unwind_right > unwind_left
+    assert get_kia_forte_ff_scale(0.30, 0.60, 3.0) > get_kia_forte_ff_scale(0.30, 0.60, 6.0)
+    assert get_kia_forte_ff_scale(0.30, 0.60, 6.0) > get_kia_forte_ff_scale(0.30, 0.60, 12.0)
+    assert get_kia_forte_ff_scale(0.30, -0.60, 3.0) < get_kia_forte_ff_scale(0.30, 0.60, 3.0)
 
   def test_kia_forte_center_taper_curve(self):
     assert get_kia_forte_center_taper_scale(0.0, 30.0) < get_kia_forte_center_taper_scale(0.0, 15.0)
