@@ -62,12 +62,12 @@ class SetupWidget(Widget):
   def _show_pairing(self):
     if not system_time_valid():
       dlg = alert_dialog(tr("Please connect to Wi-Fi to complete initial pairing"))
-      gui_app.set_modal_overlay(dlg)
+      gui_app.push_widget(dlg)
       return
 
     if not self._pairing_dialog:
       self._pairing_dialog = PairingDialog()
-    gui_app.set_modal_overlay(self._pairing_dialog, lambda result: setattr(self, '_pairing_dialog', None))
+    gui_app.push_widget(self._pairing_dialog)
 
   def __del__(self):
     if self._pairing_dialog:
