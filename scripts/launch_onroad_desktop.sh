@@ -420,6 +420,15 @@ launch_python_ui() {
   UI_PIDS+=("$!")
 }
 
+launch_control_bar() {
+  local watch_pids="${UI_PIDS[*]}"
+  (
+    export REPLAY_WATCH_PIDS="${watch_pids}"
+    exec "${ROOT_DIR}/.venv/bin/python3" "${ROOT_DIR}/tools/replay/control_bar.py"
+  ) &
+  UI_PIDS+=("$!")
+}
+
 parse_args "$@"
 
 if [[ -n "${LEGACY_UI_SELECTION}" ]]; then
@@ -488,6 +497,7 @@ fi
 echo "Launching UIs: ${UI_TARGETS[*]}"
 
 local_target=""
+has_raylib=0
 for local_target in "${UI_TARGETS[@]}"; do
   case "${local_target}" in
     c3)
@@ -495,11 +505,18 @@ for local_target in "${UI_TARGETS[@]}"; do
       ;;
     c4)
       launch_python_ui 0
+      has_raylib=1
       ;;
     raybig)
       launch_python_ui 1
+      has_raylib=1
       ;;
   esac
 done
+
+if [[ "${has_raylib}" == "1" ]]; then
+  echo "Launching standalone replay controls bar..."
+  launch_control_bar
+fi
 
 wait "${UI_PIDS[@]}"
