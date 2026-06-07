@@ -5,7 +5,7 @@ from enum import IntEnum
 
 import pyray as rl
 
-from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.params import Params
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import DialogResult, Widget
@@ -36,63 +36,12 @@ class StarPilotPanelInfo:
     instance: Widget
 
 
-class StarPilotParamsProxy:
-    def __init__(self, params: Params, params_memory: Params):
-        self._params = params
-        self._params_memory = params_memory
-
-    def _mark_updated(self):
-        self._params_memory.put_bool("StarPilotTogglesUpdated", True)
-
-    def put(self, key, value):
-        try:
-            result = self._params.put(key, value)
-        except UnknownKeyName:
-            return None
-        self._mark_updated()
-        return result
-
-    def put_bool(self, key, value):
-        try:
-            result = self._params.put_bool(key, value)
-        except UnknownKeyName:
-            return None
-        self._mark_updated()
-        return result
-
-    def put_int(self, key, value):
-        try:
-            result = self._params.put_int(key, value)
-        except UnknownKeyName:
-            return None
-        self._mark_updated()
-        return result
-
-    def put_float(self, key, value):
-        try:
-            result = self._params.put_float(key, value)
-        except UnknownKeyName:
-            return None
-        self._mark_updated()
-        return result
-
-    def remove(self, key):
-        try:
-            result = self._params.remove(key)
-        except UnknownKeyName:
-            return None
-        self._mark_updated()
-        return result
-
-    def __getattr__(self, name):
-        return getattr(self._params, name)
-
 
 class StarPilotPanel(Widget):
     def __init__(self):
         super().__init__()
         self._params_memory = Params(memory=True)
-        self._params = StarPilotParamsProxy(Params(), self._params_memory)
+        self._params = Params()
         self._navigate_callback: Callable | None = None
         self._back_callback: Callable | None = None
         self._current_sub_panel = ""
