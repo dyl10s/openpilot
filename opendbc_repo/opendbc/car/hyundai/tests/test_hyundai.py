@@ -164,7 +164,6 @@ class TestHyundaiFingerprint:
       (CAR.KIA_EV6_2025, MRR30_RADAR_START_ADDR),
       (CAR.GENESIS_GV60_EV_1ST_GEN, MRR30_RADAR_START_ADDR),
       (CAR.HYUNDAI_KONA_EV_2ND_GEN, MRR35_RADAR_START_ADDR),
-      (CAR.HYUNDAI_IONIQ_6, MRR35_RADAR_START_ADDR),
       (CAR.HYUNDAI_IONIQ_9, MRR35_RADAR_START_ADDR),
     ):
       radar_config = get_radar_track_config(candidate)
@@ -172,29 +171,50 @@ class TestHyundaiFingerprint:
       for radar in (True, False):
         fingerprint = gen_empty_fingerprint()
         if radar:
-          fingerprint[radar_config.bus][radar_addr] = 8
+          fingerprint[radar_config.bus][radar_addr] = radar_config.expected_length or 8
         CP = CarInterface.get_params(candidate, fingerprint, [], False, False, False, None)
         assert CP.radarUnavailable != radar
 
     assert get_radar_track_config(CAR.HYUNDAI_KONA_EV_2022).bus == 1
     assert get_radar_track_config(CAR.HYUNDAI_IONIQ_5).bus == 0
-    assert get_radar_track_config(CAR.HYUNDAI_IONIQ_6).start_addr == MRR35_RADAR_START_ADDR
+    ioniq_6_hda2_radar_config = get_radar_track_config(CAR.HYUNDAI_IONIQ_6)
+    ioniq_6_hda1_radar_config = get_radar_track_config(CAR.HYUNDAI_IONIQ_6, HyundaiFlags.CANFD_CAMERA_SCC)
+    assert ioniq_6_hda2_radar_config.start_addr == MRR35_RADAR_START_ADDR
+    assert ioniq_6_hda2_radar_config.bus == 0
+    assert ioniq_6_hda1_radar_config.bus == 1
+    assert ioniq_6_hda1_radar_config.frequency == 20
+
     fingerprint = gen_empty_fingerprint()
-    fingerprint[1][MRR35_RADAR_START_ADDR] = 24
+    fingerprint[0][MRR35_RADAR_START_ADDR] = 8
     CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], False, False, False, None)
     assert not CP.openpilotLongitudinalControl
     assert CP.radarUnavailable
+
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[ioniq_6_hda1_radar_config.bus][MRR35_RADAR_START_ADDR] = 24
+    CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], False, False, False, None)
+    assert not CP.openpilotLongitudinalControl
+    assert CP.flags & HyundaiFlags.CANFD_CAMERA_SCC
+    assert not CP.radarUnavailable
 
     CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, gen_empty_fingerprint(), [], True, False, False, None)
     assert CP.openpilotLongitudinalControl
     assert CP.radarUnavailable
 
     fingerprint = gen_empty_fingerprint()
-    fingerprint[get_radar_track_config(CAR.HYUNDAI_IONIQ_6).bus][MRR35_RADAR_START_ADDR] = 24
+    fingerprint[ioniq_6_hda1_radar_config.bus][MRR35_RADAR_START_ADDR] = 24
     CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], True, False, False, None)
     assert CP.openpilotLongitudinalControl
+    assert CP.flags & HyundaiFlags.CANFD_CAMERA_SCC
     assert not CP.radarUnavailable
-    assert get_radar_track_config(CAR.HYUNDAI_IONIQ_6).frequency == 20
+
+    fingerprint = gen_empty_fingerprint()
+    fingerprint[CanBus(None, fingerprint).CAM][0x50] = 32
+    fingerprint[ioniq_6_hda2_radar_config.bus][MRR35_RADAR_START_ADDR] = 24
+    CP = CarInterface.get_params(CAR.HYUNDAI_IONIQ_6, fingerprint, [], True, False, False, None)
+    assert CP.openpilotLongitudinalControl
+    assert CP.flags & HyundaiFlags.CANFD_LKA_STEERING
+    assert not CP.radarUnavailable
 
     fingerprint = gen_empty_fingerprint()
     fingerprint[CanBus(None, fingerprint).CAM][0x50] = 32
