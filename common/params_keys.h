@@ -593,6 +593,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"Timezone", {PERSISTENT, STRING, "", ""}},
     {"TinygradUpdateAvailable", {PERSISTENT, BOOL, "0", "0", 1}},
     {"ToyotaDoors", {PERSISTENT, BOOL, "1", "0", 0}},
+    {"TrailerLoad", {PERSISTENT, INT, "0", "0", 2}},
     {"TrafficFollow", {PERSISTENT, FLOAT, "0.5", "0.5", 2}},
     {"TrafficJerkAcceleration", {PERSISTENT, FLOAT, "50.0", "50.0", 3}},
     {"TrafficJerkDanger", {PERSISTENT, FLOAT, "100.0", "100.0", 3}},

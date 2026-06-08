@@ -174,8 +174,11 @@ class CarInterfaceBase(ABC):
 
     ret = cls._get_params(ret, candidate, fingerprint, car_fw, alpha_long, is_release, docs)
 
+    trailer_load_kg = float(np.clip(getattr(starpilot_toggles, "trailer_load_kg", 0.0) or 0.0, 0.0, 15000.0 * CV.LB_TO_KG))
+
     # Vehicle mass is published curb weight plus assumed payload such as a human driver; notCars have no assumed payload
     if not ret.notCar:
+      ret.mass = ret.mass + trailer_load_kg
       ret.mass = ret.mass + STD_CARGO_KG
 
     # Set params dependent on values set by the car interface

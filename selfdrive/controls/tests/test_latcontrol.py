@@ -32,6 +32,8 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import (
   get_bolt_2022_2023_ff_scale,
   get_bolt_2022_2023_friction_scale,
   get_bolt_2022_2023_friction_threshold,
+  get_trailer_lateral_ff_scale,
+  get_trailer_lateral_friction_scale,
   get_bolt_2018_2021_dynamic_torque_scale,
   get_bolt_2018_2021_friction_scale,
   get_bolt_2018_2021_friction_threshold,
@@ -562,6 +564,16 @@ class TestLatControl:
     right_unwind = get_volt_plexy_friction_scale(6.0, -0.7, 0.8)
     assert left_turn_in > right_turn_in > base
     assert base > left_unwind > right_unwind
+
+  def test_trailer_lateral_assist_is_bounded(self):
+    assert get_trailer_lateral_ff_scale(0.0, 30.0, 0.6) == pytest.approx(1.0)
+    assert get_trailer_lateral_friction_scale(0.0, 30.0, 0.6) == pytest.approx(1.0)
+
+    ff_scale = get_trailer_lateral_ff_scale(15000.0 * 0.45359237, 35.0, 1.2)
+    friction_scale = get_trailer_lateral_friction_scale(15000.0 * 0.45359237, 35.0, 1.2)
+
+    assert 1.0 < ff_scale < 1.05
+    assert 1.0 < friction_scale < 1.03
 
   def test_bolt_2017_default_update_path(self):
     controller, VM, CS, params, starpilot_toggles = self._build_torque_controller(GM.CHEVROLET_BOLT_CC_2017)

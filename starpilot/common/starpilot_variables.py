@@ -664,6 +664,8 @@ class StarPilotVariables:
     # Seed powertrain-based defaults once, but always honor persisted user overrides.
     toggle.ev_tuning = ev_tuning_param
     toggle.truck_tuning = truck_tuning_param
+    toggle.trailer_load_kg = self.get_value("TrailerLoad", cast=float, condition=advanced_longitudinal_tuning,
+                                            default=0.0, conversion=CV.LB_TO_KG, min=0, max=15000 * CV.LB_TO_KG)
     toggle.longitudinalActuatorDelay = self.get_value("LongitudinalActuatorDelay", cast=float, condition=advanced_longitudinal_tuning, default=longitudinalActuatorDelay, min=0, max=1)
     toggle.max_desired_acceleration = self.get_value("MaxDesiredAcceleration", cast=float, condition=advanced_longitudinal_tuning, default=MAX_ACCELERATION, min=0.1, max=MAX_ACCELERATION)
     toggle.startAccel = self.get_value("StartAccel", cast=float, condition=advanced_longitudinal_tuning, default=startAccel, min=0, max=MAX_ACCELERATION)

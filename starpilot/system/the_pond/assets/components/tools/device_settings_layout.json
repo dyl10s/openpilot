@@ -285,6 +285,17 @@
         "parent_key": "AdvancedLongitudinalTune"
       },
       {
+        "key": "TrailerLoad",
+        "label": "Trailer Load",
+        "description": "Add trailer weight to vehicle mass for tow-aware gas, brake, and conservative lateral assist. Enter the loaded trailer weight in pounds.",
+        "data_type": "int",
+        "ui_type": "numeric",
+        "min": 0,
+        "max": 15000,
+        "step": 500,
+        "parent_key": "AdvancedLongitudinalTune"
+      },
+      {
         "key": "CustomAccelProfile",
         "label": "Custom Accel Profile",
         "description": "Replace the built-in acceleration profile with your own per-speed max-acceleration values. Breakpoint speeds stay fixed, and the starting defaults mirror the currently selected acceleration profile plus EV or Truck tuning.",

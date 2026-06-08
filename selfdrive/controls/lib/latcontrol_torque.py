@@ -590,6 +590,13 @@ PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.12
 PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.14
 PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.24
 
+TRAILER_LOAD_FULL_ASSIST_KG = 15000.0 * CV.LB_TO_KG
+TRAILER_LATERAL_MIN_SPEED = 15.0 * CV.MPH_TO_MS
+TRAILER_LATERAL_FULL_SPEED = 35.0 * CV.MPH_TO_MS
+TRAILER_LATERAL_LAT_RISE = 0.30
+TRAILER_LATERAL_FF_GAIN = 0.05
+TRAILER_LATERAL_FRICTION_GAIN = 0.03
+
 
 def _sigmoid(x: float) -> float:
   if x >= 0.0:
@@ -603,6 +610,21 @@ def _sigmoid(x: float) -> float:
 def get_friction_threshold(v_ego: float) -> float:
   # Keep the speed-scaled friction threshold behavior.
   return float(np.interp(v_ego, [1 * CV.MPH_TO_MS, 20 * CV.MPH_TO_MS, 75 * CV.MPH_TO_MS], [0.16, 0.19, 0.27]))
+
+
+def get_trailer_lateral_assist_factor(trailer_load_kg: float, v_ego: float, desired_lateral_accel: float) -> float:
+  load_factor = np.clip(trailer_load_kg / TRAILER_LOAD_FULL_ASSIST_KG, 0.0, 1.0)
+  speed_factor = np.interp(v_ego, [TRAILER_LATERAL_MIN_SPEED, TRAILER_LATERAL_FULL_SPEED], [0.0, 1.0])
+  lat_factor = 1.0 - math.exp(-abs(desired_lateral_accel) / TRAILER_LATERAL_LAT_RISE)
+  return float(load_factor * speed_factor * lat_factor)
+
+
+def get_trailer_lateral_ff_scale(trailer_load_kg: float, v_ego: float, desired_lateral_accel: float) -> float:
+  return 1.0 + TRAILER_LATERAL_FF_GAIN * get_trailer_lateral_assist_factor(trailer_load_kg, v_ego, desired_lateral_accel)
+
+
+def get_trailer_lateral_friction_scale(trailer_load_kg: float, v_ego: float, desired_lateral_accel: float) -> float:
+  return 1.0 + TRAILER_LATERAL_FRICTION_GAIN * get_trailer_lateral_assist_factor(trailer_load_kg, v_ego, desired_lateral_accel)
 
 
 def _prius_sigmoid(x: float) -> float:
@@ -1998,6 +2020,7 @@ class LatControlTorque(LatControl):
         ff_scale = np.interp(ff, [-FF_SCALE_BLEND_LAT_ACCEL, 0.0, FF_SCALE_BLEND_LAT_ACCEL],
                              [self.torque_ff_scale_neg, 1.0, self.torque_ff_scale_pos])
       ff *= ff_scale
+      trailer_load_kg = float(max(getattr(starpilot_toggles, "trailer_load_kg", 0.0) or 0.0, 0.0))
       bolt_2022_2023_tuned_path_active = self.is_bolt_2022_2023
       bolt_2018_2021_tuned_path_active = self.is_bolt_2018_2021
       volt_standard_test_active = self.is_volt_standard and volt_standard_lateral_testing_ground_active()
@@ -2085,6 +2108,9 @@ class LatControlTorque(LatControl):
         friction_threshold = CIVIC_BOSCH_MODIFIED_B_FIXED_FRICTION_THRESHOLD
         friction_scale = get_civic_bosch_modified_b_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = 1.0 + ((friction_scale - 1.0) * civic_bosch_modified_a_center_taper)
+      if trailer_load_kg > 0.0:
+        ff *= get_trailer_lateral_ff_scale(trailer_load_kg, CS.vEgo, setpoint)
+        friction_scale *= get_trailer_lateral_friction_scale(trailer_load_kg, CS.vEgo, setpoint)
       ff += friction_scale * get_friction(error_with_lsf + JERK_GAIN * desired_lateral_jerk, lateral_accel_deadzone, friction_threshold, self.torque_params)
       deadzone_boost_active = False
       if self.torque_deadzone_boost > 0.0 and abs(gravity_adjusted_future_lateral_accel) < DEADZONE_BOOST_LAT_ACCEL:

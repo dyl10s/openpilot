@@ -81,6 +81,7 @@ StarPilotLongitudinalPanel::StarPilotLongitudinalPanel(StarPilotSettingsWindow *
     {"AdvancedLongitudinalTune", tr("Advanced Longitudinal Tuning"), tr("<b>Advanced acceleration and braking control changes</b> to fine-tune how openpilot drives."), "../../starpilot/assets/toggle_icons/icon_advanced_longitudinal_tune.png"},
     {"EVTuning", tr("EV Tuning"), tr("<b>Use acceleration profiles tuned for EVs.</b> Defaults to the vehicle's detected powertrain type but can be overridden if the automatic choice doesn't match."), ""},
     {"TruckTuning", tr("Truck Tuning"), tr("<b>Use aggressive acceleration profiles tuned for trucks.</b> Intended for heavy vehicles that need stronger throttle."), ""},
+    {"TrailerLoad", tr("Trailer Load"), tr("<b>Add trailer weight to vehicle mass for tow-aware gas, brake, and conservative lateral assist.</b> Enter the loaded trailer weight in pounds."), ""},
     {"LongitudinalActuatorDelay", parent->longitudinalActuatorDelay != 0 ? QString(tr("Actuator Delay (Default: %1)")).arg(QString::number(parent->longitudinalActuatorDelay, 'f', 2)) : tr("Actuator Delay"), tr("<b>The time between openpilot's throttle or brake command and the vehicle's response.</b> Increase if the vehicle feels slow to react; decrease if it feels too eager or overshoots."), ""},
     {"MaxDesiredAcceleration", tr("Maximum Acceleration"), tr("<b>Limit the strongest acceleration</b> openpilot can command."), ""},
     {"StartAccel", parent->startAccel != 0 ? QString(tr("Start Acceleration (Default: %1)")).arg(QString::number(parent->startAccel, 'f', 2)) : tr("Start Acceleration"), tr("<b>Extra acceleration applied when starting from a stop.</b> Increase for quicker takeoffs; decrease for smoother, gentler starts."), ""},
@@ -241,6 +242,8 @@ StarPilotLongitudinalPanel::StarPilotLongitudinalPanel(StarPilotSettingsWindow *
       longitudinalToggle = longitudinalActuatorDelayToggle;
     } else if (param == "MaxDesiredAcceleration") {
       longitudinalToggle = new StarPilotParamValueControl(param, title, desc, icon, 0.1, 4.0, tr(" m/s²"), std::map<float, QString>(), 0.1);
+    } else if (param == "TrailerLoad") {
+      longitudinalToggle = new StarPilotParamValueControl(param, title, desc, icon, 0, 15000, tr(" lbs"), std::map<float, QString>(), 500);
     } else if (param == "StartAccel") {
       startAccelToggle = new StarPilotParamValueControl(param, title, desc, icon, 0, 4, tr(" m/s²"), std::map<float, QString>(), 0.01, true);
       longitudinalToggle = startAccelToggle;

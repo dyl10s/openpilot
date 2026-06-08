@@ -51,6 +51,7 @@ SAFE_MODE_MANAGED_KEYS = (
   "AdvancedLongitudinalTune",
   "EVTuning",
   "TruckTuning",
+  "TrailerLoad",
   "CustomAccelProfile",
   "CustomAccelProfileInitialized",
   "CustomAccelProfile0MPH",

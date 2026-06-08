@@ -781,6 +781,7 @@ _TROUBLESHOOT_ADVANCED_LONGITUDINAL_KEYS = [
   "AdvancedLongitudinalTune",
   "EVTuning",
   "TruckTuning",
+  "TrailerLoad",
   "CustomAccelProfile",
   *CUSTOM_ACCEL_PROFILE_PARAM_KEYS,
   "LongitudinalActuatorDelay",
