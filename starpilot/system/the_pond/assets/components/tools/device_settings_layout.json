@@ -1763,6 +1763,14 @@
         "parent_key": "AdvancedCustomUI"
       },
       {
+        "key": "HideSteeringWheel",
+        "label": "Hide Steering Wheel",
+        "description": "Hide the steering-wheel button from the top-right of the driving screen.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "AdvancedCustomUI"
+      },
+      {
         "key": "WheelSpeed",
         "label": "Use Wheel Speed",
         "description": "Use the vehicle's wheel speed instead of the cluster speed. This is purely a visual change and doesn't impact how openpilot drives!",
