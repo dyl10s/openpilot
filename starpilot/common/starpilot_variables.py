@@ -1329,10 +1329,6 @@ class StarPilotVariables:
       "GMDashSpoofOffsets",
       condition=toggle.car_make == "gm" and toggle.has_pedal,
     )
-    toggle.gm_stock_dash_when_not_engaged = self.get_value(
-      "GMStockDashWhenNotEngaged",
-      condition=toggle.car_make == "gm" and toggle.openpilot_longitudinal,
-    )
     toggle.long_pitch = self.get_value(
       "LongPitch",
       condition=toggle.openpilot_longitudinal and toggle.car_make == "gm",

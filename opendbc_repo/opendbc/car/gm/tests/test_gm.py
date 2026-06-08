@@ -10,7 +10,6 @@ from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_butt
 from opendbc.car.gm.carcontroller import (
   VisualAlert,
   get_acc_dashboard_fcw_alert,
-  get_acc_dashboard_status_values,
   should_send_acc_dashboard_status,
   should_send_cc_button_spam,
   should_spoof_dash_speed,
@@ -265,33 +264,6 @@ class TestGMCarController:
 
     assert should_send_acc_dashboard_status(cp, dash_speed_spoof_active=False)
 
-  def test_stock_dash_toggle_suppresses_disabled_dash_spoof(self):
-    cp = SimpleNamespace(carFingerprint=CAR.CADILLAC_XT4, flags=0)
-
-    assert should_send_acc_dashboard_status(cp, dash_speed_spoof_active=True, enabled=False)
-    assert not should_send_acc_dashboard_status(
-      cp,
-      dash_speed_spoof_active=True,
-      enabled=False,
-      stock_dash_when_not_engaged=True,
-    )
-    assert should_send_acc_dashboard_status(
-      cp,
-      dash_speed_spoof_active=True,
-      enabled=True,
-      stock_dash_when_not_engaged=True,
-    )
-
-  def test_stock_dash_toggle_keeps_no_camera_exception(self):
-    cp = SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_CAMERA, flags=GMFlags.NO_CAMERA.value)
-
-    assert should_send_acc_dashboard_status(
-      cp,
-      dash_speed_spoof_active=True,
-      enabled=False,
-      stock_dash_when_not_engaged=True,
-    )
-
   def test_acc_dashboard_no_camera_exception_is_volt_camera_only(self):
     assert not should_send_acc_dashboard_status(
       SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_CAMERA, flags=0),
@@ -385,14 +357,9 @@ class TestGMCarController:
     msg = gmcan.create_acc_dashboard_command(
       packer,
       0,
-      {
-        "ACCCruiseState": 0,
-        "ACCLeadCar": 1,
-        "ACCResumeButton": 0,
-        "ACCSpeedSetpoint": 100,
-        "ACCGapLevel": 3,
-        "ACCCmdActive": 1,
-      },
+      True,
+      100,
+      SimpleNamespace(leadDistanceBars=3, leadVisible=True),
       0x2,
     )
 
@@ -400,23 +367,26 @@ class TestGMCarController:
 
     assert parser.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"] == 2
 
-  def test_acc_dashboard_command_can_replay_stock_status_payload(self):
+  def test_acc_dashboard_command_uses_openpilot_hud_when_disengaged(self):
     packer = CANPacker(DBC[CAR.CHEVROLET_VOLT_ASCM][Bus.pt])
+    parser = CANParser(DBC[CAR.CHEVROLET_VOLT_ASCM][Bus.pt], [("ASCMActiveCruiseControlStatus", 0)], 0)
     msg = gmcan.create_acc_dashboard_command(
       packer,
       0,
-      {
-        "ACCCruiseState": 0,
-        "ACCLeadCar": 1,
-        "ACCResumeButton": 0,
-        "ACCSpeedSetpoint": 50,
-        "ACCGapLevel": 2,
-        "ACCCmdActive": 0,
-      },
+      False,
+      50,
+      SimpleNamespace(leadDistanceBars=2, leadVisible=True),
       0x3,
     )
 
-    assert msg[1].hex() == "010023200113"
+    parser.update([0, [msg]])
+    values = parser.vl["ASCMActiveCruiseControlStatus"]
+
+    assert values["ACCSpeedSetpoint"] == 50
+    assert values["ACCGapLevel"] == 0
+    assert values["ACCCmdActive"] == 0
+    assert values["ACCLeadCar"] == 1
+    assert values["FCWAlert"] == 3
 
   def test_acc_dashboard_fcw_alert_prefers_openpilot_alert(self):
     cs = SimpleNamespace(
@@ -449,45 +419,3 @@ class TestGMCarController:
     )
 
     assert get_acc_dashboard_fcw_alert(VisualAlert.none, cs) == 0x3
-
-  def test_acc_dashboard_status_values_use_openpilot_hud_when_enabled(self):
-    cs = SimpleNamespace(
-      stock_acc_cruise_state=5,
-      stock_acc_lead_car=0,
-      stock_acc_resume_button=1,
-      stock_acc_speed_setpoint_kph=42.0,
-      stock_acc_gap_level=1,
-      stock_acc_cmd_active=0,
-    )
-
-    values = get_acc_dashboard_status_values(True, 105.0, SimpleNamespace(leadDistanceBars=3, leadVisible=True), cs)
-
-    assert values == {
-      "ACCCruiseState": 0,
-      "ACCLeadCar": 1,
-      "ACCResumeButton": 0,
-      "ACCSpeedSetpoint": 105.0,
-      "ACCGapLevel": 3,
-      "ACCCmdActive": 1,
-    }
-
-  def test_acc_dashboard_status_values_reuse_stock_camera_status_when_disabled(self):
-    cs = SimpleNamespace(
-      stock_acc_cruise_state=0,
-      stock_acc_lead_car=1,
-      stock_acc_resume_button=0,
-      stock_acc_speed_setpoint_kph=50.0,
-      stock_acc_gap_level=2,
-      stock_acc_cmd_active=0,
-    )
-
-    values = get_acc_dashboard_status_values(False, 0.0, SimpleNamespace(leadDistanceBars=0, leadVisible=False), cs)
-
-    assert values == {
-      "ACCCruiseState": 0,
-      "ACCLeadCar": 1,
-      "ACCResumeButton": 0,
-      "ACCSpeedSetpoint": 50.0,
-      "ACCGapLevel": 2,
-      "ACCCmdActive": 0,
-    }

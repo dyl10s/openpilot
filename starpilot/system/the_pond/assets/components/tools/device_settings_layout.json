@@ -2418,13 +2418,6 @@
         "ui_type": "toggle"
       },
       {
-        "key": "GMStockDashWhenNotEngaged",
-        "label": "Stock Dash When Disengaged",
-        "description": "Use the stock GM dashboard set speed while openpilot is not engaged. When off, StarPilot keeps the existing dashboard spoof behavior.",
-        "data_type": "bool",
-        "ui_type": "toggle"
-      },
-      {
         "key": "LongPitch",
         "label": "Smooth Pedal Response on Hills",
         "description": "Smoothen acceleration and braking when driving downhill/uphill.",

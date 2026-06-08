@@ -68,14 +68,13 @@ def should_spoof_dash_speed(CP, starpilot_toggles):
   return True
 
 
-def should_send_acc_dashboard_status(CP, dash_speed_spoof_active, enabled=True, stock_dash_when_not_engaged=False):
+def should_send_acc_dashboard_status(CP, dash_speed_spoof_active):
   status_car = CP.carFingerprint not in CC_ONLY_CAR or CP.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL
   volt_camera_no_camera = (
     CP.carFingerprint == CAR.CHEVROLET_VOLT_CAMERA and
     bool(getattr(CP, "flags", 0) & GMFlags.NO_CAMERA.value)
   )
-  should_spoof = dash_speed_spoof_active and (enabled or not stock_dash_when_not_engaged)
-  return status_car and (should_spoof or volt_camera_no_camera)
+  return status_car and (dash_speed_spoof_active or volt_camera_no_camera)
 
 
 def get_acc_dashboard_fcw_alert(hud_alert, CS):
@@ -91,29 +90,6 @@ def get_acc_dashboard_fcw_alert(hud_alert, CS):
     return 0x3
 
   return 0
-
-
-def get_acc_dashboard_status_values(enabled, target_speed_kph, hud_control, CS):
-  if enabled:
-    return {
-      "ACCCruiseState": 0,
-      "ACCLeadCar": int(hud_control.leadVisible) & 0x1,
-      "ACCResumeButton": 0,
-      "ACCSpeedSetpoint": target_speed_kph,
-      "ACCGapLevel": int(hud_control.leadDistanceBars) & 0x3,
-      "ACCCmdActive": 1,
-    }
-
-  # Replay the stock camera dashboard context when openpilot long is enabled
-  # but openpilot itself is not actively driving the ACC cluster state.
-  return {
-    "ACCCruiseState": int(getattr(CS, "stock_acc_cruise_state", 0)) & 0x7,
-    "ACCLeadCar": int(getattr(CS, "stock_acc_lead_car", 0)) & 0x1,
-    "ACCResumeButton": int(getattr(CS, "stock_acc_resume_button", 0)) & 0x1,
-    "ACCSpeedSetpoint": float(getattr(CS, "stock_acc_speed_setpoint_kph", 0.0)),
-    "ACCGapLevel": int(getattr(CS, "stock_acc_gap_level", 0)) & 0x3,
-    "ACCCmdActive": int(getattr(CS, "stock_acc_cmd_active", 0)) & 0x1,
-  }
 
 
 ECM_CRUISE_SPOOF_CARS = {
@@ -726,12 +702,10 @@ class CarController(CarControllerBase):
                                                                idx, CC.enabled, near_stop, at_full_stop, self.CP))
             CS.auto_hold_engaged = False
 
-        stock_dash_when_not_engaged = getattr(starpilot_toggles, "gm_stock_dash_when_not_engaged", False)
-        if should_send_acc_dashboard_status(self.CP, dash_speed_spoof_active, CC.enabled, stock_dash_when_not_engaged):
-          acc_dashboard_status = get_acc_dashboard_status_values(CC.enabled, hud_v_cruise * CV.MS_TO_KPH, hud_control, CS)
+        if should_send_acc_dashboard_status(self.CP, dash_speed_spoof_active):
           fcw_alert = get_acc_dashboard_fcw_alert(hud_alert, CS)
-          can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN,
-                                                              acc_dashboard_status, fcw_alert))
+          can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
+                                                              hud_v_cruise * CV.MS_TO_KPH, hud_control, fcw_alert))
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)

@@ -184,7 +184,6 @@ SAFE_MODE_MANAGED_KEYS = (
   "GMAutoHold",
   "GMPedalLongitudinal",
   "GMDashSpoofOffsets",
-  "GMStockDashWhenNotEngaged",
   "LongPitch",
 )
 
