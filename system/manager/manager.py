@@ -775,6 +775,8 @@ def manager_thread() -> None:
 
       # StarPilot variables
       params_memory.clear_all(ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION)
+      if params.get_bool("ClearNavOnOffroad"):
+        params.remove("NavDestination")
 
     ignition = any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
     if ignition and not ignition_prev:

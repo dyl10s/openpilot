@@ -1961,6 +1961,13 @@
         "is_parent_toggle": true
       },
       {
+        "key": "ClearNavOnOffroad",
+        "label": "Clear Route When Offroad",
+        "description": "Clear the active navigation destination when the device goes offroad.",
+        "data_type": "bool",
+        "ui_type": "toggle"
+      },
+      {
         "key": "RoadNameUI",
         "label": "Road Name",
         "description": "Display the road name at the bottom of the driving screen using data from \"OpenStreetMap (OSM)\".",
