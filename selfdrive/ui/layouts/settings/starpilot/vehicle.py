@@ -37,6 +37,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
 from openpilot.selfdrive.ui.lib.fingerprint_catalog import (
   FingerprintModelOption,
+  format_fingerprint_value,
   get_fingerprint_catalog,
   shorten_model_label,
 )
@@ -114,6 +115,11 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
 
     self._last_make = ""
     self._last_model = ""
+
+  def show_event(self):
+    super().show_event()
+    starpilot_state.update(force=True)
+    self._rebuild_toggle_grid()
 
   def _build_driving_toggles(self) -> list[dict]:
     cs = starpilot_state.car_state
@@ -402,9 +408,11 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
 
     identity_rows = [
       {"target_id": "select:CarMake", "type": "select", "title": tr("Car Make"),
-       "get_value": self._controller._get_display_make, "pill_width": 160},
+       "get_value": self._controller._get_display_make, "pill_width": 160,
+       "is_enabled": self._controller._params.get_bool("ForceFingerprint")},
       {"target_id": "select:CarModel", "type": "select", "title": tr("Car Model"),
-       "get_value": self._controller._get_display_model, "pill_width": 160},
+       "get_value": self._controller._get_display_model, "pill_width": 160,
+       "is_enabled": self._controller._params.get_bool("ForceFingerprint")},
     ]
     if cs.isToyota:
       identity_rows.append({"target_id": "select:LockDoorsTimer", "type": "select",
@@ -504,7 +512,8 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
 
   def _draw_row(self, rect: rl.Rectangle, row: dict, is_last: bool):
     target_id = row["target_id"]
-    hovered, pressed = self._interactive_state(target_id, rect)
+    is_enabled = row.get("is_enabled", True)
+    hovered, pressed = self._interactive_state(target_id, rect) if is_enabled else (False, False)
     row_type = row.get("type", "toggle")
 
     if row_type == "toggle":
@@ -517,14 +526,15 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
     elif row_type == "select":
       draw_selection_list_row(
         rect, title=row["title"], subtitle=row.get("subtitle", ""),
-        action_text=row["get_value"](), hovered=hovered, pressed=pressed,
-        is_last=is_last, action_width=188, action_pill=True,
+        action_text=row["get_value"](), hovered=hovered and is_enabled,
+        pressed=pressed and is_enabled, is_last=is_last,
+        action_width=188, action_pill=True,
         action_pill_width=row.get("pill_width", 108), action_pill_height=44,
         title_size=34, subtitle_size=22, action_text_size=18,
         row_separator=PANEL_STYLE.divider_color,
-        action_fill=PANEL_STYLE.current_fill,
-        action_border=PANEL_STYLE.current_border,
-        action_text_color=AetherListColors.HEADER,
+        action_fill=PANEL_STYLE.current_fill if is_enabled else _with_alpha(PANEL_STYLE.current_fill, 120),
+        action_border=PANEL_STYLE.current_border if is_enabled else _with_alpha(PANEL_STYLE.current_border, 100),
+        action_text_color=AetherListColors.HEADER if is_enabled else AetherListColors.MUTED,
       )
     elif row_type == "info":
       draw_settings_list_row(
@@ -623,8 +633,12 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     current = self._params.get_bool(param_key) if self._params.get(param_key) is not None else False
     self._params.put_bool(param_key, not current)
     starpilot_state.update(force=True)
+    if param_key == "ForceFingerprint":
+      self._manager_view._rebuild_toggle_grid()
 
   def _on_select(self, key: str):
+    if key in ("CarMake", "CarModel") and not self._params.get_bool("ForceFingerprint"):
+      return
     if key == "CarMake":
       self._on_select_make()
     elif key == "CarModel":
@@ -720,7 +734,7 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       return make
     model = self._params.get("CarModel") or ""
     if model:
-      return self._make_by_model.get(model, tr("None"))
+      return self._make_by_model.get(model, format_fingerprint_value(model.split("_", 1)[0]))
     return tr("None")
 
   def _get_display_model(self) -> str:
@@ -734,6 +748,8 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
       return shorten_model_label(make, model_name) if make else model_name
     if model and model in self._models_by_value:
       return self._models_by_value[model].button_label
+    if model:
+      return format_fingerprint_value(model)
     return tr("None")
 
   def _get_selected_model_option(self) -> FingerprintModelOption | None:

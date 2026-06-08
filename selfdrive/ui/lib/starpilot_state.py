@@ -77,36 +77,31 @@ class StarPilotState:
         self.update()
 
     def _apply_manual_fingerprint(self, starpilot_toggles: dict):
-        fallback_make = starpilot_toggles.get("car_make") or self.params.get("CarMake") or "gm"
-        fallback_model = starpilot_toggles.get("car_model") or self.params.get("CarModel") or "CHEVROLET_BOLT_ACC_2022_2023"
+        fallback_make = starpilot_toggles.get("car_make") or self.params.get("CarMake")
+        fallback_model = starpilot_toggles.get("car_model") or self.params.get("CarModel")
+        if not fallback_make and not fallback_model:
+            return
 
-        from openpilot.selfdrive.ui.lib.fingerprint_catalog import FINGERPRINT_MAKE_TO_VALUES_DIR
-        fallback_make_lower = fallback_make.lower()
-        brand = FINGERPRINT_MAKE_TO_VALUES_DIR.get(fallback_make_lower, fallback_make_lower)
+        if fallback_make:
+            from openpilot.selfdrive.ui.lib.fingerprint_catalog import FINGERPRINT_MAKE_TO_VALUES_DIR
+            fallback_make_lower = fallback_make.lower()
+            brand = FINGERPRINT_MAKE_TO_VALUES_DIR.get(fallback_make_lower, fallback_make_lower)
+            self.car_state.isGM = brand == "gm"
+            self.car_state.isHKG = brand == "hyundai"
+            self.car_state.isSubaru = brand == "subaru"
+            self.car_state.isToyota = brand == "toyota"
+            self.car_state.isHKGCanFd = False
+            self.car_state.hasModeStarButtons = False
+            self.car_state.isBolt = False
+            self.car_state.isVolt = False
+            self.params.put("CarMake", fallback_make.title())
 
-        self.car_state.isBolt = fallback_model.startswith("CHEVROLET_BOLT")
-        self.car_state.isGM = brand == "gm"
-        self.car_state.isHKG = brand == "hyundai"
-        self.car_state.isSubaru = brand == "subaru"
-        self.car_state.isToyota = brand == "toyota"
-        self.car_state.isVolt = fallback_model.startswith("CHEVROLET_VOLT")
+        if fallback_model:
+            self.params.put("CarModel", fallback_model)
 
-        # Determine isHKGCanFd for manual selection
-        is_canfd = False
-        try:
-            from opendbc.car.hyundai.values import CANFD_CAR
-            is_canfd = any(fallback_model == getattr(c, "value", str(c)) for c in CANFD_CAR)
-        except Exception:
-            pass
-        self.car_state.isHKGCanFd = self.car_state.isHKG and is_canfd
-
-        self.car_state.hasModeStarButtons = self.car_state.isHKGCanFd
-        self.car_state.hasPedal = starpilot_toggles.get("has_pedal", True)
-        self.car_state.hasSASCM = starpilot_toggles.get("has_sascm", False)
-        self.car_state.hasSDSU = starpilot_toggles.get("has_sdsu", False)
-        self.car_state.hasZSS = starpilot_toggles.get("has_zss", False)
-        self.car_state.canUsePedal = self.car_state.hasPedal or self.car_state.isBolt
-        self.car_state.canUseSDSU = self.car_state.hasSDSU
+        if not starpilot_toggles:
+            self.car_state.hasOpenpilotLongitudinal = True
+            self.car_state.hasSNG = False
 
     def _safe_get(self, obj, field: str, default=None):
         try:
@@ -185,10 +180,17 @@ class StarPilotState:
             self.car_state.stoppingDecelRate = float(self._safe_get(CP, "stoppingDecelRate", self.car_state.stoppingDecelRate))
             self.car_state.vEgoStarting = float(self._safe_get(CP, "vEgoStarting", self.car_state.vEgoStarting))
             self.car_state.vEgoStopping = float(self._safe_get(CP, "vEgoStopping", self.car_state.vEgoStopping))
-            
-            if (PC or force_fingerprint) and (car_make == "mock" or car_fingerprint == "MOCK"):
+
+            if car_fingerprint and (not force_fingerprint or PC):
+                cp_make = car_fingerprint.split('_')[0].title()
+                user_make = self.params.get("CarMake")
+                if not (force_fingerprint and PC and user_make and user_make != cp_make):
+                    self.params.put("CarModel", car_fingerprint)
+                    self.params.put("CarMake", cp_make)
+
+            if car_make == "mock" or car_fingerprint == "MOCK":
                 self._apply_manual_fingerprint(starpilot_toggles)
-            elif PC or force_fingerprint:
+            elif force_fingerprint:
                 self._apply_manual_fingerprint(starpilot_toggles)
 
         elif PC or force_fingerprint:
