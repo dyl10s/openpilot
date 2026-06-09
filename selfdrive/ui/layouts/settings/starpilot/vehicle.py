@@ -352,7 +352,8 @@ class VehicleSettingsManagerView(PanelManagerView):
         tiles_height = SECTION_GAP + self._section_block_height(tiles_content_h + 24)
 
     if self._uses_two_columns(width):
-      return max(left_h, tiles_height)
+      vh = self._scroll_rect.height if self._scroll_rect and self._scroll_rect.height > 0 else tiles_height
+      return max(left_h, vh)
     return left_h + tiles_height
 
   def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
@@ -406,7 +407,6 @@ class VehicleSettingsManagerView(PanelManagerView):
       for index, row in enumerate(steering_rows):
         row_rect = rl.Rectangle(x, curr_y + index * ROW_HEIGHT, column_w, ROW_HEIGHT)
         self._draw_row(row_rect, row, is_last=index == len(steering_rows) - 1)
-      left_end_y = curr_y + len(steering_rows) * ROW_HEIGHT
 
       # Right Column: Features
       if self._toggle_grid.tiles:
@@ -423,8 +423,8 @@ class VehicleSettingsManagerView(PanelManagerView):
         tiles_content_h = tile_rows * 130 + tile_gaps
 
         needed_height = tiles_content_h + 24
-        left_content_height = left_end_y - right_container_y
-        container_h = max(needed_height, left_content_height)
+        viewport_remaining = (self._scroll_rect.y + self._scroll_rect.height) - right_container_y
+        container_h = max(needed_height, viewport_remaining)
 
         draw_list_group_shell(rl.Rectangle(rx, right_container_y, column_w, container_h), style=PANEL_STYLE)
         self._toggle_grid.set_parent_rect(self._scroll_rect)
