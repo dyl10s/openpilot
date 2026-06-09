@@ -57,14 +57,20 @@ def should_loud_blindspot_alert_without_lateral(CS, sm, starpilot_toggles) -> bo
           getattr(starpilot_toggles, "loud_blindspot_alert_when_disengaged", False)):
     return False
 
-  if sm['modelV2'].meta.laneChangeState == LaneChangeState.preLaneChange:
-    return False
-
   left_signal_blocked = bool(CS.leftBlinker and CS.leftBlindspot)
   right_signal_blocked = bool(CS.rightBlinker and CS.rightBlindspot)
   one_blinker = bool(CS.leftBlinker) != bool(CS.rightBlinker)
   if not (one_blinker and (left_signal_blocked or right_signal_blocked)):
     return False
+
+  if sm['modelV2'].meta.laneChangeState == LaneChangeState.preLaneChange:
+    direction = sm['modelV2'].meta.laneChangeDirection
+    normal_lane_change_alert = (
+      (left_signal_blocked and direction == LaneChangeDirection.left) or
+      (right_signal_blocked and direction == LaneChangeDirection.right)
+    )
+    if normal_lane_change_alert:
+      return False
 
   return (
     not sm['carControl'].latActive or

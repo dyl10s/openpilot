@@ -5,6 +5,7 @@ from openpilot.selfdrive.selfdrived.selfdrived import should_loud_blindspot_aler
 
 
 LaneChangeState = log.LaneChangeState
+LaneChangeDirection = log.LaneChangeDirection
 
 
 def _car_state(left_blinker=False, right_blinker=False, left_blindspot=False, right_blindspot=False):
@@ -16,9 +17,10 @@ def _car_state(left_blinker=False, right_blinker=False, left_blindspot=False, ri
   )
 
 
-def _sm(lane_change_state=LaneChangeState.off, lat_active=False, lateral_check=False, pause_lateral=False):
+def _sm(lane_change_state=LaneChangeState.off, lane_change_direction=LaneChangeDirection.none,
+        lat_active=False, lateral_check=False, pause_lateral=False):
   return {
-    "modelV2": SimpleNamespace(meta=SimpleNamespace(laneChangeState=lane_change_state)),
+    "modelV2": SimpleNamespace(meta=SimpleNamespace(laneChangeState=lane_change_state, laneChangeDirection=lane_change_direction)),
     "carControl": SimpleNamespace(latActive=lat_active),
     "starpilotPlan": SimpleNamespace(lateralCheck=lateral_check),
     "starpilotCarState": SimpleNamespace(pauseLateral=pause_lateral),
@@ -55,4 +57,12 @@ def test_loud_blindspot_alert_without_lateral_requires_matching_side_and_toggle(
 def test_loud_blindspot_alert_without_lateral_skips_normal_lane_change_alert_path():
   CS = _car_state(left_blinker=True, left_blindspot=True)
 
-  assert not should_loud_blindspot_alert_without_lateral(CS, _sm(lane_change_state=LaneChangeState.preLaneChange), _toggles())
+  assert not should_loud_blindspot_alert_without_lateral(CS, _sm(lane_change_state=LaneChangeState.preLaneChange,
+                                                                 lane_change_direction=LaneChangeDirection.left), _toggles())
+
+
+def test_loud_blindspot_alert_without_lateral_handles_paused_pre_lane_change_without_direction():
+  CS = _car_state(left_blinker=True, left_blindspot=True)
+  sm = _sm(lane_change_state=LaneChangeState.preLaneChange, lat_active=True, lateral_check=True, pause_lateral=True)
+
+  assert should_loud_blindspot_alert_without_lateral(CS, sm, _toggles())
