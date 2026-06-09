@@ -472,6 +472,20 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     self._content_height = 0.0
     self._scroll_offset = 0.0
     self._scroll_rect = rl.Rectangle(0, 0, 0, 0)
+    self._toggle_pages: list[list] = []
+    self._page_count = 1
+    self._current_page = 0
+    self._page_grid: TileGrid | None = None
+    self._page_animating = False
+    self._page_anim_start = 0.0
+    self._page_anim_from = 0.0
+    self._page_anim_committed = False
+    self._page_anim_prev_tiles: list = []
+    self._page_drag_active = False
+    self._page_drag_offset = 0.0
+    self._page_drag_start_x = 0.0
+    self._page_drag_start_y = 0.0
+    self._page_clip_rect: rl.Rectangle | None = None
 
   # ── hooks ─────────────────────────────────────────────────
 
@@ -516,6 +530,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
     draw_list_scroll_fades(scroll_rect, self._content_height, self._scroll_offset,
                            AetherListColors.PANEL_BG)
+    self._draw_page_dots(frame.scroll)
 
   # ── shared layout helpers ─────────────────────────────────
 
@@ -550,6 +565,198 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
       is_enabled=d.get("is_enabled"),
       disabled_label=d.get("disabled_label", ""),
     )
+
+  # ── pagination ─────────────────────────────────────────────
+
+  PAGE_COMMIT_RATIO = 0.35
+  PAGE_ANIM_DURATION = 0.28
+  PAGE_SNAP_DURATION = 0.20
+
+  PAGE_DOT_RADIUS = 6.0
+  PAGE_DOT_GAP = 20.0
+
+  @property
+  def _has_pagination(self) -> bool:
+    return self._page_count > 1
+
+  def _set_toggle_pages(self, pages: list[list]) -> None:
+    self._toggle_pages = pages
+    self._page_count = max(1, len(pages))
+    self._current_page = 0
+    self._on_page_changed()
+
+  def _get_page_defs(self) -> list:
+    if self._has_pagination and self._current_page < len(self._toggle_pages):
+      return self._toggle_pages[self._current_page]
+    return []
+
+  def _on_page_changed(self) -> None:
+    if not self._has_pagination or self._page_grid is None:
+      return
+    self._page_grid.clear()
+    for d in self._get_page_defs():
+      self._page_grid.add_tile(self._make_toggle_tile(d))
+
+  # ── scissor helpers ────────────────────────────────────────
+
+  def _page_scissor_push(self, rect: rl.Rectangle | None) -> None:
+    if rect is None:
+      return
+    rl.end_scissor_mode()
+    rl.begin_scissor_mode(int(rect.x), int(rect.y), int(rect.width), int(rect.height))
+
+  def _page_scissor_pop(self) -> None:
+    rl.end_scissor_mode()
+    rl.begin_scissor_mode(int(self._scroll_rect.x), int(self._scroll_rect.y),
+                          int(self._scroll_rect.width), int(self._scroll_rect.height))
+
+  # ── drag + animation ───────────────────────────────────────
+
+  GRID_PADDING = 12
+
+  def _start_drag_commit(self, from_offset: float) -> None:
+    if self._page_grid is not None:
+      self._page_anim_prev_tiles = list(self._page_grid.tiles)
+    self._page_animating = True
+    self._page_anim_committed = True
+    self._page_anim_start = time.monotonic()
+    self._page_anim_from = from_offset
+
+  def _start_drag_snap(self, from_offset: float) -> None:
+    self._page_animating = True
+    self._page_anim_committed = False
+    self._page_anim_start = time.monotonic()
+    self._page_anim_from = from_offset
+
+  def _render_page_grid(self, grid: TileGrid, rect: rl.Rectangle, clip_rect: rl.Rectangle | None = None) -> None:
+    if clip_rect is None:
+      clip_rect = rl.Rectangle(rect.x - self.GRID_PADDING, rect.y - self.GRID_PADDING,
+                               rect.width + self.GRID_PADDING * 2, rect.height + self.GRID_PADDING * 2)
+    self._page_clip_rect = clip_rect
+
+    # active drag
+    if self._page_drag_active:
+      self._page_scissor_push(clip_rect)
+      grid.render(rl.Rectangle(rect.x + self._page_drag_offset, rect.y, rect.width, rect.height))
+      self._page_scissor_pop()
+      return
+
+    # no animation
+    if not self._page_animating:
+      grid.render(rect)
+      return
+
+    # animation
+    elapsed = time.monotonic() - self._page_anim_start
+    duration = self.PAGE_ANIM_DURATION if self._page_anim_committed else self.PAGE_SNAP_DURATION
+    if elapsed >= duration:
+      self._page_animating = False
+      self._page_anim_prev_tiles.clear()
+      grid.render(rect)
+      return
+
+    t = elapsed / duration
+    t = 1.0 - (1.0 - t) ** 3
+
+    if self._page_anim_committed:
+      direction = 1 if self._page_anim_from < 0 else -1
+      neighbor_start = direction * rect.width + self._page_anim_from
+      cur_offset = neighbor_start + (0.0 - neighbor_start) * t
+      old_target = -direction * rect.width
+      prev_offset = self._page_anim_from + (old_target - self._page_anim_from) * t
+
+      self._page_scissor_push(rl.Rectangle(clip_rect.x, clip_rect.y,
+                                           clip_rect.width + rect.width, clip_rect.height))
+      if self._page_anim_prev_tiles:
+        old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap)
+        old_grid.tiles.extend(self._page_anim_prev_tiles)
+        old_grid.set_parent_rect(self._scroll_rect)
+        old_grid.render(rl.Rectangle(rect.x + prev_offset, rect.y, rect.width, rect.height))
+      grid.set_parent_rect(self._scroll_rect)
+      grid.render(rl.Rectangle(rect.x + cur_offset, rect.y, rect.width, rect.height))
+      self._page_scissor_pop()
+    else:
+      cur_offset = self._page_anim_from * (1.0 - t)
+      self._page_scissor_push(clip_rect)
+      grid.set_parent_rect(self._scroll_rect)
+      grid.render(rl.Rectangle(rect.x + cur_offset, rect.y, rect.width, rect.height))
+      self._page_scissor_pop()
+
+  # ── mouse handling ─────────────────────────────────────────
+
+  def _handle_mouse_press(self, mouse_pos: MousePos) -> None:
+    super()._handle_mouse_press(mouse_pos)
+    if self._has_pagination and not self._page_animating:
+      self._page_drag_start_x = mouse_pos.x
+      self._page_drag_start_y = mouse_pos.y
+      self._page_drag_active = True
+      self._page_drag_offset = 0.0
+
+  def _handle_mouse_event(self, mouse_event: MouseEvent) -> None:
+    super()._handle_mouse_event(mouse_event)
+    if self._page_drag_active and self._has_pagination:
+      dx = mouse_event.pos.x - self._page_drag_start_x
+      dy = abs(mouse_event.pos.y - self._page_drag_start_y)
+      if dy > abs(dx) * 1.2 and dy > 32:
+        self._page_drag_active = False
+        self._page_drag_offset = 0.0
+        return
+      self._page_drag_offset = dx
+      if abs(dx) > 6:
+        self._pressed_target = None
+        self._can_click = False
+
+  def _handle_mouse_release(self, mouse_pos: MousePos) -> None:
+    if self._page_drag_active and self._has_pagination:
+      self._page_drag_active = False
+      offset = self._page_drag_offset
+      self._page_drag_offset = 0.0
+      threshold = self._scroll_rect.width * self.PAGE_COMMIT_RATIO
+      if abs(offset) > threshold:
+        direction = 1 if offset < 0 else -1
+        new_page = self._current_page + (1 if direction == 1 else -1)
+        if 0 <= new_page < self._page_count:
+          self._start_drag_commit(offset)
+          self._current_page = new_page
+          self._on_page_changed()
+        elif abs(offset) > 8:
+          self._start_drag_snap(offset)
+      elif abs(offset) > 8:
+        self._start_drag_snap(offset)
+      return
+    super()._handle_mouse_release(mouse_pos)
+
+  # ── page indicator ─────────────────────────────────────────
+
+  def _draw_page_dots(self, rect: rl.Rectangle) -> None:
+    if not self._has_pagination:
+      return
+    clip = self._page_clip_rect
+    n = min(self._page_count, 8)
+    total_w = n * self.PAGE_DOT_RADIUS * 2 + max(0, n - 1) * self.PAGE_DOT_GAP
+    start_x = (clip.x + (clip.width - total_w) / 2) if clip else rect.x + (rect.width - total_w) / 2
+    dot_y = rect.y + rect.height + 8
+    for i in range(n):
+      cx = start_x + i * (self.PAGE_DOT_RADIUS * 2 + self.PAGE_DOT_GAP) + self.PAGE_DOT_RADIUS
+      fill = self.PANEL_STYLE.accent if i == self._current_page else _with_alpha(AetherListColors.MUTED, 100)
+      rl.draw_circle(int(cx), int(dot_y), self.PAGE_DOT_RADIUS, fill)
+    if self._page_count > 8:
+      more_x = start_x + n * (self.PAGE_DOT_RADIUS * 2 + self.PAGE_DOT_GAP)
+      rl.draw_text_ex(
+        gui_app.font(FontWeight.MEDIUM), "···",
+        rl.Vector2(more_x, dot_y - 8), 16, 0, AetherListColors.MUTED)
+
+  # ── lifecycle ──────────────────────────────────────────────
+
+  def show_event(self) -> None:
+    super().show_event()
+    self._page_drag_active = False
+    self._page_drag_offset = 0.0
+    self._page_animating = False
+    self._page_anim_prev_tiles.clear()
+    if self._has_pagination and self._current_page != 0:
+      self._current_page = 0
+      self._on_page_changed()
 
 
 PANEL_HEADER_TITLE_Y: int = 4
