@@ -181,6 +181,7 @@ SAFE_MODE_MANAGED_KEYS = (
   "FrogsGoMoosTweak",
   "SNGHack",
   "SubaruSNG",
+  "SubaruSNGManualParkingBrake",
   "VoltSNG",
   "GMAutoHold",
   "GMPedalLongitudinal",

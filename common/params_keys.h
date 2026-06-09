@@ -586,6 +586,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SwitchbackModeCooldown", {PERSISTENT, INT, "5", "0", 2}},
     {"SwitchbackModeEnabled", {CLEAR_ON_OFFROAD_TRANSITION, BOOL, "0", "0"}},
     {"SubaruSNG", {PERSISTENT, BOOL, "1", "0", 2}},
+    {"SubaruSNGManualParkingBrake", {PERSISTENT, BOOL, "0", "0", 2}},
     {"TacoTune", {PERSISTENT, BOOL, "0", "0", 2}},
     {"TestAlert", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
     {"TetheringEnabled", {PERSISTENT, INT, "0", "0", 0}},

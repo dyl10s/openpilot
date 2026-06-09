@@ -1320,6 +1320,7 @@ class StarPilotVariables:
       toggle.startup_alert_bottom = "Always keep hands on wheel and eyes on road"
 
     toggle.subaru_sng = self.get_value("SubaruSNG", condition=toggle.car_make == "subaru" and not (CP.flags & SubaruFlags.GLOBAL_GEN2 or CP.flags & SubaruFlags.HYBRID))
+    toggle.subaru_sng_manual_parking_brake = self.get_value("SubaruSNGManualParkingBrake", condition=toggle.subaru_sng)
 
     toggle.tethering_config = self.get_value("TetheringEnabled", cast=float)
 

@@ -169,6 +169,12 @@ class VehicleSettingsManagerView(AetherInteractiveMixin, Widget):
         "get_state": lambda: self._controller._params.get_bool("SubaruSNG"),
         "set_state": lambda s: self._controller._on_toggle("SubaruSNG"),
       })
+      if self._controller._params.get_bool("SubaruSNG"):
+        toggles.append({
+          "title": tr("Manual Parking Brake SNG"),
+          "get_state": lambda: self._controller._params.get_bool("SubaruSNGManualParkingBrake"),
+          "set_state": lambda s: self._controller._on_toggle("SubaruSNGManualParkingBrake"),
+        })
 
     if cs.isToyota:
       toggles.append({

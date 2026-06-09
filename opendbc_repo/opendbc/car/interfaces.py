@@ -22,6 +22,7 @@ from opendbc.car.honda.values import CAR as HONDA, HONDA_BOSCH, HondaFlags, Hond
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import CAR as HYUNDAI, CANFD_CAR, HyundaiFlags, HyundaiStarPilotFlags, HyundaiStarPilotSafetyFlags, ALT_BUS_LDA_BUTTON_CARS
 from opendbc.car.mock.values import CAR as MOCK
+from opendbc.car.subaru.values import CAR as SUBARU, SubaruSafetyFlags
 from opendbc.car.toyota.values import CAR as TOYOTA, NO_DSU_CAR, TSS2_CAR, UNSUPPORTED_DSU_CAR, ToyotaStarPilotFlags, ToyotaSafetyFlags
 from opendbc.car.values import PLATFORMS
 from opendbc.can import CANParser
@@ -265,6 +266,10 @@ class CarInterfaceBase(ABC):
 
       elif platform.config.platform_str == "TESLA_MODEL_S_PREAP":
         fp_ret.canUsePedal = True
+
+      elif platform in SUBARU:
+        if getattr(starpilot_toggles, "subaru_sng", False):
+          fp_ret.safetyConfigs[-1].safetyParam |= SubaruSafetyFlags.STOP_AND_GO.value
 
     return fp_ret
 

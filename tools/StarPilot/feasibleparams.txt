@@ -344,6 +344,7 @@ StoppedTimer
 StoppingDecelRate
 StoppingDecelRateStock
 SubaruSNG
+SubaruSNGManualParkingBrake
 SwitchbackModeCooldown
 SwitchbackModeEnabled
 TacoTune

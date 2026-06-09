@@ -2479,6 +2479,13 @@
         "ui_type": "toggle"
       },
       {
+        "key": "SubaruSNGManualParkingBrake",
+        "label": "Stop and Go for Manual Parking Brake",
+        "description": "Use the manual-parking-brake Subaru stop-and-go strategy. Enable this for supported Subaru Global models with a manual handbrake. Keep it off on models with an electric parking brake.",
+        "data_type": "bool",
+        "ui_type": "toggle"
+      },
+      {
         "key": "ClusterOffset",
         "label": "Dashboard Speed Offset",
         "description": "The speed offset openpilot uses to match the speed on the dashboard display.",
