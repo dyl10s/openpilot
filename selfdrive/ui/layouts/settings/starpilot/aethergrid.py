@@ -573,7 +573,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
   # ── pagination ─────────────────────────────────────────────
 
-  PAGE_COMMIT_RATIO = 0.35
+  PAGE_COMMIT_RATIO = 0.20
   PAGE_ANIM_DURATION = 0.28
   PAGE_SNAP_DURATION = 0.20
 
@@ -642,13 +642,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     # active drag
     if self._page_drag_active:
       drag_off = self._page_drag_offset
-      drag_clip = rl.Rectangle(
-        clip_rect.x + min(0, drag_off),
-        clip_rect.y,
-        clip_rect.width + abs(drag_off),
-        clip_rect.height,
-      )
-      self._page_scissor_push(drag_clip)
+      self._page_scissor_push(clip_rect)
       grid.render(rl.Rectangle(rect.x + drag_off, rect.y, rect.width, rect.height))
       self._page_scissor_pop()
       return
@@ -674,13 +668,11 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
     if self._page_anim_committed:
       direction = 1 if self._page_anim_from < 0 else -1
-      neighbor_start = direction * rect.width + self._page_anim_from
-      cur_offset = neighbor_start + (0.0 - neighbor_start) * t
       old_target = -direction * rect.width
       prev_offset = self._page_anim_from + (old_target - self._page_anim_from) * t
+      cur_offset = direction * rect.width + (0.0 - direction * rect.width) * t
 
-      self._page_scissor_push(rl.Rectangle(clip_rect.x - rect.width, clip_rect.y,
-                                           clip_rect.width + rect.width * 2, clip_rect.height))
+      self._page_scissor_push(clip_rect)
       if self._page_anim_prev_tiles:
         old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap)
         old_grid.tiles.extend(self._page_anim_prev_tiles)
@@ -718,6 +710,9 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
         self._page_drag_active = False
         self._page_drag_offset = 0.0
         return
+      if (self._current_page == 0 and dx > 0) or \
+         (self._current_page >= self._page_count - 1 and dx < 0):
+        dx = 0
       self._page_drag_offset = dx
       if abs(dx) > 6:
         self._pressed_target = None
