@@ -636,13 +636,21 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
     # active drag
     if self._page_drag_active:
-      self._page_scissor_push(clip_rect)
-      grid.render(rl.Rectangle(rect.x + self._page_drag_offset, rect.y, rect.width, rect.height))
+      drag_off = self._page_drag_offset
+      drag_clip = rl.Rectangle(
+        clip_rect.x + min(0, drag_off),
+        clip_rect.y,
+        clip_rect.width + abs(drag_off),
+        clip_rect.height,
+      )
+      self._page_scissor_push(drag_clip)
+      grid.render(rl.Rectangle(rect.x + drag_off, rect.y, rect.width, rect.height))
       self._page_scissor_pop()
       return
 
     # no animation
     if not self._page_animating:
+      grid.set_parent_rect(self._scroll_rect)
       grid.render(rect)
       return
 
@@ -652,6 +660,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     if elapsed >= duration:
       self._page_animating = False
       self._page_anim_prev_tiles.clear()
+      grid.set_parent_rect(self._scroll_rect)
       grid.render(rect)
       return
 
@@ -665,8 +674,8 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
       old_target = -direction * rect.width
       prev_offset = self._page_anim_from + (old_target - self._page_anim_from) * t
 
-      self._page_scissor_push(rl.Rectangle(clip_rect.x, clip_rect.y,
-                                           clip_rect.width + rect.width, clip_rect.height))
+      self._page_scissor_push(rl.Rectangle(clip_rect.x - rect.width, clip_rect.y,
+                                           clip_rect.width + rect.width * 2, clip_rect.height))
       if self._page_anim_prev_tiles:
         old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap)
         old_grid.tiles.extend(self._page_anim_prev_tiles)
@@ -686,7 +695,10 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
   def _handle_mouse_press(self, mouse_pos: MousePos) -> None:
     super()._handle_mouse_press(mouse_pos)
-    if self._has_pagination and not self._page_animating:
+    if self._has_pagination:
+      if self._page_animating:
+        self._page_animating = False
+        self._page_anim_prev_tiles.clear()
       self._page_drag_start_x = mouse_pos.x
       self._page_drag_start_y = mouse_pos.y
       self._page_drag_active = True
@@ -719,11 +731,13 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
           self._start_drag_commit(offset)
           self._current_page = new_page
           self._on_page_changed()
+          return
         elif abs(offset) > 8:
           self._start_drag_snap(offset)
+          return
       elif abs(offset) > 8:
         self._start_drag_snap(offset)
-      return
+        return
     super()._handle_mouse_release(mouse_pos)
 
   # ── page indicator ─────────────────────────────────────────
@@ -2787,6 +2801,8 @@ class AetherTile(Widget):
           color=AetherListColors.MUTED,
         )
 
+    return layout
+
   def _render(self, rect: rl.Rectangle):
     pass
 
@@ -2906,6 +2922,7 @@ class ToggleTile(AetherTile):
     desc: str = "",
     is_enabled: Callable[[], bool] | None = None,
     disabled_label: str = "",
+    show_led: bool = False,
   ):
     if bg_color:
       super().__init__(surface_color=bg_color)
@@ -2922,6 +2939,7 @@ class ToggleTile(AetherTile):
     self._inactive_color = rl.Color(120, 120, 120, 255)
     self._disabled_color = rl.Color(75, 75, 75, 255)
     self._disabled_label = disabled_label
+    self._show_led = show_led
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if self._is_pressed:
@@ -2947,17 +2965,44 @@ class ToggleTile(AetherTile):
     else:
       state_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
     self._draw_signal_edge(face, self._active_color if enabled and active else self.surface_color, width=TILE_SIGNAL_WIDTH, alpha=62 if enabled and active else 28)
-    self._render_tile_stack(
-      face,
-      title=self.title,
-      primary=state_text,
-      desc=self.desc,
-      title_font=self._font,
-      primary_font=self._font,
-      desc_font=self._font_desc,
-      title_size=28,
-      primary_size=30,
-    )
+
+    if self._show_led and enabled:
+      layout = self._render_tile_stack(
+        face,
+        title=self.title,
+        primary="",
+        desc=self.desc,
+        title_font=self._font,
+        primary_font=self._font,
+        desc_font=self._font_desc,
+        title_size=28,
+        primary_size=30,
+      )
+      primary_y = layout["primary_y"]
+      content_pad = SPACING.tile_content
+      scale = max(0.82, min(1.12, min(face.width / 360.0, face.height / 205.0)))
+      ps = max(18, int(round(30 * scale)))
+      cx = face.x + face.width - content_pad - 10
+      cy = primary_y + ps / 2
+      if active:
+        glow_color = _with_alpha(self._active_color, 24)
+        rl.draw_circle(int(cx), int(cy), 10, glow_color)
+        rl.draw_circle(int(cx), int(cy), 6, self._active_color)
+      else:
+        rl.draw_circle(int(cx), int(cy), 7, rl.Color(14, 16, 22, 255))
+        rl.draw_ring(rl.Vector2(cx, cy), 5, 6, 0, 360, 24, rl.Color(70, 78, 95, 140))
+    else:
+      self._render_tile_stack(
+        face,
+        title=self.title,
+        primary=state_text,
+        desc=self.desc,
+        title_font=self._font,
+        primary_font=self._font,
+        desc_font=self._font_desc,
+        title_size=28,
+        primary_size=30,
+      )
 
 
 class ValueTile(AetherTile):

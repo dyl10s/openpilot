@@ -115,7 +115,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "AdvancedLateralTune",
       "title": tr("Advanced Lateral Tuning"),
-      "subtitle": tr("Advanced steering control changes to fine-tune how openpilot drives."),
+      "subtitle": tr("Fine-tune steering response and auto-tuning."),
       "get": lambda: p.get_bool("AdvancedLateralTune"),
       "set": lambda s: p.put_bool("AdvancedLateralTune", s),
     })
@@ -123,7 +123,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "AlwaysOnLateral",
       "title": tr("Always On Lateral"),
-      "subtitle": tr("Keep lateral control active even without openpilot engaged."),
+      "subtitle": tr("Steering stays active when ACC is off."),
       "get": lambda: p.get_bool("AlwaysOnLateral"),
       "set": lambda s: (_confirm_reboot_toggle(p, "AlwaysOnLateral", s)
                         if s else p.put_bool("AlwaysOnLateral", False)),
@@ -140,7 +140,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "PauseLateralOnSignal",
       "title": tr("Turn Signal Only"),
-      "subtitle": tr("Only pause steering below the set speed when the turn signal is active."),
+      "subtitle": tr("Only pause steering when turn signal is active."),
       "get": lambda: p.get_bool("PauseLateralOnSignal"),
       "set": lambda s: p.put_bool("PauseLateralOnSignal", s),
     })
@@ -148,7 +148,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "NudgelessLaneChange",
       "title": tr("Auto Lane Changes"),
-      "subtitle": tr("When the turn signal is on, openpilot will automatically change lanes without a nudge."),
+      "subtitle": tr("Signal triggers automatic lane change."),
       "get": lambda: p.get_bool("NudgelessLaneChange"),
       "set": lambda s: p.put_bool("NudgelessLaneChange", s),
     })
@@ -156,7 +156,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "OneLaneChange",
       "title": tr("One Per Signal"),
-      "subtitle": tr("Limit automatic lane changes to one per turn-signal activation."),
+      "subtitle": tr("One lane change per signal activation."),
       "get": lambda: p.get_bool("OneLaneChange"),
       "set": lambda s: p.put_bool("OneLaneChange", s),
     })
@@ -164,7 +164,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "TurnDesires",
       "title": tr("Force Turn Desires"),
-      "subtitle": tr("While driving below the minimum lane change speed with an active turn signal, instruct openpilot to turn."),
+      "subtitle": tr("Follow turn intent below min lane change speed."),
       "get": lambda: p.get_bool("TurnDesires"),
       "set": lambda s: (p.put_bool("TurnDesires", s),
                         _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
@@ -173,7 +173,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "NavDesiresAllowed",
       "title": tr("Use Route Desires"),
-      "subtitle": tr("Allow an active navigation route to request keep-left, keep-right, and low-speed turn desires."),
+      "subtitle": tr("Allow navigation to request lane keep and turns."),
       "get": lambda: p.get_bool("NavDesiresAllowed"),
       "set": lambda s: p.put_bool("NavDesiresAllowed", s),
     })
@@ -181,7 +181,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "NNFF",
       "title": tr("NNFF"),
-      "subtitle": tr("Neural Network FeedForward controller — uses a trained model to predict steering torque."),
+      "subtitle": tr("Neural net feedforward steering controller."),
       "get": lambda: p.get_bool("NNFF"),
       "set": lambda s: (p.put_bool("NNFF", s),
                         s and p.put_bool("NNFFLite", False),
@@ -193,7 +193,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "NNFFLite",
       "title": tr("NNFF Lite"),
-      "subtitle": tr("Lightweight NNFF steering logic when the full model is off."),
+      "subtitle": tr("Lightweight NNFF when full model is off."),
       "get": lambda: p.get_bool("NNFFLite"),
       "set": lambda s: (p.put_bool("NNFFLite", s),
                         _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
@@ -204,7 +204,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "ForceAutoTune",
       "title": tr("Force Auto-Tune On"),
-      "subtitle": tr("Force-enable live auto-tuning for friction and lateral acceleration."),
+      "subtitle": tr("Force-enable live auto-tuning for friction and lateral accel."),
       "get": lambda: p.get_bool("ForceAutoTune"),
       "set": lambda s: (p.put_bool("ForceAutoTune", s),
                         s and p.put_bool("ForceAutoTuneOff", False),
@@ -216,7 +216,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "ForceAutoTuneOff",
       "title": tr("Force Auto-Tune Off"),
-      "subtitle": tr("Force-disable live auto-tuning and use your set values instead."),
+      "subtitle": tr("Force-disable auto-tuning and use your set values."),
       "get": lambda: p.get_bool("ForceAutoTuneOff"),
       "set": lambda s: (p.put_bool("ForceAutoTuneOff", s),
                         s and p.put_bool("ForceAutoTune", False),
@@ -228,7 +228,7 @@ class SteeringManagerView(PanelManagerView):
     toggles.append({
       "key": "ForceTorqueController",
       "title": tr("Force Torque Ctrl"),
-      "subtitle": tr("Use torque-based steering control instead of angle-based for smoother lane keeping, especially in curves."),
+      "subtitle": tr("Torque-based steering for smoother lane keeping."),
       "get": lambda: p.get_bool("ForceTorqueController"),
       "set": lambda s: (p.put_bool("ForceTorqueController", s),
                         _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
@@ -249,6 +249,7 @@ class SteeringManagerView(PanelManagerView):
         desc=td.get("subtitle", ""),
         is_enabled=td.get("enabled", True),
         disabled_label=td.get("disabled_label", ""),
+        show_led=True,
       ))
 
   def _measure_content_height(self, width: float) -> float:
@@ -402,7 +403,7 @@ class SteeringManagerView(PanelManagerView):
         rows.append({
           "target_id": "select:SteerDelay",
           "title": tr("Actuator Delay"),
-          "subtitle": tr("The time between openpilot's steering command and the vehicle's response."),
+          "subtitle": tr("Time between steering command and vehicle response."),
           "get_value": lambda: f"{p.get_float('SteerDelay'):.2f}s",
           "pill_width": 120,
         })
@@ -434,7 +435,7 @@ class SteeringManagerView(PanelManagerView):
         rows.append({
           "target_id": "select:SteerRatio",
           "title": tr("Steer Ratio"),
-          "subtitle": tr("Adjust the relationship between steering wheel input and road-wheel angle."),
+          "subtitle": tr("Relationship between steering wheel and road-wheel angle."),
           "get_value": lambda: f"{p.get_float('SteerRatio'):.2f}",
           "pill_width": 120,
         })
@@ -449,7 +450,7 @@ class SteeringManagerView(PanelManagerView):
       aol_rows = [{
         "target_id": "select:PauseAOLOnBrake",
         "title": tr("Pause AOL On Brake"),
-        "subtitle": tr("Pause Always On Lateral below this speed while the brake is pressed."),
+        "subtitle": tr("Pause AOL below this speed while brake is pressed."),
         "get_value": lambda: f"{p.get_int('PauseAOLOnBrake')} mph",
         "pill_width": 140,
       }]
@@ -480,14 +481,14 @@ class SteeringManagerView(PanelManagerView):
         lc_rows.append({
           "target_id": "select:LaneDetectionWidth",
           "title": tr("Min Lane Width"),
-          "subtitle": tr("Prevent automatic lane changes into lanes narrower than this width."),
+          "subtitle": tr("Prevent lane changes into narrower lanes."),
           "get_value": lambda: f"{p.get_float('LaneDetectionWidth'):.1f} ft",
           "pill_width": 120,
         })
       lc_rows.append({
         "target_id": "select:LaneChangeSmoothing",
         "title": tr("Lane Change Smoothing"),
-        "subtitle": tr("How smoothly openpilot commits to a lane change. 10 = Stock, 1 = Smoothest."),
+        "subtitle": tr("Smoothness of lane change commit. 10 = Stock, 1 = Smoothest."),
         "get_value": lambda: tr("Stock") if p.get_int("LaneChangeSmoothing") == 10
                        else f"{p.get_int('LaneChangeSmoothing')}",
         "pill_width": 120,
@@ -510,7 +511,7 @@ class SteeringManagerView(PanelManagerView):
       paus_rows.append({
         "target_id": "select:LateralResumeDelay",
         "title": tr("Resume Delay"),
-        "subtitle": tr("Delay before lateral resumes after the turn signal is turned off. 0 = Off."),
+        "subtitle": tr("Delay before lateral resumes after signal off. 0 = Off."),
         "get_value": lambda: tr("Off") if p.get_float("LateralResumeDelay") == 0
                        else f"{p.get_float('LateralResumeDelay'):.1f}s",
         "pill_width": 120,
