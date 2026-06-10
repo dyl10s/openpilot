@@ -97,14 +97,17 @@ def test_honda_lkas_button_can_toggle_always_on_lateral(monkeypatch, tmp_path):
   assert ret.pauseLateral is False
 
 
-def test_hyundai_lkas_button_still_toggles_aol_with_cruise_button_events(monkeypatch, tmp_path):
+def test_hyundai_lkas_button_waits_for_normal_engagement_before_aol(monkeypatch, tmp_path):
   monkeypatch.setattr(spc, "Params", FakeParams)
   monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)
   monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
 
-  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai"), SimpleNamespace(alternativeExperience=0))
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai"),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
 
-  car_state = make_car_state(button_events=[
+  car_state = make_car_state(available=True, button_events=[
     SimpleNamespace(type=spc.ButtonType.decelCruise, pressed=True),
     SimpleNamespace(type=spc.ButtonType.lkas, pressed=True),
   ])
@@ -114,7 +117,21 @@ def test_hyundai_lkas_button_still_toggles_aol_with_cruise_button_events(monkeyp
 
   ret = card.update(car_state, starpilot_car_state, sm, toggles)
 
+  assert ret.alwaysOnLateralAllowed is False
+  assert ret.alwaysOnLateralEnabled is False
+
+  sm["selfdriveState"].active = True
+  car_state.buttonEvents = []
+  ret = card.update(car_state, starpilot_car_state, sm, toggles)
+
   assert ret.alwaysOnLateralAllowed is True
+  assert ret.alwaysOnLateralEnabled is True
+
+  sm["selfdriveState"].active = False
+  car_state.buttonEvents = [SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)]
+  ret = card.update(car_state, starpilot_car_state, sm, toggles)
+
+  assert ret.alwaysOnLateralAllowed is False
   assert ret.pauseLateral is False
 
 
@@ -123,13 +140,25 @@ def test_hyundai_main_cruise_button_toggles_aol_when_assigned_to_aol(monkeypatch
   monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)
   monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
 
-  card = spc.StarPilotCard(SimpleNamespace(brand="hyundai"), SimpleNamespace(alternativeExperience=0))
+  card = spc.StarPilotCard(
+    SimpleNamespace(brand="hyundai"),
+    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
+  )
 
-  car_state = make_car_state(button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
+  car_state = make_car_state(available=True, button_events=[SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)])
   starpilot_car_state = SimpleNamespace(distancePressed=False)
   sm = make_sm()
-  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True, main_cruise_aol_toggle=True)
+  toggles = make_toggles(always_on_lateral=True, main_cruise_aol_toggle=True)
 
+  ret = card.update(car_state, starpilot_car_state, sm, toggles)
+  assert ret.alwaysOnLateralAllowed is False
+
+  sm["selfdriveState"].active = True
+  car_state.buttonEvents = []
+  ret = card.update(car_state, starpilot_car_state, sm, toggles)
+  assert ret.alwaysOnLateralAllowed is False
+
+  car_state.buttonEvents = [SimpleNamespace(type=spc.ButtonType.mainCruise, pressed=True)]
   ret = card.update(car_state, starpilot_car_state, sm, toggles)
   assert ret.alwaysOnLateralAllowed is True
 
