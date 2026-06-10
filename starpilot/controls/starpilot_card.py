@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from opendbc.car.chrysler.values import pacifica_hybrid_aol_requires_set_press
+from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from openpilot.common.params import Params
 from openpilot.selfdrive.car.cruise import CRUISE_LONG_PRESS, ButtonType
@@ -25,6 +26,7 @@ class StarPilotCard:
 
     self.accel_pressed = False
     self.always_on_lateral_allowed = False
+    self.hyundai_aol_needs_engagement = self.CP.brand == "hyundai" and not (getattr(self.CP, "flags", 0) & HyundaiFlags.CANFD)
     self.hyundai_aol_ready = False
     self.prev_active = False
     self.prev_cruise_enabled = False
@@ -95,14 +97,14 @@ class StarPilotCard:
   def update(self, carState, starpilotCarState, sm, starpilot_toggles):
     self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
 
-    if self.CP.brand == "hyundai":
+    if self.hyundai_aol_needs_engagement:
       if carState.gearShifter in NON_DRIVING_GEARS or not carState.cruiseState.available:
         self.hyundai_aol_ready = False
         self.always_on_lateral_allowed = False
       elif sm["selfdriveState"].active or carState.cruiseState.enabled:
         self.hyundai_aol_ready = True
 
-    can_toggle_aol = self.CP.brand != "hyundai" or self.hyundai_aol_ready
+    can_toggle_aol = not self.hyundai_aol_needs_engagement or self.hyundai_aol_ready
 
     if self.CP.brand == "hyundai" or starpilot_toggles.lkas_allowed_for_aol:
       for be in carState.buttonEvents:
@@ -129,7 +131,7 @@ class StarPilotCard:
     # On rising edge of engagement (SET press enabling lat+long), auto-enable AOL
     # so that lateral persists when braking disengages longitudinal
     if sm["selfdriveState"].active and not self.prev_active and self.always_on_lateral_set and starpilot_toggles.always_on_lateral_lkas:
-      if self.CP.brand == "hyundai":
+      if self.hyundai_aol_needs_engagement:
         self.hyundai_aol_ready = True
       self.always_on_lateral_allowed = True
 
@@ -138,7 +140,7 @@ class StarPilotCard:
 
     self.always_on_lateral_enabled = self.always_on_lateral_allowed and self.always_on_lateral_set
     self.always_on_lateral_enabled &= carState.gearShifter not in NON_DRIVING_GEARS
-    self.always_on_lateral_enabled &= self.CP.brand != "hyundai" or self.hyundai_aol_ready
+    self.always_on_lateral_enabled &= not self.hyundai_aol_needs_engagement or self.hyundai_aol_ready
     self.always_on_lateral_enabled &= sm["starpilotPlan"].lateralCheck
     self.always_on_lateral_enabled &= sm["liveCalibration"].calPerc >= 1
     self.always_on_lateral_enabled &= (ET.IMMEDIATE_DISABLE not in sm["selfdriveState"].alertType + sm["starpilotSelfdriveState"].alertType) or self.frogs_go_moo
