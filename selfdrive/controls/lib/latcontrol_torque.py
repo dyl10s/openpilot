@@ -141,6 +141,9 @@ ELANTRA_NON_SCC_CARS = (
 KIA_EV6_CARS = (
   HYUNDAI_CAR.KIA_EV6,
 )
+KIA_XCEED_CARS = (
+  HYUNDAI_CAR.KIA_XCEED_PHEV,
+)
 KIA_FORTE_CARS = (
   HYUNDAI_CAR.KIA_FORTE,
   HYUNDAI_CAR.KIA_FORTE_2019_NON_SCC,
@@ -316,6 +319,24 @@ ELANTRA_NON_SCC_TURN_IN_BOOST_LEFT = 0.10
 ELANTRA_NON_SCC_TURN_IN_BOOST_RIGHT = 0.12
 ELANTRA_NON_SCC_UNWIND_TAPER_LEFT = 0.22
 ELANTRA_NON_SCC_UNWIND_TAPER_RIGHT = 0.12
+
+KIA_XCEED_FF_REDUCTION_LEFT = 0.08
+KIA_XCEED_FF_REDUCTION_RIGHT = 0.10
+KIA_XCEED_FF_ONSET = 0.16
+KIA_XCEED_FF_ONSET_WIDTH = 0.06
+KIA_XCEED_FF_CUTOFF = 1.30
+KIA_XCEED_FF_CUTOFF_WIDTH = 0.36
+KIA_XCEED_TRANSITION_SPEED = 8.5
+KIA_XCEED_PHASE_SCALE = 0.10
+KIA_XCEED_TURN_IN_BOOST_LEFT = 0.08
+KIA_XCEED_TURN_IN_BOOST_RIGHT = 0.06
+KIA_XCEED_UNWIND_TAPER_LEFT = 0.16
+KIA_XCEED_UNWIND_TAPER_RIGHT = 0.14
+KIA_XCEED_CENTER_TAPER_MAX = 0.05
+KIA_XCEED_CENTER_TAPER_LAT = 0.14
+KIA_XCEED_CENTER_TAPER_LAT_WIDTH = 0.03
+KIA_XCEED_CENTER_TAPER_SPEED = 17.5
+KIA_XCEED_CENTER_TAPER_SPEED_WIDTH = 2.5
 
 KIA_FORTE_BASE_LAT_ACCEL_FACTOR_MULT = 1.05
 KIA_FORTE_FF_REDUCTION_LEFT = 0.05
@@ -1274,6 +1295,54 @@ def get_elantra_non_scc_ff_scale(desired_lateral_accel: float, desired_lateral_j
   return base_scale * turn_in_boost * max(unwind_taper, 0.0)
 
 
+def _kia_xceed_sigmoid(x: float) -> float:
+  return _sigmoid(x)
+
+
+def _kia_xceed_low_speed_factor(v_ego: float) -> float:
+  return 1.0 / (1.0 + (max(v_ego, 0.0) / KIA_XCEED_TRANSITION_SPEED) ** 2)
+
+
+def _kia_xceed_transition_phase(desired_lateral_accel: float, desired_lateral_jerk: float) -> float:
+  return math.tanh((desired_lateral_accel * desired_lateral_jerk) / KIA_XCEED_PHASE_SCALE)
+
+
+def _kia_xceed_side_value(desired_lateral_accel: float, left_value: float, right_value: float) -> float:
+  return left_value if desired_lateral_accel >= 0.0 else right_value
+
+
+def get_kia_xceed_ff_scale(desired_lateral_accel: float, desired_lateral_jerk: float, v_ego: float) -> float:
+  if desired_lateral_accel == 0.0:
+    return 1.0
+
+  abs_lateral_accel = abs(desired_lateral_accel)
+  onset = _kia_xceed_sigmoid((abs_lateral_accel - KIA_XCEED_FF_ONSET) / KIA_XCEED_FF_ONSET_WIDTH)
+  cutoff = _kia_xceed_sigmoid((KIA_XCEED_FF_CUTOFF - abs_lateral_accel) / KIA_XCEED_FF_CUTOFF_WIDTH)
+  base_reduction = _kia_xceed_side_value(desired_lateral_accel,
+                                         KIA_XCEED_FF_REDUCTION_LEFT,
+                                         KIA_XCEED_FF_REDUCTION_RIGHT) * onset * cutoff
+  phase = _kia_xceed_transition_phase(desired_lateral_accel, desired_lateral_jerk)
+  turn_in_weight = max(phase, 0.0)
+  unwind_weight = max(-phase, 0.0)
+  low_speed_factor = _kia_xceed_low_speed_factor(v_ego)
+  turn_in_boost = 1.0 + (_kia_xceed_side_value(desired_lateral_accel,
+                                                KIA_XCEED_TURN_IN_BOOST_LEFT,
+                                                KIA_XCEED_TURN_IN_BOOST_RIGHT) *
+                         turn_in_weight * low_speed_factor)
+  unwind_taper = 1.0 - (_kia_xceed_side_value(desired_lateral_accel,
+                                               KIA_XCEED_UNWIND_TAPER_LEFT,
+                                               KIA_XCEED_UNWIND_TAPER_RIGHT) *
+                        unwind_weight * (0.35 + 0.65 * low_speed_factor))
+  return (1.0 - base_reduction) * turn_in_boost * max(unwind_taper, 0.0)
+
+
+def get_kia_xceed_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _kia_xceed_sigmoid((v_ego - KIA_XCEED_CENTER_TAPER_SPEED) / KIA_XCEED_CENTER_TAPER_SPEED_WIDTH)
+  center_weight = _kia_xceed_sigmoid((KIA_XCEED_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / KIA_XCEED_CENTER_TAPER_LAT_WIDTH)
+  reduction = KIA_XCEED_CENTER_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
+
+
 def _kia_forte_sigmoid(x: float) -> float:
   return _sigmoid(x)
 
@@ -1917,6 +1986,7 @@ class LatControlTorque(LatControl):
     self.is_sonata = CP.carFingerprint in SONATA_CARS
     self.is_sonata_hybrid = CP.carFingerprint in SONATA_HYBRID_CARS
     self.is_elantra_non_scc = CP.carFingerprint in ELANTRA_NON_SCC_CARS
+    self.is_kia_xceed = CP.carFingerprint in KIA_XCEED_CARS
     self.is_kia_forte = CP.carFingerprint in KIA_FORTE_CARS
     self.is_kia_ev6 = CP.carFingerprint in KIA_EV6_CARS
     self.is_civic_bosch_modified = CP.carFingerprint == HONDA_CAR.HONDA_CIVIC_BOSCH and bool(CP.flags & HondaFlags.EPS_MODIFIED)
@@ -2051,6 +2121,7 @@ class LatControlTorque(LatControl):
       sonata_active = self.is_sonata
       sonata_hybrid_active = self.is_sonata_hybrid
       elantra_non_scc_active = self.is_elantra_non_scc
+      kia_xceed_active = self.is_kia_xceed
       kia_forte_active = self.is_kia_forte
       kia_ev6_test_active = self.is_kia_ev6 and kia_ev6_lateral_testing_ground_active()
       volt_plexy_test_active = self.is_volt_cc and volt_plexy_lateral_testing_ground_active()
@@ -2060,6 +2131,7 @@ class LatControlTorque(LatControl):
       ioniq_6_center_taper = get_ioniq_6_center_taper_scale(setpoint, CS.vEgo) if ioniq_6_active else 1.0
       sonata_center_taper = get_sonata_center_taper_scale(setpoint, CS.vEgo) if sonata_active else 1.0
       sonata_hybrid_center_taper = get_sonata_hybrid_center_taper_scale(setpoint, CS.vEgo) if sonata_hybrid_active else 1.0
+      kia_xceed_center_taper = get_kia_xceed_center_taper_scale(setpoint, CS.vEgo) if kia_xceed_active else 1.0
       kia_forte_center_taper = get_kia_forte_center_taper_scale(setpoint, CS.vEgo) if kia_forte_active else 1.0
       kia_ev6_center_taper = get_kia_ev6_center_taper_scale(setpoint, CS.vEgo) if kia_ev6_test_active else 1.0
       civic_bosch_modified_a_center_taper = get_civic_bosch_modified_a_center_taper_scale(setpoint, CS.vEgo) if (
@@ -2110,6 +2182,8 @@ class LatControlTorque(LatControl):
         ff *= get_sonata_hybrid_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * sonata_hybrid_center_taper
       elif elantra_non_scc_active:
         ff *= get_elantra_non_scc_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+      elif kia_xceed_active:
+        ff *= get_kia_xceed_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * kia_xceed_center_taper
       elif kia_forte_active:
         ff *= get_kia_forte_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * kia_forte_center_taper
         friction_threshold = get_kia_forte_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
