@@ -151,6 +151,7 @@ export function NavDestination() {
     confirmedRoute: null,
     confirmedRouteRefresh: 0,
     destination: undefined,
+    favoriteRoutes: [],
     favoriteToRemove: null,
     favoriteToRename: null,
     favoritesCount: 0,
@@ -370,7 +371,12 @@ export function NavDestination() {
   }
 
   function isRouteFavorited(route, favorites) {
-    return favorites.some(fav =>
+    if (!route || !Array.isArray(route.destinationCoordinates) || route.destinationCoordinates.length !== 2) {
+      return false;
+    }
+
+    const favoriteRoutes = Array.isArray(favorites) ? favorites : [];
+    return favoriteRoutes.some(fav =>
       fav.latitude === route.destinationCoordinates[1] &&
       fav.longitude === route.destinationCoordinates[0]
     );
@@ -413,8 +419,13 @@ export function NavDestination() {
   async function loadFavoritesAlphabetically() {
     try {
       const res = await fetch("/api/navigation/favorite");
+      if (!res.ok) {
+        throw new Error(`Failed to load favorites: ${res.status}`);
+      }
+
       const json = await res.json();
-      const sorted = json.favorites.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      const favorites = Array.isArray(json?.favorites) ? [...json.favorites] : [];
+      const sorted = favorites.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       state.favoritesCount = sorted.length;
       state.favoriteRoutes = sorted;
       addFavoriteMarkers(sorted);
@@ -834,6 +845,11 @@ function NavigationDestination({
           routeId
         })
       });
+
+      if (!res.ok) {
+        throw new Error(`Failed to add favorite: ${res.status}`);
+      }
+
       const { message } = await res.json();
       showSnackbar(message || "Added to favorites!");
       await loadFavorites();

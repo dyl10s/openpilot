@@ -388,6 +388,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AMapKey1", {PERSISTENT | DONT_LOG, STRING, "", "", 0}},
     {"AMapKey2", {PERSISTENT | DONT_LOG, STRING, "", "", 0}},
     {"ApiCache_NavDestinations", {PERSISTENT, JSON, "[]", "[]"}},
+    {"FavoriteDestinations", {PERSISTENT, JSON, "[]", "[]"}},
     {"MapAcceleration", {PERSISTENT, BOOL, "0", "0", 1}},
     {"MapboxPublicKey", {PERSISTENT | DONT_LOG, STRING, "", "", 0}},
     {"MapBoxRequests", {PERSISTENT, JSON, "{}", "{}"}},
