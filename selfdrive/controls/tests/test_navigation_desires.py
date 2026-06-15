@@ -165,6 +165,58 @@ def test_nav_desires_ambiguous_off_ramp_waits_longer_before_keep_right():
   assert helper.desire == log.Desire.none
 
 
+def test_nav_desires_edge_exit_lane_with_shared_transition_lane_does_not_keep_right():
+  helper = DesireHelper()
+  helper.nav_desires_allowed = True
+  helper._update_nav_params = lambda: None
+  helper._nav_instruction_state = {
+    "valid": True,
+    "maneuverType": "off ramp",
+    "maneuverModifier": "right",
+    "activeLaneDirection": "slightRight",
+    "sameSideLaneCount": 2,
+    "activeLaneAtRoadEdge": True,
+    "hasSharedSameSideLane": True,
+    "maneuverDistance": 10.0,
+  }
+
+  helper.update(
+    make_car_state(vEgo=22.5),
+    True,
+    0.0,
+    make_plan(laneWidthRight=4.2),
+    make_toggles(nudgeless=True),
+  )
+
+  assert helper.desire == log.Desire.none
+
+
+def test_nav_desires_shared_transition_lane_keeps_when_active_lane_is_not_outermost():
+  helper = DesireHelper()
+  helper.nav_desires_allowed = True
+  helper._update_nav_params = lambda: None
+  helper._nav_instruction_state = {
+    "valid": True,
+    "maneuverType": "off ramp",
+    "maneuverModifier": "right",
+    "activeLaneDirection": "slightRight",
+    "sameSideLaneCount": 2,
+    "activeLaneAtRoadEdge": False,
+    "hasSharedSameSideLane": True,
+    "maneuverDistance": 10.0,
+  }
+
+  helper.update(
+    make_car_state(vEgo=22.5),
+    True,
+    0.0,
+    make_plan(laneWidthRight=4.2),
+    make_toggles(nudgeless=True),
+  )
+
+  assert helper.desire == log.Desire.keepRight
+
+
 def test_nav_desires_ambiguous_fork_slight_right_only_keeps_close_to_split():
   helper = DesireHelper()
   helper.nav_desires_allowed = True
