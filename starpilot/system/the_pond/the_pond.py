@@ -313,6 +313,20 @@ class ParamsCompat:
         typed_value = ""
       else:
         typed_value = str(value)
+    elif expected_type == ParamKeyType.JSON:
+      if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+
+      if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+          typed_value = self._params.get_default_value(key)
+        else:
+          typed_value = json.loads(stripped)
+      elif isinstance(value, tuple):
+        typed_value = list(value)
+      else:
+        typed_value = value
 
     self._params.put(key, typed_value)
 
@@ -466,7 +480,8 @@ KEYS = {
 }
 
 NAVIGATION_MEMORY_LOCATION_STALE_SECONDS = 10.0
-NAVIGATION_PERSISTED_LOCATION_BOOT_SKEW_SECONDS = 5.0
+NAVIGATION_PERSISTED_LOCATION_FUTURE_SKEW_SECONDS = 60.0
+NAVIGATION_PERSISTED_LOCATION_MAX_AGE_SECONDS = 24 * 60 * 60
 
 TMUX_LOGS_PATH = Path("/data/tmux_logs")
 
@@ -524,7 +539,7 @@ def _last_gps_position_is_live(payload):
   return (time.monotonic() - updated_at_monotonic) <= NAVIGATION_MEMORY_LOCATION_STALE_SECONDS
 
 
-def _last_gps_position_is_current_boot(payload):
+def _last_gps_position_is_recent(payload):
   if not isinstance(payload, dict):
     return False
 
@@ -537,11 +552,14 @@ def _last_gps_position_is_current_boot(payload):
     return False
 
   now_sec = time.time()
-  boot_started_at_sec = now_sec - time.monotonic()
-  if updated_at_sec > (now_sec + 60.0):
+  if updated_at_sec > (now_sec + NAVIGATION_PERSISTED_LOCATION_FUTURE_SKEW_SECONDS):
     return False
 
-  return updated_at_sec >= (boot_started_at_sec - NAVIGATION_PERSISTED_LOCATION_BOOT_SKEW_SECONDS)
+  if not system_time_valid():
+    return True
+
+  age_sec = now_sec - updated_at_sec
+  return 0.0 <= age_sec <= NAVIGATION_PERSISTED_LOCATION_MAX_AGE_SECONDS
 
 
 def _get_navigation_last_position():
@@ -550,7 +568,7 @@ def _get_navigation_last_position():
     return memory_position
 
   persisted_position = _parse_last_gps_position(params.get("LastGPSPosition", encoding="utf8") or "")
-  if _last_gps_position_is_current_boot(persisted_position):
+  if _last_gps_position_is_recent(persisted_position):
     return persisted_position
 
   return None
@@ -3640,7 +3658,7 @@ def setup(app):
       destination,
     )
     params.put("NavDestination", json.dumps(destination))
-    params.put("ApiCache_NavDestinations", json.dumps(recent_destinations))
+    params.put("ApiCache_NavDestinations", recent_destinations)
     return {"message": "Destination set"}
 
   @app.route("/api/navigation/favorite", methods=["DELETE"])
@@ -3662,7 +3680,7 @@ def setup(app):
         )
       ]
 
-    params.put("FavoriteDestinations", json.dumps(favorites))
+    params.put("FavoriteDestinations", favorites)
     return jsonify(message="Destination removed from favorites!")
 
   @app.route("/api/navigation/favorite", methods=["GET"])
@@ -3675,7 +3693,7 @@ def setup(app):
         f["id"] = hashlib.sha1(raw.encode()).hexdigest()
         changed = True
     if changed:
-      params.put("FavoriteDestinations", json.dumps(favorites))
+      params.put("FavoriteDestinations", favorites)
     return jsonify(favorites=favorites)
 
   @app.route("/api/navigation/favorite", methods=["POST"])
@@ -3690,7 +3708,7 @@ def setup(app):
     if not any(f.get("id") == new_fav["id"] for f in existing):
       existing.append(new_fav)
 
-    params.put("FavoriteDestinations", json.dumps(existing))
+    params.put("FavoriteDestinations", existing)
     return {"message": "Destination added to favorites!"}
 
   @app.route("/api/navigation/favorite/rename", methods=["POST"])
@@ -3740,7 +3758,7 @@ def setup(app):
     if not found:
       return jsonify({"error": "Favorite not found"}), 404
 
-    params.put("FavoriteDestinations", json.dumps(existing_favorites))
+    params.put("FavoriteDestinations", existing_favorites)
     return jsonify(message="Favorite updated successfully!")
 
   @app.route("/api/navigation_key", methods=["DELETE"])
