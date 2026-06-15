@@ -1827,6 +1827,19 @@ def test_low_speed_follow_catchup_accel_cap_limits_close_vision_catchup():
   assert 0.15 <= cap <= 0.45
 
 
+def test_route_8bc6_post_departure_catchup_cap_skips_accelerating_away_radar_lead():
+  v_ego = 19.03
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=33.85, v_lead=19.47, a_lead=0.33, radar=True, model_prob=1.0, y_rel=-0.30,
+  )
+
+  cap = planner.get_lead_catchup_accel_cap(lead, v_ego, 1.45)
+
+  assert cap is None
+
+
 def test_low_speed_follow_catchup_uses_raw_vehicle_speed_when_cluster_runs_high():
   v_ego = 7.8
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
@@ -2223,6 +2236,46 @@ def test_cruise_tracking_lead_accel_cap_skips_accelerating_away_radar_lead():
   )
 
   assert cap is None
+
+
+def test_route_8bc6_post_departure_cruise_cap_skips_accelerating_away_radar_lead():
+  v_ego = 19.03
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=33.85, v_lead=19.47, a_lead=0.33, radar=True, model_prob=1.0, y_rel=-0.30,
+  )
+
+  cap = planner.get_cruise_tracking_lead_accel_cap(
+    lead,
+    v_ego,
+    1.45,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
+def test_post_departure_pullaway_bypass_does_not_skip_when_lead_brakes_again():
+  v_ego = 19.03
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=33.85, v_lead=18.90, a_lead=-0.35, radar=True, model_prob=1.0, y_rel=-0.30,
+  )
+
+  catchup_cap = planner.get_lead_catchup_accel_cap(lead, v_ego, 1.45)
+  cruise_cap = planner.get_cruise_tracking_lead_accel_cap(
+    lead,
+    v_ego,
+    1.45,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert catchup_cap is not None
+  assert cruise_cap is not None
 
 
 def test_cruise_tracking_lead_accel_transition_target_damps_mid_speed_reacquisition_burst():

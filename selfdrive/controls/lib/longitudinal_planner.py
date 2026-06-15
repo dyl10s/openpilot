@@ -210,6 +210,11 @@ LEAD_CATCHUP_ACCEL_MIN_EGO = 8.0
 LEAD_CATCHUP_ACCEL_MIN_LEAD_DELTA = -0.5
 LEAD_CATCHUP_ACCEL_MAX_GAP_BUFFER_MIN = 4.0
 LEAD_CATCHUP_ACCEL_MAX_GAP_BUFFER_GAIN = 0.15
+POST_DEPARTURE_FOLLOW_BYPASS_MIN_SPEED = 12.0
+POST_DEPARTURE_FOLLOW_BYPASS_MIN_MODEL_PROB = 0.95
+POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_DELTA = 0.35
+POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_ACCEL = 0.25
+POST_DEPARTURE_FOLLOW_BYPASS_MIN_HEADWAY_MARGIN = 0.10
 LOW_SPEED_FOLLOW_ACCEL_CAP_MAX_SPEED = 12.0
 LOW_SPEED_FOLLOW_ACCEL_CAP_MIN_MODEL_PROB = 0.85
 LOW_SPEED_FOLLOW_ACCEL_CAP_MAX_LEAD_BRAKE = 0.20
@@ -1240,6 +1245,28 @@ class LongitudinalPlanner:
     brake_floor = -hold_brake
     return brake_floor if accel_min >= 0.0 else max(accel_min, brake_floor)
 
+  def is_stable_post_departure_pullaway(self, lead, v_ego, t_follow):
+    if lead is None or not lead.status or float(v_ego) < POST_DEPARTURE_FOLLOW_BYPASS_MIN_SPEED:
+      return False
+
+    lead_radar = bool(getattr(lead, "radar", False))
+    lead_prob = float(getattr(lead, "modelProb", 1.0 if lead_radar else 0.0))
+    if not lead_radar and lead_prob < POST_DEPARTURE_FOLLOW_BYPASS_MIN_MODEL_PROB:
+      return False
+
+    if abs(float(getattr(lead, "yRel", 0.0))) > CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_LATERAL_OFFSET:
+      return False
+
+    lead_delta = float(lead.vLead) - float(v_ego)
+    lead_accel = float(getattr(lead, "aLeadK", 0.0))
+    if (lead_delta < POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_DELTA or
+        lead_accel < POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_ACCEL):
+      return False
+
+    actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
+    headway_margin = actual_headway - float(t_follow)
+    return headway_margin >= POST_DEPARTURE_FOLLOW_BYPASS_MIN_HEADWAY_MARGIN
+
   def get_lead_catchup_accel_cap(self, lead, v_ego, t_follow):
     if lead is None or not lead.status:
       return None
@@ -1270,6 +1297,9 @@ class LongitudinalPlanner:
                        LEAD_CATCHUP_ACCEL_MAX_GAP_BUFFER_GAIN * float(v_ego))
     gap_error = float(lead.dRel) - desired_gap
     if gap_error > gap_buffer:
+      return None
+
+    if not low_speed_follow_window and self.is_stable_post_departure_pullaway(lead, v_ego, t_follow):
       return None
 
     # If the lead is already pace-matched or pulling away, keep any catch-up
@@ -1361,9 +1391,11 @@ class LongitudinalPlanner:
     # momentarily falls near the pull-away threshold. That produces the repeated
     # 0.18 m/s^2 "surge / give up / surge" behavior seen in real logs.
     lead_accel = float(getattr(lead, "aLeadK", 0.0))
-    if (lead_delta >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN_LEAD_DELTA and
-        lead_accel >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN and
-        gap_error >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN_GAP_MARGIN):
+    if self.is_stable_post_departure_pullaway(lead, v_ego, t_follow) or (
+      lead_delta >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN_LEAD_DELTA and
+      lead_accel >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN and
+      gap_error >= CRUISE_TRACKED_LEAD_ACCEL_CAP_ACCEL_AWAY_MIN_GAP_MARGIN
+    ):
       return None
 
     base_cap = float(np.interp(
