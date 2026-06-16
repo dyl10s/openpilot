@@ -328,7 +328,7 @@ class VehicleSettingsManagerView(PanelManagerView):
       if not self._uses_two_columns(width):
         self._toggle_grid._columns = 3
         avail_w = width - 24
-        tiles_content_h = self._toggle_grid.measure_height(avail_w)
+        tiles_content_h = self.measure_page_grid_height(self._toggle_grid, avail_w)
         tiles_height = SECTION_GAP + self._section_block_height(tiles_content_h + 24)
 
     if self._uses_two_columns(width):
@@ -420,7 +420,7 @@ class VehicleSettingsManagerView(PanelManagerView):
 
         self._toggle_grid._columns = 3
         avail_w = width - 24
-        tiles_content_h = self._toggle_grid.measure_height(avail_w)
+        tiles_content_h = self.measure_page_grid_height(self._toggle_grid, avail_w)
 
         draw_list_group_shell(rl.Rectangle(x, y, width, tiles_content_h + 24), style=PANEL_STYLE)
         self._render_page_grid(self._toggle_grid, rl.Rectangle(x + 12, y + 12, avail_w, tiles_content_h))

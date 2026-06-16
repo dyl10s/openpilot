@@ -507,6 +507,10 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   def _draw_scroll_content(self, scroll_rect: rl.Rectangle, content_width: float) -> None:
     """Override to render visible content rows inside the scissor region."""
 
+  @property
+  def vertical_scrolling_disabled(self) -> bool:
+    return False
+
   # ── render pipeline ───────────────────────────────────────
 
   def _render(self, rect: rl.Rectangle) -> None:
@@ -521,8 +525,15 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
     self._content_height = self._measure_content_height(content_width)
     self._scroll_panel.set_enabled(self.is_visible)
+    
+    scroll_disabled = self.vertical_scrolling_disabled
+    effective_height = scroll_rect.height if scroll_disabled else self._content_height
+    
     self._scroll_offset = self._scroll_panel.update(
-      scroll_rect, max(self._content_height, scroll_rect.height))
+      scroll_rect, max(effective_height, scroll_rect.height))
+
+    if scroll_disabled:
+      self._scroll_offset = 0.0
 
     rl.begin_scissor_mode(
       int(scroll_rect.x), int(scroll_rect.y),
@@ -530,12 +541,12 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     self._draw_scroll_content(scroll_rect, content_width)
     rl.end_scissor_mode()
 
-    if self._content_height > scroll_rect.height:
+    if self._content_height > scroll_rect.height and not scroll_disabled:
       self._scrollbar.render(scroll_rect, self._content_height, self._scroll_offset)
 
-    draw_list_scroll_fades(scroll_rect, self._content_height, self._scroll_offset,
-                           AetherListColors.PANEL_BG)
-    self._draw_page_dots(frame.scroll)
+    if not scroll_disabled:
+      draw_list_scroll_fades(scroll_rect, self._content_height, self._scroll_offset,
+                             AetherListColors.PANEL_BG)
 
   # ── shared layout helpers ─────────────────────────────────
 
@@ -613,6 +624,12 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   def _has_pagination(self) -> bool:
     return self._page_count > 1
 
+  def measure_page_grid_height(self, grid: TileGrid, width: float) -> float:
+    h = grid.measure_height(width)
+    if self._has_pagination:
+      h += 32
+    return h
+
   def register_page_grid(self, grid: TileGrid) -> None:
     self._page_grid = grid
     if grid not in self._children:
@@ -671,59 +688,61 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     self._page_anim_from = from_offset
 
   def _render_page_grid(self, grid: TileGrid, rect: rl.Rectangle, clip_rect: rl.Rectangle | None = None) -> None:
+    pagination_padding = 32.0 if self._has_pagination else 0.0
+
     if clip_rect is None:
       clip_rect = rl.Rectangle(rect.x - self.GRID_PADDING, rect.y - self.GRID_PADDING,
                                rect.width + self.GRID_PADDING * 2, rect.height + self.GRID_PADDING * 2)
     self._page_clip_rect = clip_rect
 
+    grid_rect = rl.Rectangle(rect.x, rect.y, rect.width, max(0.0, rect.height - pagination_padding))
+
     # active drag
     if self._page_drag_active:
       drag_off = self._page_drag_offset
       self._page_scissor_push(clip_rect)
-      grid.render(rl.Rectangle(rect.x + drag_off, rect.y, rect.width, rect.height))
+      grid.render(rl.Rectangle(grid_rect.x + drag_off, grid_rect.y, grid_rect.width, grid_rect.height))
       self._page_scissor_pop()
-      return
-
-    # no animation
-    if not self._page_animating:
+    elif not self._page_animating:
+      # no animation
       grid.set_parent_rect(self._scroll_rect)
-      grid.render(rect)
-      return
-
-    # animation
-    elapsed = time.monotonic() - self._page_anim_start
-    duration = self.PAGE_ANIM_DURATION if self._page_anim_committed else self.PAGE_SNAP_DURATION
-    if elapsed >= duration:
-      self._page_animating = False
-      self._page_anim_prev_tiles.clear()
-      grid.set_parent_rect(self._scroll_rect)
-      grid.render(rect)
-      return
-
-    t = elapsed / duration
-    t = 1.0 - (1.0 - t) ** 3
-
-    if self._page_anim_committed:
-      direction = 1 if self._page_anim_from < 0 else -1
-      old_target = -direction * rect.width
-      prev_offset = self._page_anim_from + (old_target - self._page_anim_from) * t
-      cur_offset = direction * rect.width + (0.0 - direction * rect.width) * t
-
-      self._page_scissor_push(clip_rect)
-      if self._page_anim_prev_tiles:
-        old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap, tile_height=grid._tile_height)
-        old_grid.tiles.extend(self._page_anim_prev_tiles)
-        old_grid.set_parent_rect(self._scroll_rect)
-        old_grid.render(rl.Rectangle(rect.x + prev_offset, rect.y, rect.width, rect.height))
-      grid.set_parent_rect(self._scroll_rect)
-      grid.render(rl.Rectangle(rect.x + cur_offset, rect.y, rect.width, rect.height))
-      self._page_scissor_pop()
+      grid.render(grid_rect)
     else:
-      cur_offset = self._page_anim_from * (1.0 - t)
-      self._page_scissor_push(clip_rect)
-      grid.set_parent_rect(self._scroll_rect)
-      grid.render(rl.Rectangle(rect.x + cur_offset, rect.y, rect.width, rect.height))
-      self._page_scissor_pop()
+      # animation
+      elapsed = time.monotonic() - self._page_anim_start
+      duration = self.PAGE_ANIM_DURATION if self._page_anim_committed else self.PAGE_SNAP_DURATION
+      if elapsed >= duration:
+        self._page_animating = False
+        self._page_anim_prev_tiles.clear()
+        grid.set_parent_rect(self._scroll_rect)
+        grid.render(grid_rect)
+      else:
+        t = elapsed / duration
+        t = 1.0 - (1.0 - t) ** 3
+
+        if self._page_anim_committed:
+          direction = 1 if self._page_anim_from < 0 else -1
+          old_target = -direction * rect.width
+          prev_offset = self._page_anim_from + (old_target - self._page_anim_from) * t
+          cur_offset = direction * rect.width + (0.0 - direction * rect.width) * t
+
+          self._page_scissor_push(clip_rect)
+          if self._page_anim_prev_tiles:
+            old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap, tile_height=grid._tile_height)
+            old_grid.tiles.extend(self._page_anim_prev_tiles)
+            old_grid.set_parent_rect(self._scroll_rect)
+            old_grid.render(rl.Rectangle(grid_rect.x + prev_offset, grid_rect.y, grid_rect.width, grid_rect.height))
+          grid.set_parent_rect(self._scroll_rect)
+          grid.render(rl.Rectangle(grid_rect.x + cur_offset, grid_rect.y, grid_rect.width, grid_rect.height))
+          self._page_scissor_pop()
+        else:
+          cur_offset = self._page_anim_from * (1.0 - t)
+          self._page_scissor_push(clip_rect)
+          grid.set_parent_rect(self._scroll_rect)
+          grid.render(rl.Rectangle(grid_rect.x + cur_offset, grid_rect.y, grid_rect.width, grid_rect.height))
+          self._page_scissor_pop()
+
+    self._draw_page_dots(rect)
 
   # ── mouse handling ─────────────────────────────────────────
 
@@ -785,11 +804,10 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   def _draw_page_dots(self, rect: rl.Rectangle) -> None:
     if not self._has_pagination:
       return
-    clip = self._page_clip_rect
     n = min(self._page_count, 8)
     total_w = n * self.PAGE_DOT_RADIUS * 2 + max(0, n - 1) * self.PAGE_DOT_GAP
-    start_x = (clip.x + (clip.width - total_w) / 2) if clip else rect.x + (rect.width - total_w) / 2
-    dot_y = rect.y + rect.height + 8
+    start_x = rect.x + (rect.width - total_w) / 2
+    dot_y = rect.y + rect.height - 12
     for i in range(n):
       cx = start_x + i * (self.PAGE_DOT_RADIUS * 2 + self.PAGE_DOT_GAP) + self.PAGE_DOT_RADIUS
       fill = self.PANEL_STYLE.accent if i == self._current_page else _with_alpha(AetherListColors.MUTED, 100)
@@ -2339,19 +2357,27 @@ class AetherSettingsView(PanelManagerView):
 
     self._content_height = self._measure_content_height(content_width)
     self._scroll_panel.set_enabled(self.is_visible)
+
+    scroll_disabled = getattr(self, "vertical_scrolling_disabled", False)
+    effective_height = self._scroll_rect.height if scroll_disabled else self._content_height
+
     self._scroll_offset = self._scroll_panel.update(
-      self._scroll_rect, max(self._content_height, self._scroll_rect.height))
+      self._scroll_rect, max(effective_height, self._scroll_rect.height))
+
+    if scroll_disabled:
+      self._scroll_offset = 0.0
 
     rl.begin_scissor_mode(int(self._scroll_rect.x), int(self._scroll_rect.y),
                            int(self._scroll_rect.width), int(self._scroll_rect.height))
     self._draw_scroll_content(self._scroll_rect, content_width)
     rl.end_scissor_mode()
 
-    if self._content_height > self._scroll_rect.height:
+    if self._content_height > self._scroll_rect.height and not scroll_disabled:
       self._scrollbar.render(self._scroll_rect, self._content_height, self._scroll_offset)
 
-    draw_list_scroll_fades(self._scroll_rect, self._content_height, self._scroll_offset,
-                            AetherListColors.PANEL_BG, fade_height=self._fade_height)
+    if not scroll_disabled:
+      draw_list_scroll_fades(self._scroll_rect, self._content_height, self._scroll_offset,
+                             AetherListColors.PANEL_BG, fade_height=self._fade_height)
 
   def _draw_header(self, rect: rl.Rectangle):
     title = tr(self._header_title) if self._header_title else ""

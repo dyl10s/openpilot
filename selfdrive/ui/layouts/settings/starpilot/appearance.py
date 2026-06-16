@@ -67,6 +67,10 @@ def _theme_display_name(value: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 class AppearanceManagerView(AetherSettingsView):
+    @property
+    def vertical_scrolling_disabled(self) -> bool:
+        return self._active_tab_key == "widgets"
+
     def __init__(self, controller, sections, **kwargs):
         super().__init__(controller, sections, **kwargs)
         self._toggle_grid = TileGrid(columns=2, padding=12)
@@ -252,7 +256,7 @@ class AppearanceManagerView(AetherSettingsView):
             section_overhead = self._metrics.section_header_height + self._metrics.section_header_gap
             left_column_total_h = left_h + section_overhead
 
-            tiles_content_h = self._toggle_grid.measure_height(col_width - 24)
+            tiles_content_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24)
             right_column_total_h = tiles_content_h + 24 + section_overhead
             
             tab_h = self.TAB_HEIGHT + self.TAB_BOTTOM_GAP if self._tab_defs else 0
@@ -310,7 +314,7 @@ class AppearanceManagerView(AetherSettingsView):
                     tr("Widgets"), style=self._panel_style
                 )
                 y += self._metrics.section_header_height + self._metrics.section_header_gap
-                tiles_content_h = self._toggle_grid.measure_height(width - 24)
+                tiles_content_h = self.measure_page_grid_height(self._toggle_grid, width - 24)
                 draw_list_group_shell(rl.Rectangle(rect.x, y, width, tiles_content_h + 24), style=self._panel_style)
                 self._render_page_grid(self._toggle_grid, rl.Rectangle(rect.x + 12, y + 12, width - 24, tiles_content_h))
 

@@ -110,6 +110,10 @@ class SystemSettingsManagerView(PanelManagerView):
   DANGER_PILL_WIDTH = 112
   METRICS = SYSTEM_PANEL_METRICS
 
+  @property
+  def vertical_scrolling_disabled(self) -> bool:
+    return True
+
   def __init__(self, controller: StarPilotSystemLayout):
     super().__init__()
     self._controller = controller
@@ -478,7 +482,7 @@ class SystemSettingsManagerView(PanelManagerView):
       left_h = display_container_h + power_container_h + header_overhead + section_gap
       return self._compute_two_column_height(left_h)
     else:
-      tiles_content_h = self._connectivity_tile_grid.measure_height(width - 24)
+      tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, width - 24)
       return self._stacked_section_height([display_h, power_h, tiles_content_h + 24])
 
   def _slider_section_height(self, keys: list[str], width: float) -> float:
@@ -519,7 +523,7 @@ class SystemSettingsManagerView(PanelManagerView):
     self._draw_connectivity_tiles_section(y, x, width)
 
   def _draw_connectivity_tiles_section(self, y: float, x: float, width: float):
-    tiles_content_h = self._connectivity_tile_grid.measure_height(width - 24)
+    tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, width - 24)
 
     draw_list_group_shell(rl.Rectangle(x, y, width, tiles_content_h + 24), style=PANEL_STYLE)
     self._render_page_grid(self._connectivity_tile_grid, rl.Rectangle(x + 12, y + 12, width - 24, tiles_content_h))
