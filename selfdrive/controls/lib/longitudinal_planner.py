@@ -40,6 +40,7 @@ RAW_LEAD_LOW_SPEED_HOLD_MAX_LATERAL_OFFSET = 1.75
 RAW_LEAD_LOW_SPEED_HOLD_MIN_CLOSING_SPEED = 0.15
 STANDSTILL_LEAD_NUDGE_ACCEL = 0.05
 STANDSTILL_LEAD_NUDGE_MIN_SPEED = 0.0
+STANDSTILL_LEAD_NUDGE_MIN_LEAD_ACCEL = 0.2
 STANDSTILL_LEAD_DEPART_MIN_ACCEL = 0.35
 STANDSTILL_LEAD_DEPART_MAX_EGO_SPEED = 1.5
 STANDSTILL_LEAD_DEPART_MIN_LEAD_SPEED = 0.6
@@ -1363,7 +1364,7 @@ class LongitudinalPlanner:
       return None
 
     lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
-    if lead_brake > CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_LEAD_BRAKE:
+    if lead_brake > CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_LEAD_BRAKE and not tracking_lead_active:
       return None
 
     if abs(float(getattr(lead, "yRel", 0.0))) > CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_LATERAL_OFFSET:
@@ -2366,6 +2367,13 @@ class LongitudinalPlanner:
     moving_leads = [lead for lead in (self.lead_one, self.lead_two)
                     if lead.status and
                     lead.vLead > STANDSTILL_LEAD_NUDGE_MIN_SPEED and lead.dRel >= standstill_nudge_gap]
+    accelerating_nudge_lead = any(
+      lead.status and
+      float(getattr(lead, "vLead", 0.0)) > STANDSTILL_LEAD_NUDGE_MIN_SPEED and
+      float(getattr(lead, "aLeadK", 0.0)) >= STANDSTILL_LEAD_NUDGE_MIN_LEAD_ACCEL and
+      float(getattr(lead, "dRel", 0.0)) >= standstill_nudge_gap
+      for lead in (self.lead_one, self.lead_two)
+    )
     confident_depart_detected = any(self.is_confident_lead_depart(lead, float(sm['carState'].vEgo))
                                     for lead in (self.lead_one, self.lead_two))
     lead_depart_ready = any(
@@ -2396,7 +2404,8 @@ class LongitudinalPlanner:
     )
 
     standstill_stopped_lead_guard_cap = None
-    if lead_control_active and (bool(sm['carState'].standstill) or float(sm['carState'].vEgo) <= STANDSTILL_STOPPED_LEAD_GUARD_MAX_EGO_SPEED):
+    standstill_guard_lead_present = any(bool(getattr(lead, "status", False)) for lead in (self.lead_one, self.lead_two))
+    if standstill_guard_lead_present and (bool(sm['carState'].standstill) or float(sm['carState'].vEgo) <= STANDSTILL_STOPPED_LEAD_GUARD_MAX_EGO_SPEED):
       release_ready = bool(lead_depart_ready or confident_depart_ready)
       standstill_stopped_lead_guard_caps = [
         cap for cap in (
@@ -2540,12 +2549,14 @@ class LongitudinalPlanner:
     if vision_brake_cap_active:
       output_accel_min = min(output_accel_min, vision_cap_accel_min)
 
-    follow_control_lead = self.get_follow_control_lead(
-      lead_control_active,
-      scene_v_ego,
-      effective_t_follow,
-      allow_optional_far_lead_logic=allow_complex_follow_logic,
-    )
+    follow_control_lead = None
+    if allow_complex_follow_logic:
+      follow_control_lead = self.get_follow_control_lead(
+        lead_control_active,
+        scene_v_ego,
+        effective_t_follow,
+        allow_optional_far_lead_logic=True,
+      )
     if allow_complex_follow_logic and follow_control_lead is not None and not panic_bypass:
       if not output_should_stop and not vision_low_speed_stop_active:
         tracked_vision_model_brake_floor = self.get_tracked_vision_model_brake_floor(
@@ -2700,6 +2711,15 @@ class LongitudinalPlanner:
     if low_speed_weak_lead_accel_cap is not None:
       self.a_desired = min(self.a_desired, low_speed_weak_lead_accel_cap)
       output_a_target = min(output_a_target, low_speed_weak_lead_accel_cap)
+
+    if (
+      lead_control_active and
+      (bool(sm['carState'].standstill) or float(sm['carState'].vEgo) <= STANDSTILL_STOPPED_LEAD_GUARD_MAX_EGO_SPEED) and
+      output_should_stop and
+      accelerating_nudge_lead and
+      not depart_safety_veto
+    ):
+      output_a_target = max(output_a_target, STANDSTILL_LEAD_NUDGE_ACCEL)
 
     force_stop_handoff = bool(
       getattr(sm['starpilotPlan'], 'forcingStop', False) and
