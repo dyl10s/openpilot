@@ -690,7 +690,8 @@ class CarController(CarControllerBase):
             hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
             hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
             can_sends.append(gmcan.create_friction_brake_command(
-              self.packer_ch, friction_brake_bus, hold_brake, idx, False, hold_near_stop, hold_standstill, self.CP))
+              self.packer_ch, friction_brake_bus, hold_brake, idx, False, hold_near_stop, hold_standstill,
+              self.CP, allow_near_stop_mode=True))
             CS.auto_hold_engaged = True
             CS.auto_hold_fault_suppression_timer = 1.0
           else:
@@ -765,7 +766,8 @@ class CarController(CarControllerBase):
         hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
         hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
         can_sends.append(gmcan.create_friction_brake_command(
-          self.packer_ch, get_friction_brake_bus(self.CP), hold_brake, idx, False, hold_near_stop, hold_standstill, self.CP))
+          self.packer_ch, get_friction_brake_bus(self.CP), hold_brake, idx, False, hold_near_stop, hold_standstill,
+          self.CP, allow_near_stop_mode=True))
         CS.auto_hold_engaged = True
         CS.auto_hold_fault_suppression_timer = 1.0
       elif self.frame % 4 == 0:

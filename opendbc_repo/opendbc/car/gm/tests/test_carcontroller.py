@@ -46,6 +46,7 @@ from opendbc.car.gm.carcontroller import (
   supports_volt_auto_hold,
   use_interceptor_sng_launch,
 )
+from opendbc.car.gm.gmcan import get_friction_brake_mode
 from opendbc.car.gm.values import AccState, CAR, GMFlags
 from opendbc.car.structs import CarParams
 
@@ -278,6 +279,19 @@ def test_auto_hold_activation_allows_standstill_even_if_speed_filter_is_slightly
     False,
     0.05,
   )
+
+
+def test_friction_brake_mode_keeps_near_stop_disabled_for_regular_long_braking():
+  CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_ASCM)
+
+  assert get_friction_brake_mode(120, False, True, False, CP) == 0xa
+
+
+def test_friction_brake_mode_uses_near_stop_hold_mode_for_volt_auto_hold():
+  CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_ASCM)
+
+  assert get_friction_brake_mode(120, False, True, False, CP, allow_near_stop_mode=True) == 0xb
+  assert get_friction_brake_mode(120, False, True, True, CP, allow_near_stop_mode=True) == 0xd
 
 
 def test_calc_pedal_command_small_accel_deadband_keeps_creep_target_stable():
