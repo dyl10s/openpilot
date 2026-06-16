@@ -25,30 +25,6 @@ THEME_KEY_CONFIG = {
         "default": "starpilot",
         "extra": [],
     },
-    "ColorScheme": {
-        "default": "stock",
-        "extra": [("stock", "Stock")],
-    },
-    "DistanceIconPack": {
-        "default": "stock",
-        "extra": [("stock", "Stock")],
-    },
-    "IconPack": {
-        "default": "stock",
-        "extra": [("stock", "Stock")],
-    },
-    "SignalAnimation": {
-        "default": "stock",
-        "extra": [("none", "None")],
-    },
-    "SoundPack": {
-        "default": "stock",
-        "extra": [("stock", "Stock")],
-    },
-    "WheelIcon": {
-        "default": "stock",
-        "extra": [("none", "None"), ("stock", "Stock")],
-    },
 }
 
 COLOR_PRESETS = ["Stock", "#FFFFFF", "#178644", "#3B82F6", "#E63956", "#8B5CF6", "#F59E0B"]
@@ -79,83 +55,7 @@ def _theme_display_name(value: str) -> str:
     return display
 
 
-# ═══════════════════════════════════════════════════════════════
-# Theme Personalize sub-panel
-# ═══════════════════════════════════════════════════════════════
 
-class StarPilotAppearancePersonalizeLayout(_SettingsPage):
-    def __init__(self):
-        super().__init__()
-        self._build_view()
-
-    def _build_view(self):
-        sections: list[SettingSection] = [
-            SettingSection(tr_noop("Theme Components"), [
-                SettingRow("BootLogo", "value", tr_noop("Boot Logo"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("BootLogo"),
-                           on_click=lambda: self._show_theme_selector("BootLogo")),
-                SettingRow("ColorScheme", "value", tr_noop("Color Scheme"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("ColorScheme"),
-                           on_click=lambda: self._show_theme_selector("ColorScheme")),
-                SettingRow("DistanceIconPack", "value", tr_noop("Distance Icons"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("DistanceIconPack"),
-                           on_click=lambda: self._show_theme_selector("DistanceIconPack")),
-                SettingRow("IconPack", "value", tr_noop("Icon Pack"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("IconPack"),
-                           on_click=lambda: self._show_theme_selector("IconPack")),
-                SettingRow("SignalAnimation", "value", tr_noop("Turn Signals"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("SignalAnimation"),
-                           on_click=lambda: self._show_theme_selector("SignalAnimation")),
-                SettingRow("SoundPack", "value", tr_noop("Sound Pack"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("SoundPack"),
-                           on_click=lambda: self._show_theme_selector("SoundPack")),
-                SettingRow("WheelIcon", "value", tr_noop("Steering Wheel"),
-                           subtitle="",
-                           get_value=lambda: self._get_theme_value("WheelIcon"),
-                           on_click=lambda: self._show_theme_selector("WheelIcon")),
-            ]),
-        ]
-        self._manager_view = AetherSettingsView(
-            self, sections,
-            header_title=tr_noop("Personalize"),
-            header_subtitle=tr_noop("Customize the overall look and feel of openpilot."),
-            panel_style=PANEL_STYLE,
-        )
-
-    def _build_theme_options(self, key: str) -> tuple[list[str], dict[str, str], str]:
-        config = THEME_KEY_CONFIG[key]
-        options_map = {display: slug for slug, display in config["extra"]}
-        current_slug = self._params.get(key, encoding='utf-8') or config["default"]
-        current_display = _theme_display_name(current_slug)
-        if current_display not in options_map:
-            options_map[current_display] = current_slug
-        options = sorted(options_map.keys(), key=str.casefold)
-        return options, options_map, current_display
-
-    def _get_theme_value(self, key: str) -> str:
-        default = THEME_KEY_CONFIG[key]["default"]
-        return _theme_display_name(self._params.get(key, encoding='utf-8') or default)
-
-    def _show_theme_selector(self, key):
-        themes, option_map, current = self._build_theme_options(key)
-        if not themes:
-            return
-
-        def on_select(res):
-            if res == DialogResult.CONFIRM and dialog.selection:
-                selected_slug = option_map.get(dialog.selection)
-                if selected_slug is None:
-                    return
-                self._params.put(key, selected_slug)
-
-        dialog = MultiOptionDialog(tr(key), themes, current, callback=on_select)
-        gui_app.push_widget(dialog)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -165,10 +65,6 @@ class StarPilotAppearancePersonalizeLayout(_SettingsPage):
 class StarPilotAppearanceLayout(_SettingsPage):
     def __init__(self):
         super().__init__()
-        self._sub_panels = {
-            "personalize": StarPilotAppearancePersonalizeLayout(),
-        }
-        self._wire_sub_panels()
         self._build_view()
 
     def _build_view(self):
@@ -436,10 +332,10 @@ class StarPilotAppearanceLayout(_SettingsPage):
 
             # ═══ Tab 5: Theme — customization ═══
             SettingSection(tr_noop("Customization"), [
-                SettingRow("Personalize", "value", tr_noop("Personalize openpilot"),
-                           subtitle=tr_noop("Choose boot logo, color scheme, icons, sounds, and more."),
-                           get_value=lambda: tr_noop("Customize"),
-                           navigate_to="personalize"),
+                SettingRow("BootLogo", "value", tr_noop("Boot Logo"),
+                           subtitle="",
+                           get_value=lambda: self._get_theme_value("BootLogo"),
+                           on_click=lambda: self._show_theme_selector("BootLogo")),
                 SettingRow("RainbowPath", "toggle", tr_noop("Rainbow Path"),
                            subtitle="",
                            get_state=lambda: self._params.get_bool("RainbowPath"),
@@ -461,6 +357,37 @@ class StarPilotAppearanceLayout(_SettingsPage):
             tab_defs=tab_defs,
             panel_style=PANEL_STYLE,
         )
+
+    # ── Theme helpers ──
+
+    def _build_theme_options(self, key: str) -> tuple[list[str], dict[str, str], str]:
+        config = THEME_KEY_CONFIG[key]
+        options_map = {display: slug for slug, display in config["extra"]}
+        current_slug = self._params.get(key, encoding='utf-8') or config["default"]
+        current_display = _theme_display_name(current_slug)
+        if current_display not in options_map:
+            options_map[current_display] = current_slug
+        options = sorted(options_map.keys(), key=str.casefold)
+        return options, options_map, current_display
+
+    def _get_theme_value(self, key: str) -> str:
+        default = THEME_KEY_CONFIG[key]["default"]
+        return _theme_display_name(self._params.get(key, encoding='utf-8') or default)
+
+    def _show_theme_selector(self, key):
+        themes, option_map, current = self._build_theme_options(key)
+        if not themes:
+            return
+
+        def on_select(res):
+            if res == DialogResult.CONFIRM and dialog.selection:
+                selected_slug = option_map.get(dialog.selection)
+                if selected_slug is None:
+                    return
+                self._params.put(key, selected_slug)
+
+        dialog = MultiOptionDialog(tr(key), themes, current, callback=on_select)
+        gui_app.push_widget(dialog)
 
     # ── Widget helpers ──
 
