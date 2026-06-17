@@ -1912,6 +1912,26 @@ def test_route_8bc6_post_departure_catchup_cap_skips_accelerating_away_radar_lea
   assert cap is None
 
 
+def test_route_8bc6_cruise_tracking_cap_skips_comfortable_accelerating_radar_follow():
+  v_ego = 18.744474411010742
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=33.650001525878906, v_lead=19.049156188964844,
+    a_lead=0.4783128798007965, radar=True, model_prob=0.9989967942237854, y_rel=-0.2,
+  )
+
+  cap = planner.get_cruise_tracking_lead_accel_cap(
+    lead,
+    v_ego,
+    1.25,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
 def test_low_speed_follow_catchup_uses_raw_vehicle_speed_when_cluster_runs_high():
   v_ego = 7.8
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
@@ -2339,6 +2359,46 @@ def test_route_8bc6_post_departure_cruise_cap_skips_accelerating_away_radar_lead
     lead,
     v_ego,
     1.45,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
+def test_route_8bc6_catchup_cap_skips_comfortable_accelerating_radar_follow():
+  v_ego = 24.108949661254883
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=36.75, v_lead=24.234233856201172,
+    a_lead=0.3050585687160492, radar=True, model_prob=0.9995405077934265, y_rel=-0.2,
+  )
+
+  cap = planner.get_lead_catchup_accel_cap(
+    lead,
+    v_ego,
+    1.160530924797058,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
+def test_route_8bc6_catchup_cap_skips_slightly_negative_delta_when_lead_accelerates_away():
+  v_ego = 22.293441772460938
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=36.5, v_lead=22.264942169189453,
+    a_lead=0.2780209183692932, radar=True, model_prob=0.999357283115387, y_rel=0.35,
+  )
+
+  cap = planner.get_lead_catchup_accel_cap(
+    lead,
+    v_ego,
+    1.2014657258987427,
     current_source="cruise",
     tracking_lead_active=True,
   )
