@@ -2,6 +2,8 @@ import sys
 import types
 from types import SimpleNamespace
 
+from opendbc.car import structs
+
 fake_interfaces = types.ModuleType("opendbc.car.interfaces")
 
 
@@ -33,6 +35,7 @@ fake_testing_grounds.testing_ground = SimpleNamespace(use_1=False)
 sys.modules.setdefault("openpilot.starpilot.common.testing_grounds", fake_testing_grounds)
 
 from opendbc.car.gm.carcontroller import (
+  AUTO_HOLD_DRIVE_GEARS,
   CarController,
   estimate_auto_hold_brake,
   get_adas_keepalive_step,
@@ -218,6 +221,13 @@ def test_auto_hold_brake_estimate_uses_driver_or_op_brake_and_clamps():
   assert estimate_auto_hold_brake(20.0, 40.0) == 110
   assert estimate_auto_hold_brake(20.0, 160.0) == 160
   assert estimate_auto_hold_brake(100.0, 400.0) == 240
+
+
+def test_auto_hold_drive_gears_accept_capnp_dynamic_enum_membership():
+  msg = structs.CarState.new_message()
+  msg.gearShifter = structs.CarState.GearShifter.drive
+
+  assert msg.gearShifter in AUTO_HOLD_DRIVE_GEARS
 
 
 def test_auto_hold_activation_allows_direct_entry_from_stopped_brake_press():

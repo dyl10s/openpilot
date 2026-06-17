@@ -61,12 +61,13 @@ DASHBOARD_CACHE_TTL_SECONDS = 5.0
 DASHBOARD_ROUTE_SCAN_LIMIT = 24
 DASHBOARD_ROUTE_ANALYSIS_LIMIT = 0
 DASHBOARD_ANALYSIS_TIME_BUDGET_SECONDS = 0.0
-DASHBOARD_BACKGROUND_ROUTE_ANALYSIS_LIMIT = 24
+DASHBOARD_BACKGROUND_ROUTE_ANALYSIS_LIMIT = 5
 DASHBOARD_RECENT_DRIVE_LIMIT = 5
 DASHBOARD_ROUTE_SEGMENT_SAMPLE_LIMIT = 2
 DASHBOARD_PERSISTED_ROUTE_LIMIT = 5000
 DASHBOARD_PERSIST_MIN_ROUTE_AGE_SECONDS = 120
 DASHBOARD_PERSISTENT_STATS_PARAM = "GalaxyDashboardStats"
+DASHBOARD_PARAMS_DIR = Path("/data/params/d")
 DASHBOARD_ANALYZER_LOG_PATH = "/tmp/galaxy_dashboard_analyzer.log"
 DASHBOARD_TOP_MODEL_LIMIT = 3
 DASHBOARD_EVENT_DISTRACTED = "promptDriverDistracted"
@@ -633,14 +634,44 @@ def _params_get_bool(params_obj, key):
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _dashboard_param_file_path(key):
+  if key != DASHBOARD_PERSISTENT_STATS_PARAM:
+    return None
+  return DASHBOARD_PARAMS_DIR / key
+
+
+def _read_dashboard_param_file(key):
+  path = _dashboard_param_file_path(key)
+  if path is None or not path.is_file():
+    return None
+  try:
+    return path.read_text(encoding="utf-8")
+  except Exception:
+    return None
+
+
+def _write_dashboard_param_file(key, value):
+  path = _dashboard_param_file_path(key)
+  if path is None:
+    return False
+  try:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(str(value), encoding="utf-8")
+    os.replace(tmp_path, path)
+    return True
+  except Exception:
+    return False
+
+
 def _params_put_text(params_obj, key, value):
   if params_obj is None:
-    return False
+    return _write_dashboard_param_file(key, value)
   try:
     params_obj.put(key, value)
     return True
   except Exception:
-    return False
+    return _write_dashboard_param_file(key, value)
 
 
 def _split_csv(value):
@@ -691,6 +722,19 @@ def _segment_mtime(segment_path):
     return 0.0
 
 
+def _segment_has_dashboard_log(segment_path):
+  path = Path(segment_path)
+  if not path.is_dir():
+    return False
+  return any((path / candidate).is_file() for candidate in ROUTE_TIME_LOG_CANDIDATES)
+
+
+def _select_dashboard_segment_candidate(candidates):
+  if not candidates:
+    return None
+  return next((candidate for candidate in candidates if _segment_has_dashboard_log(candidate)), candidates[0])
+
+
 def _list_dashboard_routes(footage_paths, limit=DASHBOARD_ROUTE_SCAN_LIMIT):
   routes = {}
 
@@ -726,7 +770,9 @@ def _list_dashboard_routes(footage_paths, limit=DASHBOARD_ROUTE_SCAN_LIMIT):
   for route in routes.values():
     segments = []
     for segment_num, candidates in sorted(route["segments_by_num"].items()):
-      segments.append({"num": segment_num, "path": candidates[0]})
+      selected = _select_dashboard_segment_candidate(candidates)
+      if selected is not None:
+        segments.append({"num": segment_num, "path": selected})
 
     if not segments:
       continue
@@ -993,6 +1039,7 @@ def _analyze_route_messages(messages, route_info, model_names, is_metric, deadli
     "unresponsiveMoments": unresponsive_moments,
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": True,
+    "analysisComplete": analysis_segment_count >= segment_count,
   }
 
 
@@ -1030,6 +1077,8 @@ def _empty_drive(is_metric):
     "segmentCount": 0,
     "distractedMoments": 0,
     "unresponsiveMoments": 0,
+    "attentionKnown": True,
+    "analysisComplete": False,
     "distanceUnit": "kilometers" if is_metric else "miles",
     "speedUnit": "kph" if is_metric else "mph",
   }
@@ -1076,6 +1125,7 @@ def _route_shell_drive(route_info, params_obj, model_names, is_metric):
     "unresponsiveMoments": 0,
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": False,
+    "analysisComplete": False,
   }
 
 
@@ -1100,6 +1150,7 @@ def _drive_from_persistent_route(route_name, entry, is_metric):
     "unresponsiveMoments": max(0, _safe_int(entry.get("unresponsiveMoments", 0), 0)),
     "routeModifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": bool(entry.get("attentionKnown", True)),
+    "analysisComplete": bool(entry.get("analysisComplete", False)),
   }
 
 
@@ -1147,7 +1198,7 @@ def _analysis_candidates(route_infos, persistent_stats):
       return True
     if _safe_float(entry.get("modifiedAt", 0.0), 0.0) < _safe_float(route_info.get("modifiedAt", 0.0), 0.0):
       return True
-    return not bool(entry.get("attentionKnown", True))
+    return not bool(entry.get("attentionKnown", True)) or not bool(entry.get("analysisComplete", False))
 
   missing = [route_info for route_info in route_infos if needs_analysis(route_info)]
   return missing
@@ -1180,9 +1231,10 @@ def warm_dashboard_stats(footage_paths=None):
   persistent_stats = _load_dashboard_persistent_stats(params_obj)
   candidates = _analysis_candidates(route_infos, persistent_stats)[:DASHBOARD_BACKGROUND_ROUTE_ANALYSIS_LIMIT]
   for route_info in candidates:
-    sampled_route_info = _sample_route_info(route_info)
-    messages = _iter_route_log_messages(sampled_route_info)
-    drive = _analyze_route_messages(messages, sampled_route_info, model_names, is_metric)
+    full_route_info = dict(route_info)
+    full_route_info["analysisSegmentCount"] = max(0, _safe_int(route_info.get("segmentCount", 0), 0))
+    messages = _iter_route_log_messages(full_route_info)
+    drive = _analyze_route_messages(messages, full_route_info, model_names, is_metric)
     _update_dashboard_persistent_stats(params_obj, [drive], time.time())
 
 
@@ -1541,12 +1593,16 @@ def _normalize_persistent_routes(raw_routes):
       "segmentCount": max(0, _safe_int(entry.get("segmentCount", 0), 0)),
       "modifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
       "attentionKnown": bool(entry.get("attentionKnown", True)),
+      "analysisComplete": bool(entry.get("analysisComplete", False)),
     }
   return routes
 
 
 def _load_dashboard_persistent_stats(params_obj):
-  data = _decode_json_param(_params_get_value(params_obj, DASHBOARD_PERSISTENT_STATS_PARAM, None), {})
+  raw_data = _read_dashboard_param_file(DASHBOARD_PERSISTENT_STATS_PARAM)
+  if raw_data is None:
+    raw_data = _params_get_value(params_obj, DASHBOARD_PERSISTENT_STATS_PARAM, None)
+  data = _decode_json_param(raw_data, {})
   if not isinstance(data, dict):
     data = {}
   data["version"] = 1
@@ -1771,6 +1827,7 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
       "segmentCount": max(0, _safe_int(drive.get("segmentCount", 0), 0)),
       "modifiedAt": _safe_float(drive.get("routeModifiedAt", 0.0), 0.0),
       "attentionKnown": attention_known,
+      "analysisComplete": bool(drive.get("analysisComplete", False)),
     }
     existing_entry = routes.get(route_name)
     if isinstance(existing_entry, dict):
@@ -1782,12 +1839,15 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
         next_entry["clean"] = bool(existing_entry.get("clean", False))
         next_entry["undistracted"] = bool(existing_entry.get("undistracted", existing_entry.get("clean", False)))
         next_entry["attentionKnown"] = True
+        next_entry["analysisComplete"] = bool(existing_entry.get("analysisComplete", False))
       if not attention_known and existing_current and existing_distance >= next_distance:
         next_entry["distanceMeters"] = existing_distance
-        next_entry["duration"] = max(_safe_int(existing_entry.get("duration", 0), 0), next_entry["duration"])
+        existing_duration = _safe_int(existing_entry.get("duration", 0), 0)
+        next_entry["duration"] = existing_duration if existing_attention_known else max(existing_duration, next_entry["duration"])
         next_entry["engagedSeconds"] = max(0.0, _safe_float(existing_entry.get("engagedSeconds", 0.0), 0.0))
         next_entry["distractedMoments"] = max(0, _safe_int(existing_entry.get("distractedMoments", 0), 0))
         next_entry["unresponsiveMoments"] = max(0, _safe_int(existing_entry.get("unresponsiveMoments", 0), 0))
+        next_entry["analysisComplete"] = bool(existing_entry.get("analysisComplete", False))
       if (not model_name or model_name == "Unknown model") and _clean_model_label(existing_entry.get("model", "")):
         next_entry["model"] = _clean_model_label(existing_entry.get("model", ""))
         next_entry["modelKey"] = canonical_model_key(existing_entry.get("modelKey", "")) or _model_usage_key(next_entry["model"])

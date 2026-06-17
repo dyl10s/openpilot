@@ -403,13 +403,17 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(170px, 1.3fr) minmax(230px, 1fr) minmax(210px, 1fr) minmax(180px, 0.9fr);
+  grid-template-columns: minmax(170px, 1.35fr) minmax(170px, 0.8fr) minmax(210px, 1fr) minmax(180px, 0.9fr);
   min-width: 0;
   padding: 0.9rem 0;
 }
 
 .dashboard-drive-row:first-of-type {
   border-top: 0;
+}
+
+.dashboard-drive-row.is-pending {
+  color: var(--dashboard-muted);
 }
 
 .dashboard-drive-main,

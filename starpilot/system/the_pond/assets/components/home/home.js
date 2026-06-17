@@ -110,6 +110,7 @@ function fallbackDashboard(data, unit) {
       segmentCount: 0,
       distractedMoments: 0,
       unresponsiveMoments: 0,
+      attentionKnown: true,
       distanceUnit: unit,
       speedUnit: unit === "kilometers" ? "kph" : "mph",
     },
@@ -144,21 +145,28 @@ function fallbackDashboard(data, unit) {
   };
 }
 
+function driveStatsReady(drive) {
+  return drive?.attentionKnown !== false;
+}
+
 function renderLastDrive(drive) {
+  const ready = driveStatsReady(drive);
   return `
     <section class="dashboard-card dashboard-last-drive">
       <div class="dashboard-card-kicker"><span></span>Last drive</div>
       <div class="dashboard-drive-date">${escapeHtml(formatDate(drive.date))}</div>
       <div class="dashboard-drive-metrics">
-        <div><strong>${formatOneDecimal(drive.distance)}</strong><span>${escapeHtml(drive.distanceUnit || "miles")}</span></div>
+        <div><strong>${ready ? formatOneDecimal(drive.distance) : "..."}</strong><span>${ready ? escapeHtml(drive.distanceUnit || "miles") : "analyzing"}</span></div>
         <div><strong>${formatDuration(drive.duration)}</strong><span>duration</span></div>
-        <div><strong>${formatInt(drive.avgSpeed)}</strong><span>${escapeHtml(drive.speedUnit || "mph")} avg</span></div>
-        <div><strong>${formatPercent(drive.engagedPercent)}</strong><span>engaged</span></div>
+        <div><strong>${ready ? formatInt(drive.avgSpeed) : "..."}</strong><span>${ready ? `${escapeHtml(drive.speedUnit || "mph")} avg` : "speed"}</span></div>
+        <div><strong>${ready ? formatPercent(drive.engagedPercent) : "..."}</strong><span>engaged</span></div>
       </div>
       <div class="dashboard-drive-footer">
         <span><i class="bi bi-cpu"></i>${escapeHtml(drive.model || "Unknown model")}</span>
-        <span><i class="bi bi-eye"></i>${formatInt(drive.distractedMoments)} distracted</span>
-        <span><i class="bi bi-exclamation-triangle"></i>${formatInt(drive.unresponsiveMoments)} unresponsive</span>
+        ${ready
+          ? `<span><i class="bi bi-eye"></i>${formatInt(drive.distractedMoments)} distracted</span>
+             <span><i class="bi bi-exclamation-triangle"></i>${formatInt(drive.unresponsiveMoments)} unresponsive</span>`
+          : `<span><i class="bi bi-hourglass-split"></i>Analyzing stats</span>`}
       </div>
     </section>
   `;
@@ -236,27 +244,30 @@ function renderRecentDrives(drives) {
     `;
   }
 
-  const rows = drives.map(drive => `
-    <div class="dashboard-drive-row">
+  const rows = drives.map(drive => {
+    const ready = driveStatsReady(drive);
+    return `
+    <div class="dashboard-drive-row ${ready ? "" : "is-pending"}">
       <div class="dashboard-drive-main">
         <strong>${escapeHtml(formatDate(drive.date))}</strong>
         <span>${escapeHtml(drive.model || "Unknown model")}</span>
       </div>
       <div class="dashboard-drive-details">
-        <span>${formatOneDecimal(drive.distance)} ${escapeHtml(drive.distanceUnit || "miles")}</span>
+        <span>${ready ? `${formatOneDecimal(drive.distance)} ${escapeHtml(drive.distanceUnit || "miles")}` : "Analyzing stats"}</span>
         <span>${formatDuration(drive.duration)}</span>
-        <span>${formatInt(drive.segmentCount)} segments</span>
       </div>
       <div class="dashboard-attention">
-        <span>${formatInt(drive.distractedMoments)} distracted</span>
-        <span>${formatInt(drive.unresponsiveMoments)} unresponsive</span>
+        ${ready
+          ? `<span>${formatInt(drive.distractedMoments)} distracted</span><span>${formatInt(drive.unresponsiveMoments)} unresponsive</span>`
+          : `<span>Waiting for full route analysis</span>`}
       </div>
       <div class="dashboard-engaged-cell">
-        <div class="dashboard-mini-bar"><span style="width:${Math.max(0, Math.min(100, numberValue(drive.engagedPercent)))}%"></span></div>
-        <strong>${formatPercent(drive.engagedPercent)} engaged</strong>
+        <div class="dashboard-mini-bar"><span style="width:${ready ? Math.max(0, Math.min(100, numberValue(drive.engagedPercent))) : 0}%"></span></div>
+        <strong>${ready ? `${formatPercent(drive.engagedPercent)} engaged` : "Pending"}</strong>
       </div>
     </div>
-  `).join("");
+  `;
+  }).join("");
 
   return `
     <section class="dashboard-card dashboard-recent">

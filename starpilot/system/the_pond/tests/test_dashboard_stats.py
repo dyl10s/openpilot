@@ -207,6 +207,11 @@ class FakeParams:
     self.values[key] = value
 
 
+class FailingPutParams(FakeParams):
+  def put(self, key, value):
+    raise RuntimeError("unknown key")
+
+
 class FakeMessage:
   def __init__(self, kind, log_mono_time, payload):
     self._kind = kind
@@ -331,6 +336,20 @@ def test_route_sampling_bounds_analyzed_segments():
   assert [segment["num"] for segment in sampled["segments"]] == [0, 4, 9]
 
 
+def test_route_listing_prefers_segment_candidates_with_logs(tmp_path):
+  hd_root = tmp_path / "realdata_HD"
+  standard_root = tmp_path / "realdata"
+  hd_segment = hd_root / "00000001--abcdef1234--0"
+  standard_segment = standard_root / "00000001--abcdef1234--0"
+  hd_segment.mkdir(parents=True)
+  standard_segment.mkdir(parents=True)
+  (standard_segment / "qlog.zst").write_bytes(b"")
+
+  routes = utilities._list_dashboard_routes([hd_root, standard_root])
+
+  assert routes[0]["segments"][0]["path"] == standard_segment
+
+
 def test_top_models_are_ranked_from_persisted_usage_not_favorites():
   params = FakeParams({
     "AvailableModels": "orion,vega,atlas,nova",
@@ -439,6 +458,29 @@ def test_persistent_loader_accepts_decoded_param_dict():
   assert stats["routes"]["route-1"]["attentionKnown"] is False
 
 
+def test_dashboard_persistent_stats_fallback_to_file_when_param_put_fails(tmp_path, monkeypatch):
+  monkeypatch.setattr(utilities, "DASHBOARD_PARAMS_DIR", tmp_path)
+  params = FailingPutParams()
+  drive = {
+    "name": "route-1",
+    "date": "2026-06-15T08:00:00",
+    "distanceMeters": 1000.0,
+    "duration": 60,
+    "engagedSeconds": 30.0,
+    "model": "Orion",
+    "routeModifiedAt": 100,
+    "attentionKnown": True,
+    "analysisComplete": True,
+  }
+
+  utilities._update_dashboard_persistent_stats(params, [drive], wall_now=1000)
+  stats = utilities._load_dashboard_persistent_stats(params)
+
+  assert (tmp_path / utilities.DASHBOARD_PERSISTENT_STATS_PARAM).is_file()
+  assert stats["routes"]["route-1"]["distanceMeters"] == 1000
+  assert stats["routes"]["route-1"]["analysisComplete"] is True
+
+
 def test_lightweight_routes_surface_recent_drives_without_log_analysis(monkeypatch):
   utilities._invalidate_dashboard_cache()
   route_infos = [
@@ -511,6 +553,38 @@ def test_unknown_attention_rows_do_not_reset_persisted_clean_records():
 
   assert records["longestUndistractedDrive"]["value"] == "1.0 hour"
   assert records["cleanDriveStreak"]["value"] == "1 drive"
+
+
+def test_lightweight_route_update_preserves_parsed_duration():
+  params = FakeParams()
+  parsed_drive = {
+    "name": "route-1",
+    "date": "2026-06-15T08:00:00",
+    "distanceMeters": 10000.0,
+    "duration": 58,
+    "engagedSeconds": 30.0,
+    "model": "Orion",
+    "routeModifiedAt": 100,
+    "attentionKnown": True,
+    "analysisComplete": True,
+  }
+  shell_drive = {
+    "name": "route-1",
+    "date": "2026-06-15T08:00:00",
+    "distanceMeters": 0.0,
+    "duration": 60,
+    "engagedSeconds": 0.0,
+    "model": "Orion",
+    "routeModifiedAt": 100,
+    "attentionKnown": False,
+    "analysisComplete": False,
+  }
+
+  utilities._update_dashboard_persistent_stats(params, [parsed_drive], wall_now=1000)
+  stats = utilities._update_dashboard_persistent_stats(params, [shell_drive], wall_now=1000)
+
+  assert stats["routes"]["route-1"]["duration"] == 58
+  assert stats["routes"]["route-1"]["analysisComplete"] is True
 
 
 def test_github_urls_accept_owner_repo_origin():
