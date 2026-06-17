@@ -220,6 +220,12 @@ COMFORTABLE_PULLAWAY_FOLLOW_MIN_MODEL_PROB = 0.95
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_LEAD_DELTA = -0.05
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_LEAD_ACCEL = 0.20
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_HEADWAY_MARGIN = 0.20
+SPACIOUS_TRACKED_FOLLOW_MIN_MODEL_PROB = 0.98
+SPACIOUS_TRACKED_FOLLOW_MIN_HEADWAY_MARGIN = 0.45
+SPACIOUS_TRACKED_FOLLOW_MAX_CLOSING_SPEED = 0.60
+SPACIOUS_TRACKED_FOLLOW_MAX_LEAD_BRAKE = 0.10
+SPACIOUS_TRACKED_FOLLOW_LATCH_TIME = 1.25
+SPACIOUS_TRACKED_FOLLOW_LATCH_MIN_LEAD_DELTA = 0.90
 LOW_SPEED_FOLLOW_ACCEL_CAP_MAX_SPEED = 12.0
 LOW_SPEED_FOLLOW_ACCEL_CAP_MIN_MODEL_PROB = 0.85
 LOW_SPEED_FOLLOW_ACCEL_CAP_MAX_LEAD_BRAKE = 0.20
@@ -559,6 +565,7 @@ class LongitudinalPlanner:
     self.untracked_slow_lead_confirm_t = 0.0
     self.manual_stop_resume_override_until = 0.0
     self.lead_depart_accel_hold_until = 0.0
+    self.spacious_follow_cap_bypass_until = 0.0
 
     if self.is_preap:
       try:
@@ -1297,6 +1304,38 @@ class LongitudinalPlanner:
     headway_margin = actual_headway - float(t_follow)
     return headway_margin >= COMFORTABLE_PULLAWAY_FOLLOW_MIN_HEADWAY_MARGIN
 
+  def is_spacious_low_closure_follow(self, lead, v_ego, t_follow):
+    if lead is None or not lead.status or float(v_ego) < CRUISE_TRACKED_LEAD_ACCEL_CAP_MIN_SPEED:
+      return False
+
+    lead_radar = bool(getattr(lead, "radar", False))
+    lead_prob = float(getattr(lead, "modelProb", 1.0 if lead_radar else 0.0))
+    if not lead_radar and lead_prob < SPACIOUS_TRACKED_FOLLOW_MIN_MODEL_PROB:
+      return False
+
+    if abs(float(getattr(lead, "yRel", 0.0))) > CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_LATERAL_OFFSET:
+      return False
+
+    lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
+    if lead_brake > SPACIOUS_TRACKED_FOLLOW_MAX_LEAD_BRAKE:
+      return False
+
+    closing_speed = max(float(v_ego) - float(lead.vLead), 0.0)
+    if closing_speed > SPACIOUS_TRACKED_FOLLOW_MAX_CLOSING_SPEED:
+      return False
+
+    if self.raw_close_lead_needs_control(lead, v_ego):
+      return False
+
+    actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
+    headway_margin = actual_headway - float(t_follow)
+    return headway_margin >= SPACIOUS_TRACKED_FOLLOW_MIN_HEADWAY_MARGIN
+
+  def spacious_follow_cap_bypass_active(self, lead, v_ego, t_follow, tracking_lead_active):
+    if not tracking_lead_active or time.monotonic() > self.spacious_follow_cap_bypass_until:
+      return False
+    return self.is_spacious_low_closure_follow(lead, v_ego, t_follow)
+
   def get_lead_catchup_accel_cap(self, lead, v_ego, t_follow, current_source=None, tracking_lead_active=False):
     if lead is None or not lead.status:
       return None
@@ -1330,6 +1369,8 @@ class LongitudinalPlanner:
       return None
 
     if current_source == "cruise" and tracking_lead_active and self.is_comfortable_accelerating_away_follow(lead, v_ego, t_follow):
+      return None
+    if current_source == "cruise" and self.spacious_follow_cap_bypass_active(lead, v_ego, t_follow, tracking_lead_active):
       return None
 
     if not low_speed_follow_window and self.is_stable_post_departure_pullaway(lead, v_ego, t_follow):
@@ -1404,6 +1445,8 @@ class LongitudinalPlanner:
       return None
 
     if tracking_lead_active and self.is_comfortable_accelerating_away_follow(lead, v_ego, t_follow):
+      return None
+    if self.spacious_follow_cap_bypass_active(lead, v_ego, t_follow, tracking_lead_active):
       return None
 
     closing_speed = max(float(v_ego) - float(lead.vLead), 0.0)
@@ -2099,6 +2142,21 @@ class LongitudinalPlanner:
       abs(d_rel_dot) < 0.5 and
       not recently_braked
     )
+
+    if lead_one_active and self.mpc.source == "cruise":
+      lead_delta = float(self.lead_one.vLead) - float(scene_v_ego)
+      lead_brake = max(0.0, -float(getattr(self.lead_one, "aLeadK", 0.0)))
+      if (
+        self.is_spacious_low_closure_follow(self.lead_one, scene_v_ego, effective_t_follow) and
+        lead_brake <= SPACIOUS_TRACKED_FOLLOW_MAX_LEAD_BRAKE and
+        (
+          self.is_stable_post_departure_pullaway(self.lead_one, scene_v_ego, effective_t_follow) or
+          lead_delta >= SPACIOUS_TRACKED_FOLLOW_LATCH_MIN_LEAD_DELTA
+        )
+      ):
+        self.spacious_follow_cap_bypass_until = now_t + SPACIOUS_TRACKED_FOLLOW_LATCH_TIME
+    elif not lead_one_active:
+      self.spacious_follow_cap_bypass_until = 0.0
 
     # Calculate scene uncertainty from model desire prediction entropy and disengage predictions
     uncertainty = 0.0

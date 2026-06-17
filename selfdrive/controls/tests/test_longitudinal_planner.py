@@ -1,3 +1,4 @@
+import time
 import sys
 import types
 from types import SimpleNamespace
@@ -1925,6 +1926,46 @@ def test_route_8bc6_cruise_tracking_cap_skips_comfortable_accelerating_radar_fol
     lead,
     v_ego,
     1.25,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
+def test_route_687_voacc_catchup_cap_skips_spacious_low_closure_follow_with_flat_lead_accel():
+  v_ego = 12.2
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=25.5, v_lead=12.10, a_lead=0.0, radar=False, model_prob=0.999, y_rel=0.10,
+  )
+  planner.spacious_follow_cap_bypass_until = time.monotonic() + 1.0
+
+  cap = planner.get_lead_catchup_accel_cap(
+    lead,
+    v_ego,
+    1.45,
+    current_source="cruise",
+    tracking_lead_active=True,
+  )
+
+  assert cap is None
+
+
+def test_route_687_voacc_cruise_tracking_cap_skips_spacious_low_closure_follow_with_flat_lead_accel():
+  v_ego = 12.2
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=25.5, v_lead=12.10, a_lead=0.0, radar=False, model_prob=0.999, y_rel=0.10,
+  )
+  planner.spacious_follow_cap_bypass_until = time.monotonic() + 1.0
+
+  cap = planner.get_cruise_tracking_lead_accel_cap(
+    lead,
+    v_ego,
+    1.45,
     current_source="cruise",
     tracking_lead_active=True,
   )
