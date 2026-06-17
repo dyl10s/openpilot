@@ -17,6 +17,7 @@ NAV_TURN_DISTANCE_BREAKPOINTS = [20.0, 25.0, 30.0]
 NAV_KEEP_DISTANCE_SPEED_BREAKPOINTS = [0.0, 15.0, 30.0]
 NAV_KEEP_DISTANCE_BREAKPOINTS = [25.0, 90.0, 160.0]
 NAV_KEEP_AMBIGUOUS_SPLIT_DISTANCE_SCALE = 0.6
+NAV_KEEP_SMALL_SPLIT_MAX_OTHER_LANES = 2
 
 DESIRES = {
   LaneChangeDirection.none: {
@@ -127,14 +128,26 @@ class DesireHelper:
     return nudgeless
 
   @staticmethod
-  def _nav_keep_is_imminent(carstate, maneuver_distance, maneuver_type="", same_side_lane_count=0):
+  def _nav_should_delay_ambiguous_split(maneuver_type="", same_side_lane_count=0, lane_count=0):
+    if maneuver_type not in ("off ramp", "fork") or int(same_side_lane_count or 0) <= 1:
+      return False
+
+    total_lanes = int(lane_count or 0)
+    if total_lanes <= 0:
+      return True
+
+    other_lanes = max(total_lanes - int(same_side_lane_count or 0), 0)
+    return other_lanes <= NAV_KEEP_SMALL_SPLIT_MAX_OTHER_LANES
+
+  @staticmethod
+  def _nav_keep_is_imminent(carstate, maneuver_distance, maneuver_type="", same_side_lane_count=0, lane_count=0):
     try:
       distance = float(maneuver_distance)
     except (TypeError, ValueError):
       return False
 
     threshold = float(np.interp(carstate.vEgo, NAV_KEEP_DISTANCE_SPEED_BREAKPOINTS, NAV_KEEP_DISTANCE_BREAKPOINTS))
-    if maneuver_type in ("off ramp", "fork") and int(same_side_lane_count or 0) > 1:
+    if DesireHelper._nav_should_delay_ambiguous_split(maneuver_type, same_side_lane_count, lane_count):
       threshold *= NAV_KEEP_AMBIGUOUS_SPLIT_DISTANCE_SCALE
     return distance <= threshold
 
@@ -148,8 +161,11 @@ class DesireHelper:
     if active_lane_direction not in ("slightLeft", "left", "sharpLeft", "slightRight", "right", "sharpRight"):
       return False
 
+    same_side_lane_count = int(nav_instruction_state.get("sameSideLaneCount", 0) or 0)
+    lane_count = int(nav_instruction_state.get("laneCount", 0) or 0)
+
     return (
-      int(nav_instruction_state.get("sameSideLaneCount", 0) or 0) > 1 and
+      DesireHelper._nav_should_delay_ambiguous_split(maneuver_type, same_side_lane_count, lane_count) and
       bool(nav_instruction_state.get("activeLaneAtRoadEdge", False)) and
       bool(nav_instruction_state.get("hasSharedSameSideLane", False))
     )
@@ -160,9 +176,10 @@ class DesireHelper:
     maneuver_type = str(nav_instruction_state.get("maneuverType", ""))
     active_lane_direction = str(nav_instruction_state.get("activeLaneDirection", ""))
     same_side_lane_count = int(nav_instruction_state.get("sameSideLaneCount", 0) or 0)
+    lane_count = int(nav_instruction_state.get("laneCount", 0) or 0)
 
     if maneuver_type in ("off ramp", "fork") and modifier in ("slightLeft", "left", "sharpLeft", "slightRight", "right", "sharpRight"):
-      if not DesireHelper._nav_keep_is_imminent(carstate, maneuver_distance, maneuver_type, same_side_lane_count):
+      if not DesireHelper._nav_keep_is_imminent(carstate, maneuver_distance, maneuver_type, same_side_lane_count, lane_count):
         return ""
 
       if DesireHelper._nav_should_suppress_edge_lane_keep(nav_instruction_state):

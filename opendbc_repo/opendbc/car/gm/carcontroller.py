@@ -149,12 +149,13 @@ def estimate_auto_hold_brake(driver_brake: float, op_brake: float) -> int:
 
 
 def should_activate_auto_hold(hold_ready: bool, auto_hold_armed: bool, auto_hold_engaged: bool,
-                              brake_pressed: bool, standstill: bool, long_active: bool,
+                              brake_pressed: bool, gas_pressed: bool, standstill: bool, long_active: bool,
                               regen_braking: bool, v_ego: float) -> bool:
   stopped = standstill or v_ego < 0.02
   return (
     hold_ready and
     (auto_hold_armed or auto_hold_engaged or brake_pressed) and
+    not gas_pressed and
     stopped and
     not long_active and
     not regen_braking
@@ -398,6 +399,8 @@ class CarController(CarControllerBase):
     )
     if not hold_ready or CS.out.gasPressed:
       CS.auto_hold_armed = False
+      if CS.out.gasPressed:
+        CS.auto_hold_engaged = False
     elif CS.regen_release_timer > 0.0:
       CS.auto_hold_armed = False
     elif not CS.auto_hold_armed and (CS.out.vEgo > 0.03 or ((CS.out.standstill or CS.out.vEgo < 0.02) and CS.out.brakePressed)):
@@ -497,6 +500,7 @@ class CarController(CarControllerBase):
       CS.auto_hold_armed,
       CS.auto_hold_engaged,
       CS.out.brakePressed,
+      CS.out.gasPressed,
       CS.out.standstill,
       CC.longActive,
       CS.out.regenBraking,

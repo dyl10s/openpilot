@@ -236,6 +236,7 @@ def test_auto_hold_activation_allows_direct_entry_from_stopped_brake_press():
     False,
     False,
     True,
+    False,
     True,
     False,
     False,
@@ -248,6 +249,7 @@ def test_auto_hold_activation_stays_latched_after_brake_release():
     True,
     False,
     True,
+    False,
     False,
     True,
     False,
@@ -262,6 +264,7 @@ def test_auto_hold_activation_blocks_when_long_is_active_or_motion_is_above_thre
     True,
     False,
     True,
+    False,
     True,
     True,
     False,
@@ -270,6 +273,7 @@ def test_auto_hold_activation_blocks_when_long_is_active_or_motion_is_above_thre
   assert not should_activate_auto_hold(
     True,
     True,
+    False,
     False,
     False,
     False,
@@ -284,10 +288,25 @@ def test_auto_hold_activation_allows_standstill_even_if_speed_filter_is_slightly
     True,
     False,
     False,
+    False,
     True,
     False,
     False,
     0.05,
+  )
+
+
+def test_auto_hold_activation_releases_immediately_on_gas_press():
+  assert not should_activate_auto_hold(
+    True,
+    True,
+    True,
+    False,
+    True,
+    True,
+    False,
+    False,
+    0.0,
   )
 
 
