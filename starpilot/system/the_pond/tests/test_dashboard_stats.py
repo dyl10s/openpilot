@@ -230,6 +230,54 @@ def events(*names):
   return [SimpleNamespace(name=name) for name in names]
 
 
+def test_drive_stats_cloud_distances_match_native_imperial_units(monkeypatch):
+  monkeypatch.setattr(utilities, "params", FakeParams({
+    "IsMetric": False,
+    "ApiCache_DriveStats": {
+      "all": {"distance": 100.0, "routes": 12, "minutes": 360},
+      "week": {"distance": 25.0, "routes": 3, "minutes": 90},
+    },
+    "StarPilotStats": {
+      "StarPilotMeters": 1609.344,
+      "StarPilotSeconds": 3600,
+      "StarPilotDrives": 2,
+    },
+  }))
+
+  stats = utilities.get_drive_stats()
+
+  assert stats["all"]["distance"] == 100.0
+  assert stats["all"]["drives"] == 12
+  assert stats["all"]["hours"] == 6
+  assert stats["week"]["distance"] == 25.0
+  assert stats["starpilot"]["distance"] == 1.0
+  assert stats["starpilot"]["hours"] == 1
+  assert stats["starpilot"]["drives"] == 2
+
+
+def test_drive_stats_cloud_distances_match_native_metric_units(monkeypatch):
+  monkeypatch.setattr(utilities, "params", FakeParams({
+    "IsMetric": True,
+    "ApiCache_DriveStats": {
+      "all": {"distance": 10.0, "routes": 2, "minutes": 60},
+      "week": {"distance": 5.0, "routes": 1, "minutes": 30},
+    },
+    "StarPilotStats": {
+      "StarPilotMeters": 1000.0,
+      "StarPilotSeconds": 1800,
+      "StarPilotDrives": 1,
+    },
+  }))
+
+  stats = utilities.get_drive_stats()
+
+  assert round(stats["all"]["distance"], 3) == 16.093
+  assert round(stats["week"]["distance"], 3) == 8.047
+  assert stats["starpilot"]["distance"] == 1.0
+  assert stats["starpilot"]["hours"] == 0.5
+  assert stats["starpilot"]["drives"] == 1
+
+
 def test_route_metrics_count_selected_attention_events():
   route = {
     "name": "route-a",

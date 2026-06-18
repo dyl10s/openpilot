@@ -55,6 +55,7 @@ SEGMENT_RE = re.compile(r"^[0-9a-fA-F]{8}--[0-9a-fA-F]{10}--\d+$")
 TARGET_LOUDNESS = -15.0
 METER_TO_MILE = 1.0 / 1609.344
 METER_TO_KILOMETER = 0.001
+MILE_TO_KILOMETER = CV.MPH_TO_KPH
 METER_PER_SECOND_TO_MPH = CV.MS_TO_KPH * CV.KPH_TO_MPH
 
 DASHBOARD_CACHE_TTL_SECONDS = 5.0
@@ -575,21 +576,29 @@ def get_drive_stats():
   is_metric = params.get_bool("IsMetric")
   unit = "kilometers" if is_metric else "miles"
 
+  def numeric(value, default=0.0):
+    try:
+      parsed = float(value)
+    except (TypeError, ValueError):
+      return default
+    return parsed if parsed == parsed else default
+
   def process(timeframe):
     data = stats.get(timeframe, {})
+    distance_miles = numeric(data.get("distance", 0))
     return {
-      "distance": data.get("distance", 0) * (1 if is_metric else CV.KPH_TO_MPH),
-      "drives": data.get("routes", 0),
-      "hours": data.get("minutes", 0) / 60,
+      "distance": distance_miles * (MILE_TO_KILOMETER if is_metric else 1),
+      "drives": numeric(data.get("routes", 0)),
+      "hours": numeric(data.get("minutes", 0)) / 60,
       "unit": unit
     }
 
   stats["all"] = process("all")
   stats["week"] = process("week")
   stats["starpilot"] = {
-    "distance": starpilot_stats.get("StarPilotMeters", 0) * (0.001 if is_metric else METER_TO_MILE),
-    "hours": starpilot_stats.get("StarPilotSeconds", 0) / (60 * 60),
-    "drives": starpilot_stats.get("StarPilotDrives", 0),
+    "distance": numeric(starpilot_stats.get("StarPilotMeters", 0)) * (METER_TO_KILOMETER if is_metric else METER_TO_MILE),
+    "hours": numeric(starpilot_stats.get("StarPilotSeconds", 0)) / (60 * 60),
+    "drives": numeric(starpilot_stats.get("StarPilotDrives", 0)),
     "unit": unit
   }
 
