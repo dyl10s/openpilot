@@ -58,30 +58,42 @@ def _resolve_value(value, default=""):
   return value if value is not None else default
 
 
-def _with_alpha(color: rl.Color, alpha: int) -> rl.Color:
-  return rl.Color(color.r, color.g, color.b, max(0, min(color.a, int(alpha))))
+def _get_rgba(color) -> tuple[int, int, int, int]:
+  if hasattr(color, "r"):
+    return color.r, color.g, color.b, color.a
+  if isinstance(color, (tuple, list)) and len(color) >= 3:
+    return color[0], color[1], color[2], color[3] if len(color) > 3 else 255
+  return 255, 255, 255, 255
 
 
-def _mix_colors(base: rl.Color, accent: rl.Color, weight: float, alpha: int | None = None) -> rl.Color:
+def _with_alpha(color, alpha: int) -> rl.Color:
+  r, g, b, a = _get_rgba(color)
+  return rl.Color(r, g, b, max(0, min(a, int(alpha))))
+
+
+def _mix_colors(base, accent, weight: float, alpha: int | None = None) -> rl.Color:
+  br, bg, bb, ba = _get_rgba(base)
+  ar, ag, ab, aa = _get_rgba(accent)
   w = max(0.0, min(1.0, weight))
   return rl.Color(
-    int(round(base.r + (accent.r - base.r) * w)),
-    int(round(base.g + (accent.g - base.g) * w)),
-    int(round(base.b + (accent.b - base.b) * w)),
-    base.a if alpha is None else alpha,
+    int(round(br + (ar - br) * w)),
+    int(round(bg + (ag - bg) * w)),
+    int(round(bb + (ab - bb) * w)),
+    ba if alpha is None else alpha,
   )
 
 
-def _tone_step(color: rl.Color, delta: int, alpha: int | None = None) -> rl.Color:
+def _tone_step(color, delta: int, alpha: int | None = None) -> rl.Color:
+  r, g, b, a = _get_rgba(color)
   return rl.Color(
-    max(0, min(255, color.r + delta)),
-    max(0, min(255, color.g + delta)),
-    max(0, min(255, color.b + delta)),
-    color.a if alpha is None else alpha,
+    max(0, min(255, r + delta)),
+    max(0, min(255, g + delta)),
+    max(0, min(255, b + delta)),
+    a if alpha is None else alpha,
   )
 
 
-def _default_substrate_for(color: rl.Color) -> rl.Color:
+def _default_substrate_for(color) -> rl.Color:
   return _mix_colors(rl.Color(14, 17, 23, 255), color, 0.14)
 
 
