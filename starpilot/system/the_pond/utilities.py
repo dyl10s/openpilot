@@ -71,6 +71,8 @@ DASHBOARD_PERSISTENT_STATS_PARAM = "GalaxyDashboardStats"
 DASHBOARD_ROUTE_ANALYSIS_VERSION = 2
 DASHBOARD_PARAMS_DIR = Path("/data/params/d")
 DASHBOARD_ANALYZER_LOG_PATH = "/tmp/galaxy_dashboard_analyzer.log"
+DASHBOARD_ANALYZER_STATUS_PATH = Path("/tmp/galaxy_dashboard_analyzer_status.json")
+DASHBOARD_ANALYZER_STATUS_MAX_AGE_SECONDS = 30 * 60
 DASHBOARD_TOP_MODEL_LIMIT = 3
 DASHBOARD_EVENT_DISTRACTED = "promptDriverDistracted"
 DASHBOARD_EVENT_UNRESPONSIVE = "driverUnresponsive"
@@ -1408,7 +1410,60 @@ def _dashboard_worker_env(repo_root):
 
 def _dashboard_analyzer_running():
   process = _DASHBOARD_ANALYZER_PROCESS
-  return process is not None and process.poll() is None
+  if process is not None and process.poll() is None:
+    return True
+
+  status = _read_dashboard_analyzer_status()
+  pid = _safe_int(status.get("pid", 0), 0)
+  started_at = _safe_float(status.get("startedAt", 0.0), 0.0)
+  if pid <= 0 or started_at <= 0:
+    return False
+  if (time.time() - started_at) > DASHBOARD_ANALYZER_STATUS_MAX_AGE_SECONDS:
+    _clear_dashboard_analyzer_status()
+    return False
+
+  try:
+    os.kill(pid, 0)
+  except ProcessLookupError:
+    _clear_dashboard_analyzer_status()
+    return False
+  except PermissionError:
+    return True
+  except OSError:
+    return False
+  return True
+
+
+def _read_dashboard_analyzer_status():
+  try:
+    status = json.loads(DASHBOARD_ANALYZER_STATUS_PATH.read_text(encoding="utf-8"))
+  except (OSError, json.JSONDecodeError):
+    return {}
+  return status if isinstance(status, dict) else {}
+
+
+def _write_dashboard_analyzer_status(process, pending_count):
+  status = {
+    "pid": process.pid,
+    "startedAt": time.time(),
+    "pendingRoutes": max(0, _safe_int(pending_count, 0)),
+    "batchSize": min(DASHBOARD_BACKGROUND_ROUTE_ANALYSIS_LIMIT, max(0, _safe_int(pending_count, 0))),
+  }
+  tmp_path = DASHBOARD_ANALYZER_STATUS_PATH.with_suffix(".tmp")
+  try:
+    tmp_path.write_text(json.dumps(status, separators=(",", ":")), encoding="utf-8")
+    tmp_path.replace(DASHBOARD_ANALYZER_STATUS_PATH)
+  except OSError:
+    pass
+
+
+def _clear_dashboard_analyzer_status():
+  try:
+    DASHBOARD_ANALYZER_STATUS_PATH.unlink()
+  except FileNotFoundError:
+    pass
+  except OSError:
+    pass
 
 
 def _dashboard_analysis_status(candidates):
@@ -1456,6 +1511,7 @@ def _start_dashboard_background_analysis(footage_paths, route_infos, persistent_
         stderr=log_file,
         start_new_session=True,
       )
+      _write_dashboard_analyzer_status(_DASHBOARD_ANALYZER_PROCESS, len(candidates))
     except Exception:
       _DASHBOARD_ANALYZER_PROCESS = None
     finally:
