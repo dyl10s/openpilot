@@ -520,6 +520,10 @@ class CarInterface(CarInterfaceBase):
         ret.minEnableSpeed = -1.
       if candidate == CAR.CHEVROLET_BLAZER:
         ret.minEnableSpeed = 5 * CV.KPH_TO_MS
+        ret.stoppingDecelRate = 1.2
+        ret.vEgoStopping = 0.35
+        ret.vEgoStarting = 0.35
+        ret.stopAccel = -0.40
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
     elif candidate == CAR.BUICK_BABYENCLAVE:
