@@ -67,6 +67,7 @@ DASHBOARD_ROUTE_SEGMENT_SAMPLE_LIMIT = 2
 DASHBOARD_PERSISTED_ROUTE_LIMIT = 5000
 DASHBOARD_PERSIST_MIN_ROUTE_AGE_SECONDS = 120
 DASHBOARD_PERSISTENT_STATS_PARAM = "GalaxyDashboardStats"
+DASHBOARD_ROUTE_ANALYSIS_VERSION = 2
 DASHBOARD_PARAMS_DIR = Path("/data/params/d")
 DASHBOARD_ANALYZER_LOG_PATH = "/tmp/galaxy_dashboard_analyzer.log"
 DASHBOARD_TOP_MODEL_LIMIT = 3
@@ -1094,6 +1095,7 @@ def _analyze_route_messages(messages, route_info, model_names, is_metric, deadli
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": True,
     "analysisComplete": analysis_segment_count >= segment_count,
+    "analysisVersion": DASHBOARD_ROUTE_ANALYSIS_VERSION,
   }
 
 
@@ -1194,6 +1196,7 @@ def _route_shell_drive(route_info, params_obj, model_names, is_metric):
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": False,
     "analysisComplete": False,
+    "analysisVersion": 0,
   }
 
 
@@ -1220,6 +1223,7 @@ def _drive_from_persistent_route(route_name, entry, is_metric):
     "routeModifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
     "attentionKnown": bool(entry.get("attentionKnown", True)),
     "analysisComplete": bool(entry.get("analysisComplete", False)),
+    "analysisVersion": max(0, _safe_int(entry.get("analysisVersion", 0), 0)),
   }
 
 
@@ -1319,6 +1323,8 @@ def _analysis_candidates(route_infos, persistent_stats):
     if not isinstance(entry, dict):
       return True
     if _safe_float(entry.get("modifiedAt", 0.0), 0.0) < _safe_float(route_info.get("modifiedAt", 0.0), 0.0):
+      return True
+    if _safe_int(entry.get("analysisVersion", 0), 0) < DASHBOARD_ROUTE_ANALYSIS_VERSION:
       return True
     return not bool(entry.get("attentionKnown", True)) or not bool(entry.get("analysisComplete", False))
 
@@ -1717,6 +1723,7 @@ def _normalize_persistent_routes(raw_routes):
       "modifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
       "attentionKnown": bool(entry.get("attentionKnown", True)),
       "analysisComplete": bool(entry.get("analysisComplete", False)),
+      "analysisVersion": max(0, _safe_int(entry.get("analysisVersion", 0), 0)),
     }
   return routes
 
@@ -1952,7 +1959,10 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
       "modifiedAt": _safe_float(drive.get("routeModifiedAt", 0.0), 0.0),
       "attentionKnown": attention_known,
       "analysisComplete": bool(drive.get("analysisComplete", False)),
+      "analysisVersion": _safe_int(drive.get("analysisVersion", 0), 0),
     }
+    if attention_known and next_entry["analysisComplete"]:
+      next_entry["analysisVersion"] = DASHBOARD_ROUTE_ANALYSIS_VERSION
     existing_entry = routes.get(route_name)
     if isinstance(existing_entry, dict):
       existing_distance = max(0.0, _safe_float(existing_entry.get("distanceMeters", 0.0), 0.0))
@@ -1964,6 +1974,7 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
         next_entry["undistracted"] = bool(existing_entry.get("undistracted", existing_entry.get("clean", False)))
         next_entry["attentionKnown"] = True
         next_entry["analysisComplete"] = bool(existing_entry.get("analysisComplete", False))
+        next_entry["analysisVersion"] = max(0, _safe_int(existing_entry.get("analysisVersion", 0), 0))
       if not attention_known and existing_current and existing_distance >= next_distance:
         next_entry["distanceMeters"] = existing_distance
         existing_duration = _safe_int(existing_entry.get("duration", 0), 0)
@@ -1976,6 +1987,7 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
         next_entry["distractedMoments"] = max(0, _safe_int(existing_entry.get("distractedMoments", 0), 0))
         next_entry["unresponsiveMoments"] = max(0, _safe_int(existing_entry.get("unresponsiveMoments", 0), 0))
         next_entry["analysisComplete"] = bool(existing_entry.get("analysisComplete", False))
+        next_entry["analysisVersion"] = max(0, _safe_int(existing_entry.get("analysisVersion", 0), 0))
       if (not model_name or model_name == "Unknown model") and _clean_model_label(existing_entry.get("model", "")):
         next_entry["model"] = _clean_model_label(existing_entry.get("model", ""))
         next_entry["modelKey"] = canonical_model_key(existing_entry.get("modelKey", "")) or _model_usage_key(next_entry["model"])

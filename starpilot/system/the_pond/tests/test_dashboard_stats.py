@@ -609,6 +609,73 @@ def test_recent_drives_coalesce_exact_duplicate_time_ranges_only():
   assert short_drive["distance"] == 0.5
 
 
+def test_completed_routes_with_old_analysis_version_are_refreshed_once():
+  route = {"name": "route-1", "modifiedAt": 100, "segmentCount": 1}
+  stale_stats = {
+    "routes": {
+      "route-1": {
+        "modifiedAt": 100,
+        "attentionKnown": True,
+        "analysisComplete": True,
+        "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION - 1,
+      },
+    },
+  }
+  current_stats = {
+    "routes": {
+      "route-1": {
+        "modifiedAt": 100,
+        "attentionKnown": True,
+        "analysisComplete": True,
+        "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION,
+      },
+    },
+  }
+
+  assert utilities._analysis_candidates([route], stale_stats) == [route]
+  assert utilities._analysis_candidates([route], current_stats) == []
+
+
+def test_shell_update_preserves_old_analysis_version_for_reparse():
+  params = FakeParams({
+    utilities.DASHBOARD_PERSISTENT_STATS_PARAM: {
+      "routes": {
+        "route-1": {
+          "date": "2026-06-18T09:24:00",
+          "endDate": "2026-06-18T09:34:00",
+          "distanceMeters": 1000.0,
+          "duration": 600,
+          "engagedSeconds": 400.0,
+          "model": "Orion",
+          "modifiedAt": 100,
+          "attentionKnown": True,
+          "analysisComplete": True,
+          "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION - 1,
+        },
+      },
+    },
+  })
+  shell_drive = {
+    "name": "route-1",
+    "date": "2026-06-18T09:23:00",
+    "endDate": "2026-06-18T09:34:00",
+    "distanceMeters": 0.0,
+    "duration": 660,
+    "engagedSeconds": 0.0,
+    "model": "Orion",
+    "routeModifiedAt": 100,
+    "attentionKnown": False,
+    "analysisComplete": False,
+    "analysisVersion": 0,
+  }
+
+  stats = utilities._update_dashboard_persistent_stats(params, [shell_drive], wall_now=1000)
+
+  assert stats["routes"]["route-1"]["date"] == "2026-06-18T09:24:00"
+  assert stats["routes"]["route-1"]["analysisVersion"] == utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION - 1
+  assert utilities._analysis_candidates([{"name": "route-1", "modifiedAt": 100}], stats)
+
+
 def test_unknown_attention_rows_do_not_reset_persisted_clean_records():
   params = FakeParams()
   known_drive = {
