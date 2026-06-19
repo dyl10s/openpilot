@@ -547,12 +547,20 @@ IONIQ_6_CRAWL_TURN_IN_FF_SPEED = 4.5
 IONIQ_6_CRAWL_TURN_IN_FF_SPEED_WIDTH = 0.8
 IONIQ_6_CRAWL_TURN_IN_FF_LAT = 0.10
 IONIQ_6_CRAWL_TURN_IN_FF_LAT_WIDTH = 0.05
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE = 0.34
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED = 3.6
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH = 0.45
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR = 4.0
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH = 1.8
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE = 10.0
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH = 4.0
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_BOOST = 0.10
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED = 18.0
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED_WIDTH = 2.5
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_LAT_START = 0.06
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_LAT_END = 0.22
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_LAT_WIDTH = 0.035
+IONIQ_6_LOW_SPEED_PID_RESET_SPEED = 0.1 * CV.MPH_TO_MS
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_LAT_START = 0.82
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_LAT_WIDTH = 0.12
 IONIQ_6_HEAVY_DIRECTIONAL_TAPER_BASE_LEFT = 0.10
@@ -1848,6 +1856,28 @@ def get_ioniq_6_output_taper_scale(desired_lateral_accel: float, desired_lateral
   return center_scale * directional_scale
 
 
+def get_ioniq_6_low_speed_angle_assist_torque(desired_angle_deg: float, actual_angle_deg: float,
+                                              current_output_torque: float, v_ego: float) -> float:
+  angle_error = desired_angle_deg - actual_angle_deg
+  if desired_angle_deg * angle_error <= 0.0:
+    return current_output_torque
+
+  speed_weight = _ioniq_6_sigmoid((IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED - max(v_ego, 0.0)) /
+                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH)
+  error_weight = _ioniq_6_sigmoid((abs(angle_error) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR) /
+                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH)
+  desired_angle_weight = _ioniq_6_sigmoid((abs(desired_angle_deg) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE) /
+                                          IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH)
+  assist_torque = math.copysign(IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE * speed_weight * error_weight * desired_angle_weight, angle_error)
+  if abs(assist_torque) < 1e-4:
+    return current_output_torque
+
+  if current_output_torque * assist_torque >= 0.0:
+    return float(np.clip(math.copysign(max(abs(current_output_torque), abs(assist_torque)), assist_torque), -1.0, 1.0))
+
+  return float(np.clip(current_output_torque + assist_torque, -1.0, 1.0))
+
+
 def kia_ev6_lateral_testing_ground_active() -> bool:
   return testing_ground.use(KIA_EV6_LATERAL_TESTING_GROUND_ID, KIA_EV6_LATERAL_TESTING_GROUND_VARIANT)
 
@@ -2041,6 +2071,8 @@ class LatControlTorque(LatControl):
     self.is_civic_bosch_modified = CP.carFingerprint == HONDA_CAR.HONDA_CIVIC_BOSCH and bool(CP.flags & HondaFlags.EPS_MODIFIED)
     self.is_volt_cc = CP.carFingerprint == GM_CAR.CHEVROLET_VOLT_CC
     self.is_silverado = CP.carFingerprint == GM_CAR.CHEVROLET_SILVERADO
+    if self.is_ioniq_6:
+      self.low_speed_reset_threshold = min(self.low_speed_reset_threshold, IONIQ_6_LOW_SPEED_PID_RESET_SPEED)
     self.use_bolt_ff_scaling = self.is_bolt_2022_2023 or self.is_bolt_2018_2021 or self.is_bolt_2017
     self.use_bolt_ki_multiplier = self.use_bolt_ff_scaling
     self.torque_ff_scale_pos = 1.0
@@ -2274,6 +2306,11 @@ class LatControlTorque(LatControl):
         output_torque *= get_bolt_2017_torque_scale(setpoint, desired_lateral_jerk, CS.vEgo)
       elif bolt_2018_2021_tuned_path_active:
         output_torque *= get_bolt_2018_2021_dynamic_torque_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+      elif ioniq_6_active:
+        desired_angle_no_offset = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
+        actual_angle_no_offset = CS.steeringAngleDeg - params.angleOffsetDeg
+        output_torque = get_ioniq_6_low_speed_angle_assist_torque(desired_angle_no_offset, actual_angle_no_offset,
+                                                                  output_torque, CS.vEgo)
       elif volt_standard_test_active:
         output_torque *= volt_standard_center_taper
       elif kia_niro_phev_2022_active:
