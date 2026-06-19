@@ -219,6 +219,14 @@ POST_DEPARTURE_FOLLOW_BYPASS_MIN_MODEL_PROB = 0.95
 POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_DELTA = 0.35
 POST_DEPARTURE_FOLLOW_BYPASS_MIN_LEAD_ACCEL = 0.25
 POST_DEPARTURE_FOLLOW_BYPASS_MIN_HEADWAY_MARGIN = 0.10
+POST_DEPARTURE_FOLLOW_SETTLE_LATCH_TIME = 75.0
+POST_DEPARTURE_FOLLOW_SETTLE_MIN_SPEED = 8.0
+POST_DEPARTURE_FOLLOW_SETTLE_MIN_MODEL_PROB = 0.9
+POST_DEPARTURE_FOLLOW_SETTLE_MAX_LATERAL_OFFSET = 1.15
+POST_DEPARTURE_FOLLOW_SETTLE_MAX_CLOSING_SPEED = 0.8
+POST_DEPARTURE_FOLLOW_SETTLE_MAX_LEAD_BRAKE = 0.10
+POST_DEPARTURE_FOLLOW_SETTLE_MIN_HEADWAY_MARGIN = 0.10
+POST_DEPARTURE_FOLLOW_SETTLE_COMPLETE_HEADWAY_MARGIN = 0.05
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_MODEL_PROB = 0.95
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_LEAD_DELTA = -0.05
 COMFORTABLE_PULLAWAY_FOLLOW_MIN_LEAD_ACCEL = 0.20
@@ -582,6 +590,7 @@ class LongitudinalPlanner:
     self.manual_stop_resume_override_until = 0.0
     self.lead_depart_accel_hold_until = 0.0
     self.spacious_follow_cap_bypass_until = 0.0
+    self.post_departure_follow_settle_until = 0.0
 
     if self.is_preap:
       try:
@@ -1320,6 +1329,41 @@ class LongitudinalPlanner:
     headway_margin = actual_headway - float(t_follow)
     return headway_margin >= COMFORTABLE_PULLAWAY_FOLLOW_MIN_HEADWAY_MARGIN
 
+  def post_departure_follow_settle_active(self, lead, v_ego, t_follow):
+    if lead is None or not lead.status:
+      return False
+    if time.monotonic() > self.post_departure_follow_settle_until:
+      self.post_departure_follow_settle_until = 0.0
+      return False
+    if float(v_ego) < POST_DEPARTURE_FOLLOW_SETTLE_MIN_SPEED:
+      return False
+
+    lead_radar = bool(getattr(lead, "radar", False))
+    lead_prob = float(getattr(lead, "modelProb", 1.0 if lead_radar else 0.0))
+    if not lead_radar and lead_prob < POST_DEPARTURE_FOLLOW_SETTLE_MIN_MODEL_PROB:
+      return False
+
+    if abs(float(getattr(lead, "yRel", 0.0))) > POST_DEPARTURE_FOLLOW_SETTLE_MAX_LATERAL_OFFSET:
+      return False
+
+    actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
+    headway_margin = actual_headway - float(t_follow)
+    if headway_margin <= POST_DEPARTURE_FOLLOW_SETTLE_COMPLETE_HEADWAY_MARGIN:
+      self.post_departure_follow_settle_until = 0.0
+      return False
+
+    lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
+    if lead_brake > POST_DEPARTURE_FOLLOW_SETTLE_MAX_LEAD_BRAKE:
+      self.post_departure_follow_settle_until = 0.0
+      return False
+
+    closing_speed = max(float(v_ego) - float(lead.vLead), 0.0)
+    if closing_speed > POST_DEPARTURE_FOLLOW_SETTLE_MAX_CLOSING_SPEED:
+      self.post_departure_follow_settle_until = 0.0
+      return False
+
+    return headway_margin >= POST_DEPARTURE_FOLLOW_SETTLE_MIN_HEADWAY_MARGIN
+
   def is_spacious_low_closure_follow(self, lead, v_ego, t_follow):
     if lead is None or not lead.status or float(v_ego) < CRUISE_TRACKED_LEAD_ACCEL_CAP_MIN_SPEED:
       return False
@@ -1354,6 +1398,9 @@ class LongitudinalPlanner:
 
   def get_lead_catchup_accel_cap(self, lead, v_ego, t_follow, current_source=None, tracking_lead_active=False):
     if lead is None or not lead.status:
+      return None
+
+    if self.post_departure_follow_settle_active(lead, v_ego, t_follow):
       return None
 
     lead_radar = bool(getattr(lead, "radar", False))
@@ -1456,6 +1503,8 @@ class LongitudinalPlanner:
 
   def get_cruise_tracking_lead_accel_cap(self, lead, v_ego, t_follow, current_source, tracking_lead_active):
     if lead is None or not lead.status or current_source != "cruise":
+      return None
+    if self.post_departure_follow_settle_active(lead, v_ego, t_follow):
       return None
     if not (CRUISE_TRACKED_LEAD_ACCEL_CAP_MIN_SPEED <= float(v_ego) <= CRUISE_TRACKED_LEAD_ACCEL_CAP_MAX_SPEED):
       return None
@@ -2641,9 +2690,11 @@ class LongitudinalPlanner:
       vision_low_speed_stop_active = False
       output_should_stop = False
       output_a_target = max(output_a_target, STANDSTILL_LEAD_DEPART_MIN_ACCEL)
+      self.post_departure_follow_settle_until = now_t + POST_DEPARTURE_FOLLOW_SETTLE_LATCH_TIME
 
     if lead_control_active and lead_depart_ready and not depart_safety_veto and not output_should_stop and float(sm['carState'].vEgo) <= STANDSTILL_LEAD_DEPART_MAX_EGO_SPEED:
       output_a_target = max(output_a_target, STANDSTILL_LEAD_DEPART_MIN_ACCEL)
+      self.post_departure_follow_settle_until = now_t + POST_DEPARTURE_FOLLOW_SETTLE_LATCH_TIME
 
     if depart_safety_veto or output_should_stop or bool(getattr(sm['starpilotPlan'], 'forcingStop', False)) or bool(getattr(sm['starpilotPlan'], 'redLight', False)):
       self.lead_depart_accel_hold_until = 0.0
