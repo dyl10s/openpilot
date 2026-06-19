@@ -115,13 +115,30 @@ def create_adas_keepalive(bus):
   return [CanData(0x409, dat, bus), CanData(0x40a, dat, bus)]
 
 
-def create_gas_regen_command(packer, bus, throttle, idx, enabled, at_full_stop, include_always_one3=False, use_volt_layout=False):
+def create_gas_regen_command(packer, bus, throttle, idx, enabled, at_full_stop, include_always_one3=False,
+                             use_volt_layout=False, use_generated_layout=False):
   gas_regen_msg = packer.dbc.name_to_msg.get("ASCMGasRegenCmd")
+  has_generated_layout = gas_regen_msg is not None and "GasRegenAccType" in gas_regen_msg.sigs
   has_legacy_volt_layout = gas_regen_msg is not None and {
     "GasRegenCmdActiveInv",
     "GasRegenAlwaysOne",
     "GasRegenAlwaysOne2",
   }.issubset(gas_regen_msg.sigs)
+
+  if use_generated_layout and has_generated_layout:
+    values = {
+      "GasRegenCmdActive": enabled,
+      "RollingCounter": idx,
+      "GasRegenCmd": throttle,
+      "GasRegenFullStopActive": at_full_stop,
+      "GasRegenAccType": 1,
+    }
+    dat = packer.make_can_msg("ASCMGasRegenCmd", bus, values)[1]
+    values["GasRegenChecksum"] = (((0xff - dat[1]) & 0xff) << 16) | \
+                                 (((0xff - dat[2]) & 0xff) << 8) | \
+                                 ((0x100 - dat[3] - idx) & 0xff)
+
+    return packer.make_can_msg("ASCMGasRegenCmd", bus, values)
 
   if use_volt_layout and has_legacy_volt_layout:
     values = {

@@ -50,6 +50,13 @@ BOLT_CANCEL_BUTTON_CARS = BOLT_GEN1_CANCEL_PERSONALITY_CARS | {
   CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
   CAR.CHEVROLET_BOLT_CC_2022_2023,
 }
+VOLT_LIKE_CARS = {
+  CAR.CHEVROLET_VOLT,
+  CAR.CHEVROLET_VOLT_2019,
+  CAR.CHEVROLET_VOLT_ASCM,
+  CAR.CHEVROLET_VOLT_CAMERA,
+  CAR.CHEVROLET_VOLT_CC,
+}
 
 
 class CarState(CarStateBase):
@@ -108,14 +115,7 @@ class CarState(CarStateBase):
 
     ret = structs.CarState()
 
-    volt_like = {
-      CAR.CHEVROLET_VOLT,
-      CAR.CHEVROLET_VOLT_2019,
-      CAR.CHEVROLET_VOLT_ASCM,
-      CAR.CHEVROLET_VOLT_CAMERA,
-      CAR.CHEVROLET_VOLT_CC,
-    }
-    kaofui_state_cars = volt_like | SDGM_CAR | ASCM_INT | {
+    kaofui_state_cars = VOLT_LIKE_CARS | SDGM_CAR | ASCM_INT | {
       CAR.CHEVROLET_BLAZER,
       CAR.CHEVROLET_MALIBU_SDGM,
       CAR.CHEVROLET_MALIBU_HYBRID_CC,
@@ -275,7 +275,10 @@ class CarState(CarStateBase):
       ret.seatbeltUnlatched = pt_cp.vl["BCMDoorBeltStatus"]["LeftSeatBelt"] == 0
       ret.leftBlinker = pt_cp.vl["BCMTurnSignals"]["TurnSignals"] == 1
       ret.rightBlinker = pt_cp.vl["BCMTurnSignals"]["TurnSignals"] == 2
-      ret.parkingBrake = pt_cp.vl["BCMGeneralPlatformStatus"]["ParkBrakeSwActive"] == 1
+      if self.CP.carFingerprint in VOLT_LIKE_CARS:
+        ret.parkingBrake = pt_cp.vl["EPBStatus"]["EPBClosed"] == 1
+      else:
+        ret.parkingBrake = pt_cp.vl["BCMGeneralPlatformStatus"]["ParkBrakeSwActive"] == 1
     else:
       # 1 - open, 0 - closed
       ret.doorOpen = (cam_cp.vl["BCMDoorBeltStatus"]["FrontLeftDoor"] == 1 or
@@ -460,6 +463,8 @@ class CarState(CarStateBase):
         ("BCMGeneralPlatformStatus", 10),
         ("ASCMSteeringButton", 33),
       ]
+      if CP.carFingerprint in VOLT_LIKE_CARS:
+        pt_messages.append(("EPBStatus", 20))
       if CP.enableBsm:
         pt_messages.append(("BCMBlindSpotMonitor", 0))
 
