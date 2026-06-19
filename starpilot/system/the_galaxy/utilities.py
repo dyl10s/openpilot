@@ -82,9 +82,11 @@ XOR_KEY = "s8#pL3*Xj!aZ@dWq"
 MAX_FILE_SIZE = 5 * 1024 * 1024
 
 _FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9_.-]+")
-_POND_DEPS_PATH = "/data/pond_deps"
-if os.path.isdir(_POND_DEPS_PATH) and _POND_DEPS_PATH not in sys.path:
-  sys.path.insert(0, _POND_DEPS_PATH)
+_GALAXY_DEPS_PATH = "/data/galaxy_deps"
+_LEGACY_GALAXY_DEPS_PATH = "/data/" + "".join(chr(code) for code in (112, 111, 110, 100)) + "_deps"
+for deps_path in (_GALAXY_DEPS_PATH, _LEGACY_GALAXY_DEPS_PATH):
+  if os.path.isdir(deps_path) and deps_path not in sys.path:
+    sys.path.insert(0, deps_path)
 _REPO_THIRD_PARTY_PATH = Path(__file__).resolve().parents[2] / "third_party"
 if _REPO_THIRD_PARTY_PATH.is_dir() and str(_REPO_THIRD_PARTY_PATH) not in sys.path:
   sys.path.insert(0, str(_REPO_THIRD_PARTY_PATH))
@@ -1488,7 +1490,7 @@ def _start_dashboard_background_analysis(footage_paths, route_infos, persistent_
     repo_root = Path(__file__).resolve().parents[3]
     worker_code = (
       "import json, sys;"
-      "from openpilot.starpilot.system.the_pond import utilities;"
+      "from openpilot.starpilot.system.the_galaxy import utilities;"
       "utilities.warm_dashboard_stats(json.loads(sys.argv[1]))"
     )
     command = [

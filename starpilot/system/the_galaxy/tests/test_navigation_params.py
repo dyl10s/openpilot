@@ -1,7 +1,21 @@
 import json
 
 from openpilot.common.params import ParamKeyType
-from openpilot.starpilot.system.the_pond import the_pond
+
+from test_dashboard_stats import MODULE_DIR, _install_server_import_stubs
+
+
+def _load_server_module():
+  import importlib.util
+
+  _install_server_import_stubs()
+  spec = importlib.util.spec_from_file_location("navigation_params_server", MODULE_DIR / "the_galaxy.py")
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  return module
+
+
+the_galaxy = _load_server_module()
 
 
 class FakeParamsBackend:
@@ -30,7 +44,7 @@ def test_params_compat_accepts_json_strings_for_json_keys():
     key_types={"FavoriteDestinations": ParamKeyType.JSON},
     default_values={"FavoriteDestinations": []},
   )
-  compat = the_pond.ParamsCompat(backend)
+  compat = the_galaxy.ParamsCompat(backend)
 
   compat.put("FavoriteDestinations", json.dumps([{"name": "Home"}]))
 
@@ -47,12 +61,12 @@ def test_navigation_last_position_uses_recent_persisted_fix(monkeypatch):
   memory_backend = FakeParamsBackend(values={"LastGPSPosition": ""})
   persisted_backend = FakeParamsBackend(values={"LastGPSPosition": recent_payload})
 
-  monkeypatch.setattr(the_pond, "params_memory", the_pond.ParamsCompat(memory_backend))
-  monkeypatch.setattr(the_pond, "params", the_pond.ParamsCompat(persisted_backend))
-  monkeypatch.setattr(the_pond.time, "time", lambda: 10_300.0)
-  monkeypatch.setattr(the_pond, "system_time_valid", lambda: True)
+  monkeypatch.setattr(the_galaxy, "params_memory", the_galaxy.ParamsCompat(memory_backend))
+  monkeypatch.setattr(the_galaxy, "params", the_galaxy.ParamsCompat(persisted_backend))
+  monkeypatch.setattr(the_galaxy.time, "time", lambda: 10_300.0)
+  monkeypatch.setattr(the_galaxy, "system_time_valid", lambda: True)
 
-  position = the_pond._get_navigation_last_position()
+  position = the_galaxy._get_navigation_last_position()
 
   assert position["latitude"] == 41.0
   assert position["longitude"] == -87.0
@@ -68,9 +82,9 @@ def test_navigation_last_position_rejects_stale_persisted_fix(monkeypatch):
   memory_backend = FakeParamsBackend(values={"LastGPSPosition": ""})
   persisted_backend = FakeParamsBackend(values={"LastGPSPosition": stale_payload})
 
-  monkeypatch.setattr(the_pond, "params_memory", the_pond.ParamsCompat(memory_backend))
-  monkeypatch.setattr(the_pond, "params", the_pond.ParamsCompat(persisted_backend))
-  monkeypatch.setattr(the_pond.time, "time", lambda: 10_000.0 + the_pond.NAVIGATION_PERSISTED_LOCATION_MAX_AGE_SECONDS + 1.0)
-  monkeypatch.setattr(the_pond, "system_time_valid", lambda: True)
+  monkeypatch.setattr(the_galaxy, "params_memory", the_galaxy.ParamsCompat(memory_backend))
+  monkeypatch.setattr(the_galaxy, "params", the_galaxy.ParamsCompat(persisted_backend))
+  monkeypatch.setattr(the_galaxy.time, "time", lambda: 10_000.0 + the_galaxy.NAVIGATION_PERSISTED_LOCATION_MAX_AGE_SECONDS + 1.0)
+  monkeypatch.setattr(the_galaxy, "system_time_valid", lambda: True)
 
-  assert the_pond._get_navigation_last_position() is None
+  assert the_galaxy._get_navigation_last_position() is None

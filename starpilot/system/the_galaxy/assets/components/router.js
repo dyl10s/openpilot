@@ -90,7 +90,7 @@ function Root() {
     history: createBrowserHistory(),
   }).initialize()
 
-  window.__thePondNavigate = (href) => {
+  window.__theGalaxyNavigate = (href) => {
     router.navigate(toRouterHref(href))
     window.scrollTo(0, 0)
   }
@@ -169,8 +169,8 @@ function mountRouterWhenReady() {
     return
   }
 
-  if (!window.__thePondRouterMounted) {
-    window.__thePondRouterMounted = true
+  if (!window.__theGalaxyRouterMounted) {
+    window.__theGalaxyRouterMounted = true
     Root()(mountNode)
   } else {
     console.warn("[router] duplicate mount prevented")

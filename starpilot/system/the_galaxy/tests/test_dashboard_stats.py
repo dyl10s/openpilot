@@ -179,11 +179,11 @@ def _install_server_import_stubs():
     normalize_destination_payload=lambda payload: payload,
     update_recent_destinations=lambda *args, **kwargs: [],
   )
-  sys.modules["openpilot.starpilot.system." + "the_" + "po" + "nd.factory_reset"] = _simple_module(
-    "openpilot.starpilot.system." + "the_" + "po" + "nd.factory_reset",
+  sys.modules["openpilot.starpilot.system.the_galaxy.factory_reset"] = _simple_module(
+    "openpilot.starpilot.system.the_galaxy.factory_reset",
     remove_path=lambda *args, **kwargs: None,
   )
-  sys.modules["openpilot.starpilot.system." + "the_" + "po" + "nd.utilities"] = utilities
+  sys.modules["openpilot.starpilot.system.the_galaxy.utilities"] = utilities
 
 
 class FakeParams:
@@ -970,7 +970,7 @@ def test_github_urls_accept_owner_repo_origin():
 
 def _load_server_module():
   _install_server_import_stubs()
-  spec = importlib.util.spec_from_file_location("dashboard_server", MODULE_DIR / ("the_" + "po" + "nd.py"))
+  spec = importlib.util.spec_from_file_location("dashboard_server", MODULE_DIR / "the_galaxy.py")
   module = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(module)
   return module
@@ -978,7 +978,7 @@ def _load_server_module():
 
 def test_stats_endpoint_keeps_existing_keys_and_adds_dashboard(monkeypatch):
   server = _load_server_module()
-  assert getattr(server, "_import_" + "po" + "nd_web_symbols")()
+  assert server._import_galaxy_web_symbols()
 
   app = server.Flask(
     "dashboard_test",

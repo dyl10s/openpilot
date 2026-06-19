@@ -152,7 +152,7 @@ def get_dashboard_utilities():
   global _DASHBOARD_UTILITIES
 
   if _DASHBOARD_UTILITIES is None:
-    _DASHBOARD_UTILITIES = importlib.import_module("openpilot.starpilot.system." + "the_" + "po" + "nd.utilities")
+    _DASHBOARD_UTILITIES = importlib.import_module("openpilot.starpilot.system.the_galaxy.utilities")
   return _DASHBOARD_UTILITIES
 
 def get_dashboard_footage_paths():

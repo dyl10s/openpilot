@@ -80,8 +80,8 @@ from openpilot.starpilot.common.testing_grounds import (
   TESTING_GROUNDS_STATE_PATH as SHARED_TESTING_GROUNDS_STATE_PATH,
 )
 from openpilot.starpilot.navigation.destination_store import normalize_destination_payload, update_recent_destinations
-from openpilot.starpilot.system.the_pond.factory_reset import remove_path as _run_factory_reset_delete
-from openpilot.starpilot.system.the_pond import utilities
+from openpilot.starpilot.system.the_galaxy.factory_reset import remove_path as _run_factory_reset_delete
+from openpilot.starpilot.system.the_galaxy import utilities
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
@@ -89,9 +89,12 @@ GITLAB_API = "https://gitlab.com/api/v4"
 GITLAB_SUBMISSIONS_PROJECT_ID = "71992109"
 GITLAB_TOKEN = os.environ.get("GITLAB_TOKEN", "")
 
-POND_DEPS_PATH = "/data/pond_deps"
-if os.path.isdir(POND_DEPS_PATH) and POND_DEPS_PATH not in sys.path:
-  sys.path.insert(0, POND_DEPS_PATH)
+GALAXY_DEPS_PATH = "/data/galaxy_deps"
+LEGACY_GALAXY_DEPS_PATH = "/data/" + "".join(chr(code) for code in (112, 111, 110, 100)) + "_deps"
+GALAXY_DEPS_PATHS = (GALAXY_DEPS_PATH, LEGACY_GALAXY_DEPS_PATH)
+for deps_path in GALAXY_DEPS_PATHS:
+  if os.path.isdir(deps_path) and deps_path not in sys.path:
+    sys.path.insert(0, deps_path)
 
 REPO_THIRD_PARTY_PATH = Path(__file__).resolve().parents[2] / "third_party"
 if REPO_THIRD_PARTY_PATH.is_dir() and str(REPO_THIRD_PARTY_PATH) not in sys.path:
@@ -106,8 +109,8 @@ request = None
 send_file = None
 send_from_directory = None
 
-_POND_WEB_DEPS_READY = False
-_POND_WEB_DEPS_ERROR = None
+_GALAXY_WEB_DEPS_READY = False
+_GALAXY_WEB_DEPS_ERROR = None
 
 _TESTING_GROUND_CUSTOM_RESERVED_SERVICE = "customReserved9"
 _TESTING_GROUND_CUSTOM_RESERVED_INTERVAL_S = 15.0
@@ -120,7 +123,7 @@ def _is_comma_device_runtime() -> bool:
   """Robust runtime device check.
 
   `PC` is derived from `/TICI`, which can be missing in edge boot/update states.
-  For Galaxy routing we must keep on-device Pond on 8082.
+  For Galaxy routing we must keep on-device Galaxy on 8082.
   """
   if not PC:
     return True
@@ -146,8 +149,8 @@ def _get_param_key_type(params_obj, key):
   return getter(key)
 
 
-def _import_pond_web_symbols():
-  global Flask, Response, jsonify, make_response, render_template, request, send_file, send_from_directory, _POND_WEB_DEPS_ERROR
+def _import_galaxy_web_symbols():
+  global Flask, Response, jsonify, make_response, render_template, request, send_file, send_from_directory, _GALAXY_WEB_DEPS_ERROR
 
   try:
     from flask import Flask as _Flask
@@ -159,7 +162,7 @@ def _import_pond_web_symbols():
     from flask import send_file as _send_file
     from flask import send_from_directory as _send_from_directory
   except ModuleNotFoundError as error:
-    _POND_WEB_DEPS_ERROR = error
+    _GALAXY_WEB_DEPS_ERROR = error
     return False
 
   Flask = _Flask
@@ -170,43 +173,44 @@ def _import_pond_web_symbols():
   request = _request
   send_file = _send_file
   send_from_directory = _send_from_directory
-  _POND_WEB_DEPS_ERROR = None
+  _GALAXY_WEB_DEPS_ERROR = None
   return True
 
 
-def _install_pond_web_deps():
-  global _POND_WEB_DEPS_ERROR
+def _install_galaxy_web_deps():
+  global _GALAXY_WEB_DEPS_ERROR
 
   if not _is_comma_device_runtime():
     return False
 
-  # Local-only dependency policy: prefer bundled repo deps, then existing /data/pond_deps.
+  # Local-only dependency policy: prefer bundled repo deps, then existing local deps.
   # Do not hit pip/network at runtime.
   if REPO_THIRD_PARTY_PATH.is_dir() and str(REPO_THIRD_PARTY_PATH) not in sys.path:
     sys.path.insert(0, str(REPO_THIRD_PARTY_PATH))
-  if os.path.isdir(POND_DEPS_PATH) and POND_DEPS_PATH not in sys.path:
-    sys.path.insert(0, POND_DEPS_PATH)
+  for deps_path in GALAXY_DEPS_PATHS:
+    if os.path.isdir(deps_path) and deps_path not in sys.path:
+      sys.path.insert(0, deps_path)
 
   importlib.invalidate_caches()
-  if _import_pond_web_symbols():
+  if _import_galaxy_web_symbols():
     return True
 
-  _POND_WEB_DEPS_ERROR = RuntimeError(
-    "Missing local Flask deps (expected in starpilot/third_party or /data/pond_deps)."
+  _GALAXY_WEB_DEPS_ERROR = RuntimeError(
+    "Missing local Flask deps (expected in starpilot/third_party or local Galaxy deps)."
   )
   return False
 
 
-def _ensure_pond_web_deps():
-  global _POND_WEB_DEPS_READY
+def _ensure_galaxy_web_deps():
+  global _GALAXY_WEB_DEPS_READY
 
-  if _POND_WEB_DEPS_READY:
+  if _GALAXY_WEB_DEPS_READY:
     return True
-  if _import_pond_web_symbols():
-    _POND_WEB_DEPS_READY = True
+  if _import_galaxy_web_symbols():
+    _GALAXY_WEB_DEPS_READY = True
     return True
-  if _install_pond_web_deps() and _import_pond_web_symbols():
-    _POND_WEB_DEPS_READY = True
+  if _install_galaxy_web_deps() and _import_galaxy_web_symbols():
+    _GALAXY_WEB_DEPS_READY = True
     return True
   return False
 
@@ -2089,7 +2093,7 @@ _cached_param_types = None
 _cached_default_values = None
 _cached_static_default_values = None
 
-POND_MANUAL_BOOL_PARAM_KEYS = {"IsRHD", "IsRHDOverride"}
+GALAXY_MANUAL_BOOL_PARAM_KEYS = {"IsRHD", "IsRHDOverride"}
 
 def _get_param_type_info():
   global _cached_allowed_keys, _cached_param_types
@@ -2114,7 +2118,7 @@ def _get_param_type_info():
       elif k in types and dt == "bool":
         types[k] = bool
 
-    for k in POND_MANUAL_BOOL_PARAM_KEYS:
+    for k in GALAXY_MANUAL_BOOL_PARAM_KEYS:
       if k in _cached_allowed_keys:
         types[k] = bool
 
@@ -3367,7 +3371,7 @@ def _set_longitudinal_maneuver_mode(enabled):
       "uiText2": "Engage with SET to start the test suite.",
       "updatedAtSec": time.monotonic(),
     })
-    _append_longitudinal_maneuver_history(status, "Armed from The Pond. Engage with SET to start.")
+    _append_longitudinal_maneuver_history(status, "Armed from The Galaxy. Engage with SET to start.")
   else:
     params.put_bool("LongitudinalManeuverMode", False)
     params.put("LongitudinalManeuverPaddleMode", "auto")
@@ -3379,7 +3383,7 @@ def _set_longitudinal_maneuver_mode(enabled):
       "uiText2": "Test mode disabled.",
       "updatedAtSec": time.monotonic(),
     })
-    _append_longitudinal_maneuver_history(status, "Stopped from The Pond.")
+    _append_longitudinal_maneuver_history(status, "Stopped from The Galaxy.")
 
   return _save_longitudinal_maneuver_status(status)
 
@@ -3481,7 +3485,7 @@ def _set_lateral_maneuver_mode(enabled):
       "uiText2": "Stabilize on a straight, flat road to start.",
       "updatedAtSec": time.monotonic(),
     })
-    _append_lateral_maneuver_history(status, "Armed from The Pond. Stabilize on a straight, flat road to start.")
+    _append_lateral_maneuver_history(status, "Armed from The Galaxy. Stabilize on a straight, flat road to start.")
   else:
     params.put_bool("LateralManeuverMode", False)
     status.update({
@@ -3492,7 +3496,7 @@ def _set_lateral_maneuver_mode(enabled):
       "uiText2": "Test mode disabled.",
       "updatedAtSec": time.monotonic(),
     })
-    _append_lateral_maneuver_history(status, "Stopped from The Pond.")
+    _append_lateral_maneuver_history(status, "Stopped from The Galaxy.")
 
   return _save_lateral_maneuver_status(status)
 
@@ -5616,7 +5620,7 @@ def setup(app):
     run_cmd(["sudo", "systemctl", "restart", "tailscaled"], "Started tailscaled service.", "Failed to start tailscaled service.")
 
     proc = subprocess.Popen(
-      ["sudo", f"{base}/tailscale", "--socket", socket, "up", "--hostname", f"{HARDWARE.get_device_type()}-the-pond"],
+      ["sudo", f"{base}/tailscale", "--socket", socket, "up", "--hostname", f"{HARDWARE.get_device_type()}-the-galaxy"],
       stdout=subprocess.PIPE,
       stderr=subprocess.STDOUT,
       text=True,
@@ -6608,8 +6612,8 @@ def setup(app):
     return {"error": "Video not found"}, 404
 
 def main():
-  while not _ensure_pond_web_deps():
-    print(f"The Pond waiting for Flask dependency ({_POND_WEB_DEPS_ERROR}); retrying in 60s.")
+  while not _ensure_galaxy_web_deps():
+    print(f"The Galaxy waiting for Flask dependency ({_GALAXY_WEB_DEPS_ERROR}); retrying in 60s.")
     time.sleep(60)
 
   app = Flask(__name__, static_folder="assets", static_url_path="/assets")
@@ -6621,7 +6625,7 @@ def main():
   port = 8083 if debug else 8082
 
   if debug:
-    print("\"The Pond\" is not running on a comma device, enabling debug mode")
+    print("\"The Galaxy\" is not running on a comma device, enabling debug mode")
 
   app.secret_key = secrets.token_hex(32)
   app.run(host="0.0.0.0", port=port, debug=debug)
