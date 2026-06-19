@@ -40,6 +40,9 @@ AUTO_HOLD_MAX_BRAKE = 240
 AUTO_HOLD_MIN_DRIVE_TIME_S = 3.0
 AUTO_HOLD_STOPPED_SPEED = 0.02
 AUTO_HOLD_2019_MIN_BRAKE = 100
+BOLT_ACC_PEDAL_FRICTION_RELEASE_FRAMES = 5
+BOLT_PEDAL_LONG_ACCEL_LIMIT_BP = [0.0, 1.5, 4.0, 8.0, 15.0, 30.0]
+BOLT_PEDAL_LONG_ACCEL_LIMIT_V = [-0.93, -1.28, -1.98, -2.58, -2.86, -2.95]
 VOLT_ONE_PEDAL_DECEL_BP = [0.5 * CV.MPH_TO_MS, 6.0 * CV.MPH_TO_MS]
 VOLT_ONE_PEDAL_DECEL_V = [-1.0, -1.1]
 VOLT_ONE_PEDAL_REGEN_PADDLE_DECEL_V = [-1.5, -1.6]
@@ -285,6 +288,51 @@ def get_friction_brake_bus(CP):
   return CanBus.CHASSIS
 
 
+def supports_bolt_acc_pedal_friction_experiment(CP) -> bool:
+  return (
+    CP.carFingerprint == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL and
+    CP.openpilotLongitudinalControl and
+    CP.enableGasInterceptorDEPRECATED and
+    bool(CP.flags & GMFlags.PEDAL_LONG.value)
+  )
+
+
+def get_bolt_acc_pedal_friction_brake(apply_brake, full_brake_accel, v_ego, params) -> int:
+  if apply_brake <= 0:
+    return 0
+
+  full_brake_accel = min(full_brake_accel, -0.1)
+  legacy_full_scale = max(-params.ACCEL_MIN, 0.1)
+  corrected_scale = legacy_full_scale / max(-full_brake_accel, 0.1)
+  speed_gain = float(np.interp(v_ego, [0.0, 10.0, 25.0], [1.0, 1.15, 1.3]))
+
+  return int(round(np.clip(apply_brake * corrected_scale * speed_gain, 0, params.MAX_BRAKE)))
+
+
+def get_bolt_pedal_long_accel_limit(v_ego: float) -> float:
+  return float(np.interp(v_ego, BOLT_PEDAL_LONG_ACCEL_LIMIT_BP, BOLT_PEDAL_LONG_ACCEL_LIMIT_V))
+
+
+def get_bolt_acc_pedal_planner_brake_switch(v_ego: float, params, tire_radius: float, mass: float,
+                                            coeff_drag: float, frontal_area: float, air_density: float) -> int:
+  planner_accel_limit = get_bolt_pedal_long_accel_limit(v_ego)
+  aero_drag_force = 0.5 * coeff_drag * frontal_area * air_density * v_ego ** 2
+  planner_torque = tire_radius * ((mass * planner_accel_limit) + aero_drag_force)
+  return int(round(planner_torque + params.ZERO_GAS))
+
+
+def get_bolt_acc_pedal_friction_command_state(apply_brake: int, cruise_main_on: bool, release_frames: int):
+  command_brake = apply_brake if cruise_main_on else 0
+
+  if command_brake > 0:
+    release_frames = BOLT_ACC_PEDAL_FRICTION_RELEASE_FRAMES
+  elif release_frames > 0:
+    release_frames -= 1
+
+  should_send = cruise_main_on or release_frames > 0
+  return command_brake, release_frames, should_send
+
+
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
@@ -351,6 +399,7 @@ class CarController(CarControllerBase):
       self.gm_auto_hold_enabled = self.params_.get_bool("GMAutoHold")
     except UnknownKeyName:
       self.gm_auto_hold_enabled = False
+    self.bolt_acc_pedal_friction_release_frames = 0
 
   def _reset_volt_one_pedal(self):
     self.volt_one_pedal_pid.reset()
@@ -678,6 +727,8 @@ class CarController(CarControllerBase):
       CS.out.vEgo,
       get_auto_hold_stop_threshold(self.CP, CS.auto_hold_engaged),
     )
+    bolt_acc_pedal_friction_experiment = supports_bolt_acc_pedal_friction_experiment(self.CP)
+    bolt_acc_pedal_friction_main_on = bolt_acc_pedal_friction_experiment and CS.out.cruiseState.available
     volt_one_pedal_braking = volt_one_pedal_active and self.volt_one_pedal_brake > 0
     volt_one_pedal_hold_active = (
       volt_one_pedal_braking and
@@ -806,9 +857,23 @@ class CarController(CarControllerBase):
             if testing_ground.use_1:
               brake_switch_bias = get_testing_ground_1_brake_switch_bias(CS.out.vEgo)
               brake_switch = min(self.params.ZERO_GAS, brake_switch + brake_switch_bias)
+            if bolt_acc_pedal_friction_main_on:
+              planner_brake_switch = get_bolt_acc_pedal_planner_brake_switch(
+                CS.out.vEgo, self.params, self.tireRadius, self.mass, self.coeffDrag, self.frontalArea, self.airDensity,
+              )
+              brake_switch = min(brake_switch, planner_brake_switch)
             brake_accel = min((scaled_torque - brake_switch) / (self.tireRadius * self.mass), 0)
             self.apply_gas = int(round(apply_gas_torque))
             self.apply_brake = int(round(np.interp(brake_accel, self.params.BRAKE_LOOKUP_BP, self.params.BRAKE_LOOKUP_V)))
+            if bolt_acc_pedal_friction_main_on and self.apply_brake > 0:
+              full_brake_accel = min(
+                self.params.ACCEL_MIN + (0.5 * self.coeffDrag * self.frontalArea * self.airDensity * CS.out.vEgo ** 2) / self.mass +
+                (self.params.ZERO_GAS - brake_switch) / (self.tireRadius * self.mass),
+                -0.1,
+              )
+              self.apply_brake = get_bolt_acc_pedal_friction_brake(
+                self.apply_brake, full_brake_accel, CS.out.vEgo, self.params,
+              )
             if self.apply_brake > 0:
               self.apply_gas = self.params.INACTIVE_REGEN
 
@@ -865,6 +930,26 @@ class CarController(CarControllerBase):
               can_sends.append(gmcan.create_buttons(self.packer_pt, CanBus.POWERTRAIN, (CS.buttons_counter + 1) % 4, CruiseButtons.DECEL_SET))
         if self.CP.enableGasInterceptorDEPRECATED:
           can_sends.append(create_gas_interceptor_command(self.packer_pt, interceptor_gas_cmd, idx))
+        if bolt_acc_pedal_friction_experiment:
+          friction_brake_bus = get_friction_brake_bus(self.CP)
+          if self.CP.networkLocation == NetworkLocation.fwdCamera:
+            at_full_stop = at_full_stop and stopping
+
+          experiment_brake, self.bolt_acc_pedal_friction_release_frames, should_send_bolt_acc_pedal_friction = \
+            get_bolt_acc_pedal_friction_command_state(
+              self.apply_brake,
+              bolt_acc_pedal_friction_main_on,
+              self.bolt_acc_pedal_friction_release_frames,
+            )
+
+          # This fingerprint is routed through the CC-only pedal path, so it
+          # does not fall through to the normal friction-brake sender below.
+          # Never apply stock friction with cruise main off, but do send a short
+          # explicit zero-brake unwind so the last nonzero stock-EBCM command
+          # cannot linger after a disengage or main-off event.
+          if should_send_bolt_acc_pedal_friction:
+            can_sends.append(gmcan.create_friction_brake_command(
+              self.packer_ch, friction_brake_bus, experiment_brake, idx, False, near_stop, at_full_stop, self.CP))
         if self.CP.carFingerprint not in CC_ONLY_CAR:
           friction_brake_bus = get_friction_brake_bus(self.CP)
           # GM Camera exceptions

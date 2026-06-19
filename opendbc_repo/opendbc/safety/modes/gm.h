@@ -614,6 +614,11 @@ static safety_config gm_init(uint16_t param) {
                                           {0x200, 0, 6, .check_relay = false},
                                           {0x1E1, 0, 7, .check_relay = false},
                                           {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
+  static const CanMsg GM_CAM_BOLT_2022_PEDAL_FRICTION_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x370, 0, 6, .check_relay = false}, {0x3D1, 0, 8, .check_relay = false}, {0x315, 0, 5, .check_relay = true},  // pt bus
+                                                                    {0x1E1, 2, 7, .check_relay = false}, {0x184, 2, 8, .check_relay = true},  // camera bus
+                                                                    {0x200, 0, 6, .check_relay = false},
+                                                                    {0x1E1, 0, 7, .check_relay = false},
+                                                                    {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
   static const CanMsg GM_CAM_VOLT_AUTO_HOLD_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x370, 0, 6, .check_relay = false}, {0x3D1, 0, 8, .check_relay = false}, {0x315, 0, 5, .check_relay = true},  // pt bus
                                                          {0x1E1, 2, 7, .check_relay = false}, {0x184, 2, 8, .check_relay = true},  // camera bus
                                                          {0x200, 0, 6, .check_relay = false},
@@ -637,6 +642,12 @@ static safety_config gm_init(uint16_t param) {
                                                     {0x200, 0, 6, .check_relay = false},
                                                     {0x1E1, 0, 7, .check_relay = false},
                                                     {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
+  static const CanMsg GM_CAM_NO_CAMERA_BOLT_2022_PEDAL_FRICTION_TX_MSGS[] = {{0x180, 0, 4, .check_relay = false}, {0x370, 0, 6, .check_relay = false}, {0x3D1, 0, 8, .check_relay = false}, {0x315, 0, 5, .check_relay = false},  // pt bus
+                                                                              {0x409, 0, 7, .check_relay = false}, {0x40A, 0, 7, .check_relay = false},
+                                                                              {0x1E1, 2, 7, .check_relay = false}, {0x184, 2, 8, .check_relay = false},  // camera bus
+                                                                              {0x200, 0, 6, .check_relay = false},
+                                                                              {0x1E1, 0, 7, .check_relay = false},
+                                                                              {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
   static const CanMsg GM_CAM_NO_CAMERA_VOLT_AUTO_HOLD_TX_MSGS[] = {{0x180, 0, 4, .check_relay = false}, {0x370, 0, 6, .check_relay = false}, {0x3D1, 0, 8, .check_relay = false}, {0x315, 0, 5, .check_relay = false},  // pt bus
                                                                    {0x409, 0, 7, .check_relay = false}, {0x40A, 0, 7, .check_relay = false},
                                                                    {0x1E1, 2, 7, .check_relay = false}, {0x184, 2, 8, .check_relay = false},  // camera bus
@@ -736,6 +747,11 @@ static safety_config gm_init(uint16_t param) {
   gm_pcm_cruise = (gm_hw == GM_CAM || gm_sdgm) && !gm_cam_long && !gm_force_ascm && !gm_pedal_long;
   const bool gm_ascm_int_stock_cam = gm_ascm_int && (gm_hw == GM_CAM) && gm_pcm_cruise && !gm_cam_long && !gm_pedal_long && !gm_cc_long;
   const bool gm_ascm_int_no_accel_pos = gm_ascm_int && (gm_hw == GM_CAM) && gm_force_brake_c9;
+  // FLAG_GM_BOLT_2022_PEDAL is shared with Malibu Hybrid pedal-long. Requiring
+  // the paddle scheduler bit narrows this whitelist to the Gen2 Bolt pedal-long
+  // experiment, which is the only path that should probe chassis friction brake
+  // while stock ACC remains canceled.
+  const bool gm_bolt_2022_pedal_friction = gm_bolt_2022_pedal && gm_panda_paddle_sched && !gm_has_acc;
   gm_steer_limits = GET_FLAG(param, GM_PARAM_BOLT_2017) ? &GM_BOLT_2017_STEERING_LIMITS : &GM_STEERING_LIMITS;
 
   if ((gm_hw == GM_ASCM && !gm_sdgm) || gm_ascm_int || gm_force_ascm) {
@@ -774,13 +790,19 @@ static safety_config gm_init(uint16_t param) {
       if (gm_volt_stock_brake && gm_sdgm) {
         ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_SDGM_VOLT_AUTO_HOLD_TX_MSGS);
       } else if (gm_no_camera) {
-        if (gm_volt_stock_brake) {
+        if (gm_bolt_2022_pedal_friction) {
+          ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_NO_CAMERA_BOLT_2022_PEDAL_FRICTION_TX_MSGS);
+        } else if (gm_volt_stock_brake) {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_NO_CAMERA_VOLT_AUTO_HOLD_TX_MSGS);
         } else {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_NO_CAMERA_TX_MSGS);
         }
       } else {
-        if (gm_volt_stock_brake) {
+        if (gm_bolt_2022_pedal_friction) {
+          // Experimental Gen2 Bolt pedal-long path: keep stock ACC canceled but
+          // allow OP to probe chassis friction-brake acceptance through panda.
+          ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_BOLT_2022_PEDAL_FRICTION_TX_MSGS);
+        } else if (gm_volt_stock_brake) {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_VOLT_AUTO_HOLD_TX_MSGS);
         } else {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_TX_MSGS);

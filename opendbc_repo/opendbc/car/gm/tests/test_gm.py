@@ -261,6 +261,7 @@ class TestGMInterface:
 
     assert car_params.alternativeExperience & ALTERNATIVE_EXPERIENCE.GM_REMAP_CANCEL_TO_DISTANCE
     assert car_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_BOLT_2022_PEDAL.value
+    assert car_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value
 
   def test_cadillac_xt5_sdgm_sascm_gates_alpha_long(self):
     CarInterface = interfaces[CAR.CADILLAC_XT5]
