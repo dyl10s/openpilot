@@ -38,6 +38,8 @@ AUTO_HOLD_DRIVE_GEARS = (
 AUTO_HOLD_MIN_BRAKE = 80
 AUTO_HOLD_MAX_BRAKE = 240
 AUTO_HOLD_MIN_DRIVE_TIME_S = 3.0
+AUTO_HOLD_STOPPED_SPEED = 0.02
+AUTO_HOLD_2019_MIN_BRAKE = 100
 VOLT_ONE_PEDAL_DECEL_BP = [0.5 * CV.MPH_TO_MS, 6.0 * CV.MPH_TO_MS]
 VOLT_ONE_PEDAL_DECEL_V = [-1.0, -1.1]
 VOLT_ONE_PEDAL_REGEN_PADDLE_DECEL_V = [-1.5, -1.6]
@@ -218,10 +220,17 @@ def supports_volt_one_pedal(CP, one_pedal_enabled: bool):
   )
 
 
-def estimate_auto_hold_brake(driver_brake: float, op_brake: float) -> int:
+def estimate_auto_hold_brake(driver_brake: float, op_brake: float, CP=None) -> int:
   driver_hold = np.interp(float(driver_brake), [8.0, 20.0, 40.0, 80.0], [80.0, 110.0, 150.0, 220.0])
   hold_brake = max(float(op_brake), float(driver_hold))
-  return int(round(np.clip(hold_brake, AUTO_HOLD_MIN_BRAKE, AUTO_HOLD_MAX_BRAKE)))
+  min_brake = AUTO_HOLD_2019_MIN_BRAKE if getattr(CP, "carFingerprint", None) == CAR.CHEVROLET_VOLT_2019 else AUTO_HOLD_MIN_BRAKE
+  return int(round(np.clip(hold_brake, min_brake, AUTO_HOLD_MAX_BRAKE)))
+
+
+def get_auto_hold_stop_threshold(CP, auto_hold_engaged: bool) -> float:
+  if auto_hold_engaged and getattr(CP, "carFingerprint", None) == CAR.CHEVROLET_VOLT_2019:
+    return CarControllerParams.NEAR_STOP_BRAKE_PHASE
+  return AUTO_HOLD_STOPPED_SPEED
 
 
 def get_volt_one_pedal_target_decel(v_ego: float) -> float:
@@ -247,8 +256,8 @@ def should_activate_volt_one_pedal(one_pedal_ready: bool, cruise_main: bool, lon
 
 def should_activate_auto_hold(hold_ready: bool, auto_hold_armed: bool, auto_hold_engaged: bool,
                               brake_pressed: bool, gas_pressed: bool, standstill: bool, long_active: bool,
-                              regen_braking: bool, v_ego: float) -> bool:
-  stopped = standstill or v_ego < 0.02
+                              regen_braking: bool, v_ego: float, stop_speed_threshold: float=AUTO_HOLD_STOPPED_SPEED) -> bool:
+  stopped = standstill or v_ego < stop_speed_threshold
   return (
     hold_ready and
     (auto_hold_armed or auto_hold_engaged or brake_pressed) and
@@ -571,7 +580,7 @@ class CarController(CarControllerBase):
     if CS.out.vEgo > 0.1 or CS.out.gasPressed or CS.out.gearShifter not in AUTO_HOLD_DRIVE_GEARS:
       self.auto_hold_brake = 0
     elif CS.out.brakePressed or stock_hold_apply_brake > 0:
-      self.auto_hold_brake = estimate_auto_hold_brake(CS.out.brake, stock_hold_apply_brake)
+      self.auto_hold_brake = estimate_auto_hold_brake(CS.out.brake, stock_hold_apply_brake, self.CP)
 
     if self.frame % 25 == 0:
       try:
@@ -667,6 +676,7 @@ class CarController(CarControllerBase):
       CC.longActive,
       CS.out.regenBraking,
       CS.out.vEgo,
+      get_auto_hold_stop_threshold(self.CP, CS.auto_hold_engaged),
     )
     volt_one_pedal_braking = volt_one_pedal_active and self.volt_one_pedal_brake > 0
     volt_one_pedal_hold_active = (
@@ -872,7 +882,7 @@ class CarController(CarControllerBase):
             acc_engaged = CC.enabled
 
           if auto_hold_active:
-            hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(CS.out.brake, self.apply_brake))
+            hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(CS.out.brake, self.apply_brake, self.CP))
             hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
             hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
             can_sends.append(gmcan.create_friction_brake_command(
@@ -881,7 +891,7 @@ class CarController(CarControllerBase):
             CS.auto_hold_engaged = True
             CS.auto_hold_fault_suppression_timer = 1.0
           elif volt_one_pedal_hold_active:
-            hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(0.0, self.volt_one_pedal_brake))
+            hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(0.0, self.volt_one_pedal_brake, self.CP))
             hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
             hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
             can_sends.append(gmcan.create_friction_brake_command(
@@ -955,7 +965,7 @@ class CarController(CarControllerBase):
     else:
       if self.frame % 4 == 0 and auto_hold_active:
         idx = (self.frame // 4) % 4
-        hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(CS.out.brake, stock_hold_apply_brake))
+        hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(CS.out.brake, stock_hold_apply_brake, self.CP))
         hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
         hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
         can_sends.append(gmcan.create_friction_brake_command(
@@ -965,7 +975,7 @@ class CarController(CarControllerBase):
         CS.auto_hold_fault_suppression_timer = 1.0
       elif self.frame % 4 == 0 and volt_one_pedal_hold_active:
         idx = (self.frame // 4) % 4
-        hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(0.0, self.volt_one_pedal_brake))
+        hold_brake = max(self.volt_one_pedal_brake, self.auto_hold_brake or estimate_auto_hold_brake(0.0, self.volt_one_pedal_brake, self.CP))
         hold_standstill = CS.pcm_acc_status == AccState.STANDSTILL
         hold_near_stop = CS.out.vEgo < self.params.NEAR_STOP_BRAKE_PHASE
         can_sends.append(gmcan.create_friction_brake_command(

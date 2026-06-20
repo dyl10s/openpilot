@@ -39,6 +39,7 @@ from opendbc.car.gm.carcontroller import (
   CarController,
   estimate_auto_hold_brake,
   get_adas_keepalive_step,
+  get_auto_hold_stop_threshold,
   get_lka_steering_cmd_counter,
   get_volt_one_pedal_target_decel,
   get_testing_ground_1_brake_switch_bias,
@@ -55,7 +56,7 @@ from opendbc.car.gm.carcontroller import (
   use_interceptor_sng_launch,
 )
 from opendbc.car.gm.gmcan import get_friction_brake_mode
-from opendbc.car.gm.values import AccState, CAR, GMFlags
+from opendbc.car.gm.values import AccState, CAR, CarControllerParams, GMFlags
 from opendbc.car.structs import CarParams
 from opendbc.car.common.conversions import Conversions as CV
 
@@ -237,6 +238,7 @@ def test_auto_hold_brake_estimate_uses_driver_or_op_brake_and_clamps():
   assert estimate_auto_hold_brake(20.0, 40.0) == 110
   assert estimate_auto_hold_brake(20.0, 160.0) == 160
   assert estimate_auto_hold_brake(100.0, 400.0) == 240
+  assert estimate_auto_hold_brake(7.0, 0.0, SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_2019)) == 100
 
 
 def test_volt_one_pedal_requires_toggle_supported_volt_stock_safety_and_ev_transmission():
@@ -317,6 +319,35 @@ def test_auto_hold_activation_stays_latched_after_brake_release():
     False,
     False,
     0.0,
+  )
+
+
+def test_volt_2019_auto_hold_engaged_uses_near_stop_creep_hysteresis():
+  CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_2019)
+
+  assert get_auto_hold_stop_threshold(CP, True) == CarControllerParams.NEAR_STOP_BRAKE_PHASE
+  assert should_activate_auto_hold(
+    True,
+    True,
+    True,
+    False,
+    False,
+    False,
+    False,
+    False,
+    0.05,
+    get_auto_hold_stop_threshold(CP, True),
+  )
+  assert not should_activate_auto_hold(
+    True,
+    True,
+    True,
+    False,
+    False,
+    False,
+    False,
+    False,
+    0.05,
   )
 
 
