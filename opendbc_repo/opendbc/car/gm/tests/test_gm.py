@@ -203,6 +203,7 @@ class TestGMInterface:
 
     assert car_params.openpilotLongitudinalControl
     assert car_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value
+    assert car_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_PANDA_3D1_SCHED.value
 
   @parameterized.expand(VOLT_CARS)
   def test_volt_bsm_is_enabled_without_fingerprint_match(self, car_model):

@@ -691,6 +691,21 @@ class CarInterface(CarInterfaceBase):
       # be present regardless of the current long-control mode.
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_PANDA_PADDLE_SCHED.value
 
+    volt_stock_one_pedal_safety = (
+      volt_one_pedal_mode and
+      candidate in {
+        CAR.CHEVROLET_VOLT,
+        CAR.CHEVROLET_VOLT_2019,
+        CAR.CHEVROLET_VOLT_ASCM,
+        CAR.CHEVROLET_VOLT_CAMERA,
+      }
+    )
+    if volt_stock_one_pedal_safety:
+      # Reuse the 3D1 scheduler bit as a Volt one-pedal marker on non-pedal
+      # ACC paths. The bit is ignored by the actual 3D1 scheduler unless the
+      # car is on a pedal-long CC-only path, so this stays isolated from Bolt.
+      ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_PANDA_3D1_SCHED.value
+
     use_panda_3d1_sched = (
       ret.openpilotLongitudinalControl and
       ret.enableGasInterceptorDEPRECATED and

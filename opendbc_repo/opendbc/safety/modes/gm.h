@@ -61,6 +61,7 @@ static bool gm_panda_paddle_sched = false;
 static bool gm_bolt_2022_pedal = false;
 static bool gm_alt_brake = false;
 static bool gm_volt_auto_hold = false;
+static bool gm_volt_one_pedal = false;
 
 static bool gm_cc_long = false;
 static bool gm_has_acc = true;
@@ -366,8 +367,9 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
     int brake = ((msg->data[0] & 0xFU) << 8) + msg->data[1];
     brake = (0x1000 - brake) & 0xFFF;
     bool stock_auto_hold_brake_allowed = gm_volt_auto_hold && !vehicle_moving && !gas_pressed_prev;
+    bool stock_one_pedal_brake_allowed = gm_volt_one_pedal && acc_main_on && !gas_pressed_prev && !brake_pressed;
     bool violation = false;
-    violation |= !(get_longitudinal_allowed() || stock_auto_hold_brake_allowed) && (brake != 0);
+    violation |= !(get_longitudinal_allowed() || stock_auto_hold_brake_allowed || stock_one_pedal_brake_allowed) && (brake != 0);
     if (stock_auto_hold_brake_allowed && !get_longitudinal_allowed()) {
       violation |= brake > GM_VOLT_AUTO_HOLD_MAX_BRAKE;
     } else {
@@ -699,6 +701,10 @@ static safety_config gm_init(uint16_t param) {
   gm_panda_paddle_sched = GET_FLAG(param, GM_PARAM_PANDA_PADDLE_SCHED) && gm_pedal_long && enable_gas_interceptor;
   // Reuse the paddle-scheduler bit as a stock-Volt auto-hold marker on non-pedal ACC paths.
   gm_volt_auto_hold = GET_FLAG(param, GM_PARAM_PANDA_PADDLE_SCHED) && !gm_pedal_long && !gm_cc_long && gm_has_acc;
+  // Reuse the 3D1 scheduler bit as a stock-Volt one-pedal marker on non-pedal
+  // ACC paths. The actual 3D1 scheduler still requires pedal-long and no-ACC,
+  // so this stays isolated from the Bolt pedal path.
+  gm_volt_one_pedal = GET_FLAG(param, GM_PARAM_PANDA_3D1_SCHED) && !gm_pedal_long && !gm_cc_long && gm_has_acc;
   gm_alt_brake = GET_FLAG(param, GM_PARAM_NO_CAMERA) && (gm_hw == GM_ASCM) && !gm_sdgm && !gm_ascm_int;
 
   gm_3d1_spoof_valid = false;
@@ -740,9 +746,10 @@ static safety_config gm_init(uint16_t param) {
 
   safety_config ret;
   const bool gm_sdgm_stock = gm_sdgm && !gm_cc_long && !gm_cam_long && !gm_no_camera;
+  const bool gm_volt_stock_brake = gm_volt_auto_hold || gm_volt_one_pedal;
   // SDGM behaves like a forwarding camera path for whitelist/forwarding purposes.
   if (gm_sdgm_stock) {
-    if (gm_volt_auto_hold) {
+    if (gm_volt_stock_brake) {
       ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_SDGM_VOLT_AUTO_HOLD_TX_MSGS);
     } else {
       ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_SDGM_TX_MSGS);
@@ -764,16 +771,16 @@ static safety_config gm_init(uint16_t param) {
         ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_TX_MSGS);
       }
     } else {
-      if (gm_volt_auto_hold && gm_sdgm) {
+      if (gm_volt_stock_brake && gm_sdgm) {
         ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_SDGM_VOLT_AUTO_HOLD_TX_MSGS);
       } else if (gm_no_camera) {
-        if (gm_volt_auto_hold) {
+        if (gm_volt_stock_brake) {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_NO_CAMERA_VOLT_AUTO_HOLD_TX_MSGS);
         } else {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_NO_CAMERA_TX_MSGS);
         }
       } else {
-        if (gm_volt_auto_hold) {
+        if (gm_volt_stock_brake) {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_VOLT_AUTO_HOLD_TX_MSGS);
         } else {
           ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_TX_MSGS);
