@@ -1446,7 +1446,7 @@ class LongitudinalPlanner:
     if gap_error > gap_buffer:
       return None
 
-    if current_source == "cruise" and tracking_lead_active and self.is_comfortable_accelerating_away_follow(lead, v_ego, t_follow):
+    if tracking_lead_active and self.is_comfortable_accelerating_away_follow(lead, v_ego, t_follow):
       return None
     if current_source == "cruise" and self.spacious_follow_cap_bypass_active(lead, v_ego, t_follow, tracking_lead_active):
       return None

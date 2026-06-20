@@ -2447,6 +2447,27 @@ def test_route_8bc6_catchup_cap_skips_slightly_negative_delta_when_lead_accelera
   assert cap is None
 
 
+def test_route_8bc6_catchup_cap_skips_comfortable_accelerating_lead_when_source_flips_to_lead0():
+  v_ego = 24.361867904663086
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead = make_lead(
+    status=True, d_rel=38.5, v_lead=24.46365737915039,
+    a_lead=0.4625629186630249, radar=True, model_prob=1.0, y_rel=0.0,
+  )
+
+  cap = planner.get_lead_catchup_accel_cap(
+    lead,
+    v_ego,
+    1.3549551963806152,
+    current_source="lead0",
+    tracking_lead_active=True,
+  )
+
+  assert planner.is_comfortable_accelerating_away_follow(lead, v_ego, 1.3549551963806152)
+  assert cap is None
+
+
 def test_route_8bc6_radar_matched_follow_catchup_cap_skips_buffer_edge_square_wave():
   v_ego = 22.0
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
