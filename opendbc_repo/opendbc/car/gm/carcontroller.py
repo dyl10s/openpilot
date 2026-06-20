@@ -912,9 +912,7 @@ class CarController(CarControllerBase):
             # GasRegenCmdActive needs to be 1 to avoid cruise faults. It describes the ACC state, not actuation
             can_sends.append(gmcan.create_gas_regen_command(
               self.packer_pt, CanBus.POWERTRAIN, self.apply_gas, idx, acc_engaged, at_full_stop,
-              include_always_one3=self.CP.carFingerprint in kaofui_cars,
-              use_volt_layout=self.is_volt and self.CP.carFingerprint != CAR.CHEVROLET_VOLT_2019,
-              use_generated_layout=self.CP.carFingerprint == CAR.CHEVROLET_VOLT_2019))
+              include_always_one3=self.CP.carFingerprint in kaofui_cars, use_volt_layout=self.is_volt))
             can_sends.append(gmcan.create_friction_brake_command(self.packer_ch, friction_brake_bus, self.apply_brake,
                                                                idx, CC.enabled, near_stop, at_full_stop, self.CP,
                                                                allow_near_stop_mode=volt_one_pedal_braking))

@@ -62,13 +62,13 @@ class TestGMCan:
     assert dat.hex() == "20000000000000"
 
 
-  def test_gas_regen_command_matches_generated_volt_2019_layout(self):
+  def test_gas_regen_command_matches_starpilot_volt_2019(self):
     packer = CANPacker(DBC[CAR.CHEVROLET_VOLT_2019]["pt"])
-    addr, dat, bus = gmcan.create_gas_regen_command(packer, 0, 5000, 1, True, False, include_always_one3=True, use_generated_layout=True)
+    addr, dat, bus = gmcan.create_gas_regen_command(packer, 0, 5000, 1, True, False, include_always_one3=True, use_volt_layout=True)
 
     assert addr == 0x2CB
     assert bus == 0
-    assert dat.hex() == "41435c7000bca38f"
+    assert dat.hex() == "41429c4000bd63bf"
 
   def test_gas_regen_command_matches_starpilot_volt_ascm(self):
     packer = CANPacker(DBC[CAR.CHEVROLET_VOLT_ASCM]["pt"])
