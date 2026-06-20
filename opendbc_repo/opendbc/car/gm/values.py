@@ -174,6 +174,8 @@ class GMSafetyFlags(IntFlag):
   FLAG_GM_BOLT_2022_PEDAL = 4096
   FLAG_GM_REMOTE_START_BOOTS_COMMA = 8192
   FLAG_GM_PANDA_3D1_SCHED = 16384
+  # Context-specific alias: the 3D1 scheduler remains inactive on this camera-long ACC path.
+  FLAG_GM_LACROSSE_RADAR = 16384
   FLAG_GM_PANDA_PADDLE_SCHED = 32768
 
 

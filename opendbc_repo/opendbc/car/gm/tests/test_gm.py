@@ -139,6 +139,24 @@ class TestGMInterface:
     assert list(car_params.longitudinalTuning.kiBP) == pytest.approx([0.0, 5.0, 15.0, 35.0])
     assert list(car_params.longitudinalTuning.kiV) == pytest.approx([0.28, 0.26, 0.20, 0.16])
 
+  def test_lacrosse_radar_marker_is_not_set_on_volt_ascm(self):
+    fingerprint = _empty_fingerprint()
+    fingerprint[0][0x2FF] = 8
+
+    LacrosseInterface = interfaces[CAR.BUICK_LACROSSE_ASCM]
+    lacrosse_params = LacrosseInterface.get_params(
+      CAR.BUICK_LACROSSE_ASCM, fingerprint, [], alpha_long=True, is_release=False, docs=False,
+      starpilot_toggles=_test_starpilot_toggles(),
+    )
+    VoltInterface = interfaces[CAR.CHEVROLET_VOLT_ASCM]
+    volt_params = VoltInterface.get_params(
+      CAR.CHEVROLET_VOLT_ASCM, fingerprint, [], alpha_long=True, is_release=False, docs=False,
+      starpilot_toggles=_test_starpilot_toggles(),
+    )
+
+    assert lacrosse_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_LACROSSE_RADAR.value
+    assert not volt_params.safetyConfigs[0].safetyParam & GMSafetyFlags.FLAG_GM_LACROSSE_RADAR.value
+
   def test_blazer_uses_earlier_stronger_low_speed_stop_tune(self):
     CarInterface = interfaces[CAR.CHEVROLET_BLAZER]
     fingerprint = _empty_fingerprint()

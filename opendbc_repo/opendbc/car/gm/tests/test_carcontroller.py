@@ -47,6 +47,7 @@ from opendbc.car.gm.carcontroller import (
   should_activate_auto_hold,
   should_activate_volt_one_pedal,
   should_neutralize_volt_long_on_driver_override,
+  should_send_adas_status,
   should_send_stock_long_cancel,
   should_spoof_dash_speed,
   should_spoof_ecm_cruise_status,
@@ -151,6 +152,16 @@ def test_live_camera_path_does_not_send_pt_keepalive():
   cp = SimpleNamespace(networkLocation=CarParams.NetworkLocation.fwdCamera, flags=0)
 
   assert get_adas_keepalive_step(cp, is_kaofui_car=True) is None
+
+
+def test_only_lacrosse_ascm_int_sends_radar_status():
+  common = {
+    "networkLocation": CarParams.NetworkLocation.fwdCamera,
+    "radarUnavailable": False,
+  }
+
+  assert should_send_adas_status(SimpleNamespace(carFingerprint=CAR.BUICK_LACROSSE_ASCM, **common), is_kaofui_car=True)
+  assert not should_send_adas_status(SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_ASCM, **common), is_kaofui_car=True)
 
 
 def test_volt_auto_hold_requires_toggle_supported_non_cc_only_volt_and_stock_safety():

@@ -675,6 +675,9 @@ class CarInterface(CarInterfaceBase):
     if remote_start_boots_comma:
       ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_REMOTE_START_BOOTS_COMMA.value
 
+    if candidate == CAR.BUICK_LACROSSE_ASCM:
+      ret.safetyConfigs[0].safetyParam |= GMSafetyFlags.FLAG_GM_LACROSSE_RADAR.value
+
     volt_stock_friction_brake_safety = (
       (gm_auto_hold or volt_one_pedal_mode) and
       candidate in {

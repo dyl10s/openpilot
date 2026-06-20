@@ -149,6 +149,19 @@ def get_adas_keepalive_step(CP, is_kaofui_car):
   return None
 
 
+def should_send_adas_status(CP, is_kaofui_car):
+  if CP.radarUnavailable:
+    return False
+
+  if not is_kaofui_car:
+    return True
+
+  if CP.carFingerprint in ASCM_INT:
+    return CP.carFingerprint == CAR.BUICK_LACROSSE_ASCM
+
+  return CP.networkLocation != NetworkLocation.fwdCamera and CP.carFingerprint not in SDGM_CAR
+
+
 def get_testing_ground_1_brake_switch_bias(v_ego: float) -> int:
   return int(round(np.interp(v_ego, [0.0, 6.0, 15.0, 30.0], [40.0, 85.0, 130.0, 170.0])))
 
@@ -908,33 +921,27 @@ class CarController(CarControllerBase):
 
       # Radar needs to know current speed and yaw rate (50hz),
       # and that ADAS is alive (10hz)
-      if not self.CP.radarUnavailable:
-        send_adas = True
+      if should_send_adas_status(self.CP, self.CP.carFingerprint in kaofui_cars):
+        tt = self.frame * DT_CTRL
         if self.CP.carFingerprint in kaofui_cars:
-          if self.CP.carFingerprint not in ASCM_INT:
-            send_adas = (self.CP.networkLocation != NetworkLocation.fwdCamera) and (self.CP.carFingerprint not in SDGM_CAR)
-
-        if send_adas:
-          tt = self.frame * DT_CTRL
-          if self.CP.carFingerprint in kaofui_cars:
-            time_and_headlights_step = 10
-            speed_and_accelerometer_step = 2
-            if self.frame % time_and_headlights_step == 0:
-              idx = (self.frame // time_and_headlights_step) % 4
-              can_sends.append(gmcan.create_adas_time_status(CanBus.OBSTACLE, int((tt - self.start_time) * 60), idx))
-              can_sends.append(gmcan.create_adas_headlights_status(self.packer_obj, CanBus.OBSTACLE))
-            if self.frame % speed_and_accelerometer_step == 0:
-              idx = (self.frame // speed_and_accelerometer_step) % 4
-              can_sends.append(gmcan.create_adas_steering_status(CanBus.OBSTACLE, idx))
-              can_sends.append(gmcan.create_adas_accelerometer_speed_status(CanBus.OBSTACLE, CS.out.vEgo, idx))
-          else:
-            time_and_headlights_step = 20
-            if self.frame % time_and_headlights_step == 0:
-              idx = (self.frame // time_and_headlights_step) % 4
-              can_sends.append(gmcan.create_adas_time_status(CanBus.OBSTACLE, int((tt - self.start_time) * 60), idx))
-              can_sends.append(gmcan.create_adas_headlights_status(self.packer_obj, CanBus.OBSTACLE))
-              can_sends.append(gmcan.create_adas_steering_status(CanBus.OBSTACLE, idx))
-              can_sends.append(gmcan.create_adas_accelerometer_speed_status(CanBus.OBSTACLE, CS.out.vEgo, idx))
+          time_and_headlights_step = 10
+          speed_and_accelerometer_step = 2
+          if self.frame % time_and_headlights_step == 0:
+            idx = (self.frame // time_and_headlights_step) % 4
+            can_sends.append(gmcan.create_adas_time_status(CanBus.OBSTACLE, int((tt - self.start_time) * 60), idx))
+            can_sends.append(gmcan.create_adas_headlights_status(self.packer_obj, CanBus.OBSTACLE))
+          if self.frame % speed_and_accelerometer_step == 0:
+            idx = (self.frame // speed_and_accelerometer_step) % 4
+            can_sends.append(gmcan.create_adas_steering_status(CanBus.OBSTACLE, idx))
+            can_sends.append(gmcan.create_adas_accelerometer_speed_status(CanBus.OBSTACLE, CS.out.vEgo, idx))
+        else:
+          time_and_headlights_step = 20
+          if self.frame % time_and_headlights_step == 0:
+            idx = (self.frame // time_and_headlights_step) % 4
+            can_sends.append(gmcan.create_adas_time_status(CanBus.OBSTACLE, int((tt - self.start_time) * 60), idx))
+            can_sends.append(gmcan.create_adas_headlights_status(self.packer_obj, CanBus.OBSTACLE))
+            can_sends.append(gmcan.create_adas_steering_status(CanBus.OBSTACLE, idx))
+            can_sends.append(gmcan.create_adas_accelerometer_speed_status(CanBus.OBSTACLE, CS.out.vEgo, idx))
 
       keepalive_step = get_adas_keepalive_step(self.CP, self.CP.carFingerprint in kaofui_cars)
       if keepalive_step is not None and self.frame % keepalive_step == 0:
