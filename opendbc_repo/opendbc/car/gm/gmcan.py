@@ -360,28 +360,27 @@ def create_prndl2_command(packer, bus, press_regen_paddle, CP):
     prndl2_value = 5 if press_regen_paddle else 6
   else:
     prndl2_value = 7 if press_regen_paddle else 6
-  manual_mode = 1 if press_regen_paddle else 0
-  values = {
-    "Byte0": 0x0C,
-    "Byte1": 0x0C,
-    "Byte2": 0x00,
-    "PRNDL2": prndl2_value,
-    "Byte4": 0x00,
-    "ManualMode": manual_mode,
-    "TransmissionState": 1,
-    "Byte7": 0x00,
-  }
-  return packer.make_can_msg("ECMPRDNL2", bus, values)
+  dat = bytes([
+    0x0C,
+    0x0C,
+    0x00,
+    prndl2_value,
+    0x00,
+    0x02 if press_regen_paddle else 0x00,
+    0x01,
+    0x00,
+  ])
+  return CanData(0x1F5, dat, bus)
 
 
 def create_regen_paddle_command(packer, bus, press_regen_paddle):
-  values = {
-    "RegenPaddle": 2 if press_regen_paddle else 0,
-    "Byte1": 0,
-    "Byte2": 0,
-    "Byte3": 0,
-    "Byte4": 0,
-    "Byte5": 0,
-    "Byte6": 0,
-  }
-  return packer.make_can_msg("EBCMRegenPaddle", bus, values)
+  dat = bytes([
+    0x20 if press_regen_paddle else 0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+  ])
+  return CanData(0xBD, dat, bus)
