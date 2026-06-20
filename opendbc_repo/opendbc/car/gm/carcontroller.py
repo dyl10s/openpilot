@@ -157,7 +157,7 @@ def should_send_adas_status(CP, is_kaofui_car):
     return True
 
   if CP.carFingerprint in ASCM_INT:
-    return CP.carFingerprint == CAR.BUICK_LACROSSE_ASCM
+    return False
 
   return CP.networkLocation != NetworkLocation.fwdCamera and CP.carFingerprint not in SDGM_CAR
 
@@ -259,7 +259,11 @@ def should_activate_auto_hold(hold_ready: bool, auto_hold_armed: bool, auto_hold
   )
 
 
-def should_neutralize_volt_long_on_driver_override(CP, gas_pressed: bool, brake_pressed: bool) -> bool:
+def should_neutralize_volt_long_on_driver_override(CP, gas_pressed: bool, brake_pressed: bool,
+                                                   gear_shifter=None) -> bool:
+  if CP.carFingerprint == CAR.CHEVROLET_VOLT_2019 and gear_shifter not in AUTO_HOLD_DRIVE_GEARS:
+    return False
+
   return (
     CP.carFingerprint in AUTO_HOLD_VOLT_CARS and
     not CP.enableGasInterceptorDEPRECATED and
@@ -821,7 +825,7 @@ class CarController(CarControllerBase):
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = max(self.apply_brake, self.volt_one_pedal_brake)
 
-        if should_neutralize_volt_long_on_driver_override(self.CP, CS.out.gasPressed, CS.out.brakePressed):
+        if should_neutralize_volt_long_on_driver_override(self.CP, CS.out.gasPressed, CS.out.brakePressed, CS.out.gearShifter):
           self.apply_gas = self.params.MAX_ACC_REGEN
           self.apply_brake = 0
 

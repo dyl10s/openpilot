@@ -545,7 +545,6 @@ static safety_config gm_init(uint16_t param) {
   const uint16_t GM_PARAM_BOLT_2022_PEDAL = 4096;
   const uint16_t GM_PARAM_REMOTE_START_BOOTS_COMMA = 8192;
   const uint16_t GM_PARAM_PANDA_3D1_SCHED = 16384;
-  const uint16_t GM_PARAM_LACROSSE_RADAR = 16384;
   const uint16_t GM_PARAM_PANDA_PADDLE_SCHED = 32768;
 
   static const LongitudinalLimits GM_ASCM_LONG_LIMITS = {
@@ -582,11 +581,6 @@ static safety_config gm_init(uint16_t param) {
                                                {0x184, 2, 8, .check_relay = true},  // camera bus
                                                {0x200, 0, 6, .check_relay = false}, {0x1E1, 0, 7, .check_relay = false},
                                                {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
-  static const CanMsg GM_CAM_LONG_LACROSSE_RADAR_TX_MSGS[] = {{0x180, 0, 4, .check_relay = true}, {0x315, 0, 5, .check_relay = true}, {0x2CB, 0, 8, .check_relay = true}, {0x370, 0, 6, .check_relay = true}, {0x3D1, 0, 8, .check_relay = false},  // pt bus
-                                                                {0xA1, 1, 7, .check_relay = false}, {0x306, 1, 8, .check_relay = false}, {0x308, 1, 7, .check_relay = false}, {0x310, 1, 2, .check_relay = false},  // obs bus
-                                                                {0x184, 2, 8, .check_relay = true},  // camera bus
-                                                                {0x200, 0, 6, .check_relay = false}, {0x1E1, 0, 7, .check_relay = false},
-                                                                {0xBD, 0, 7, .check_relay = false}, {0x1F5, 0, 8, .check_relay = false}};  // pt bus
 
   static const CanMsg GM_CAM_LONG_NO_CAMERA_TX_MSGS[] = {{0x180, 0, 4, .check_relay = false}, {0x315, 0, 5, .check_relay = false}, {0x2CB, 0, 8, .check_relay = false}, {0x370, 0, 6, .check_relay = false}, {0x3D1, 0, 8, .check_relay = false},  // pt bus
                                                          {0x409, 0, 7, .check_relay = false}, {0x40A, 0, 7, .check_relay = false},
@@ -733,7 +727,6 @@ static safety_config gm_init(uint16_t param) {
   gm_zero_u8(gm_prndl2_state.spoof_data, 8U);
 
   gm_cam_long = GET_FLAG(param, GM_PARAM_HW_CAM_LONG) && !gm_cc_long;
-  const bool gm_lacrosse_radar = GET_FLAG(param, GM_PARAM_LACROSSE_RADAR) && gm_ascm_int && gm_cam_long;
   gm_pcm_cruise = (gm_hw == GM_CAM || gm_sdgm) && !gm_cam_long && !gm_force_ascm && !gm_pedal_long;
   const bool gm_ascm_int_stock_cam = gm_ascm_int && (gm_hw == GM_CAM) && gm_pcm_cruise && !gm_cam_long && !gm_pedal_long && !gm_cc_long;
   const bool gm_ascm_int_no_accel_pos = gm_ascm_int && (gm_hw == GM_CAM) && gm_force_brake_c9;
@@ -767,8 +760,6 @@ static safety_config gm_init(uint16_t param) {
     } else if (gm_cam_long) {
       if (gm_no_camera) {
         ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_NO_CAMERA_TX_MSGS);
-      } else if (gm_lacrosse_radar) {
-        ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_LACROSSE_RADAR_TX_MSGS);
       } else {
         ret = BUILD_SAFETY_CFG(gm_rx_checks, GM_CAM_LONG_TX_MSGS);
       }

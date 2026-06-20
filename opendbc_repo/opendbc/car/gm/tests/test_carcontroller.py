@@ -154,13 +154,13 @@ def test_live_camera_path_does_not_send_pt_keepalive():
   assert get_adas_keepalive_step(cp, is_kaofui_car=True) is None
 
 
-def test_only_lacrosse_ascm_int_sends_radar_status():
+def test_ascm_int_cars_do_not_send_radar_status():
   common = {
     "networkLocation": CarParams.NetworkLocation.fwdCamera,
     "radarUnavailable": False,
   }
 
-  assert should_send_adas_status(SimpleNamespace(carFingerprint=CAR.BUICK_LACROSSE_ASCM, **common), is_kaofui_car=True)
+  assert not should_send_adas_status(SimpleNamespace(carFingerprint=CAR.BUICK_LACROSSE_ASCM, **common), is_kaofui_car=True)
   assert not should_send_adas_status(SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_ASCM, **common), is_kaofui_car=True)
 
 
@@ -496,6 +496,16 @@ def test_volt_driver_override_neutralization_applies_on_stock_acc_path():
   )
 
 
+def test_volt_2019_driver_override_neutralization_skips_park_but_keeps_drive():
+  CP = SimpleNamespace(
+    carFingerprint=CAR.CHEVROLET_VOLT_2019,
+    enableGasInterceptorDEPRECATED=False,
+  )
+
+  assert not should_neutralize_volt_long_on_driver_override(CP, False, True, structs.CarState.GearShifter.park)
+  assert should_neutralize_volt_long_on_driver_override(CP, False, True, structs.CarState.GearShifter.drive)
+
+
 def test_volt_driver_override_neutralization_skips_pedal_and_non_volt_paths():
   assert not should_neutralize_volt_long_on_driver_override(
     SimpleNamespace(
@@ -504,6 +514,15 @@ def test_volt_driver_override_neutralization_skips_pedal_and_non_volt_paths():
     ),
     True,
     False,
+  )
+  assert should_neutralize_volt_long_on_driver_override(
+    SimpleNamespace(
+      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
+      enableGasInterceptorDEPRECATED=False,
+    ),
+    False,
+    True,
+    structs.CarState.GearShifter.park,
   )
   assert not should_neutralize_volt_long_on_driver_override(
     SimpleNamespace(
