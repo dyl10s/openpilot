@@ -82,6 +82,7 @@ from openpilot.starpilot.common.testing_grounds import (
 from openpilot.starpilot.navigation.destination_store import normalize_destination_payload, update_recent_destinations
 from openpilot.starpilot.system.the_galaxy.factory_reset import remove_path as _run_factory_reset_delete
 from openpilot.starpilot.system.the_galaxy import utilities
+from openpilot.starpilot.system.the_galaxy.update_recovery import inspect_interrupted_update, public_recovery_status, recover_interrupted_update
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
@@ -1091,6 +1092,15 @@ def _set_fast_update_state(**kwargs):
 def _get_fast_update_state():
   with _fast_update_lock:
     return dict(_fast_update_state)
+
+def _get_interrupted_update_recovery(repo_path, state_data):
+  recovery_status = inspect_interrupted_update(
+    repo_path,
+    is_onroad=_safe_params_get_bool("IsOnroad"),
+    update_running=bool(state_data.get("running")),
+    updater_state=_safe_params_get("UpdaterState", encoding="utf-8", default=""),
+  )
+  return public_recovery_status(recovery_status)
 
 def _set_fast_update_progress(step, label, step_percent=0.0, detail=""):
   safe_step = max(1, min(_FAST_UPDATE_TOTAL_STEPS, int(step)))
@@ -5317,13 +5327,56 @@ def setup(app):
   @app.route("/api/update/fast/status", methods=["GET"])
   def get_fast_update_status():
     state_data = _get_fast_update_state()
+    repo_path = str(_get_openpilot_root())
     git_data = _collect_fast_update_info(include_remote=not state_data.get("running", False))
     return jsonify({
       **state_data,
       **git_data,
       "isOnroad": _safe_params_get_bool("IsOnroad"),
       "automaticUpdates": _safe_params_get_bool("AutomaticUpdates"),
+      "interruptedUpdateRecovery": _get_interrupted_update_recovery(repo_path, state_data),
       "warning": "Fast update skips backup creation and finalization safeguards.",
+    }), 200
+
+  @app.route("/api/update/recover", methods=["POST"])
+  def recover_update():
+    if _safe_params_get_bool("IsOnroad"):
+      return jsonify({"error": "Cannot recover an interrupted update while driving."}), 409
+
+    repo_path = str(_get_openpilot_root())
+    with _fast_update_lock:
+      if _fast_update_state.get("running"):
+        return jsonify({"error": "An update action is still in progress."}), 409
+
+      recovered, recovery_status = recover_interrupted_update(
+        repo_path,
+        is_onroad=False,
+        update_running=False,
+        updater_state=_safe_params_get("UpdaterState", encoding="utf-8", default=""),
+      )
+      if not recovered:
+        return jsonify({
+          "error": recovery_status.get("reason") or "The interrupted update could not be recovered safely.",
+          "interruptedUpdateRecovery": recovery_status,
+        }), 409
+
+      _fast_update_state.update({
+        "running": False,
+        "stage": "idle",
+        "message": "Interrupted update recovered. Ready to retry.",
+        "lastError": "",
+        "finishedAt": time.time(),
+        "progressStep": 0,
+        "progressTotalSteps": _FAST_UPDATE_TOTAL_STEPS,
+        "progressStepPercent": 0.0,
+        "progressPercent": 0.0,
+        "progressLabel": "Ready",
+        "progressDetail": "Abandoned update lock cleared safely.",
+      })
+
+    return jsonify({
+      "message": "Interrupted update recovered. Retrying now...",
+      "interruptedUpdateRecovery": recovery_status,
     }), 200
 
   @app.route("/api/update/branches", methods=["GET"])

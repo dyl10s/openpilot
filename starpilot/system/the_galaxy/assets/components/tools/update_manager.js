@@ -16,6 +16,7 @@ const state = reactive({
   branchesBusy: false,
   switchBusy: false,
   rollbackBusy: false,
+  recoveryBusy: false,
 })
 
 let initialized = false
@@ -128,6 +129,7 @@ function hasRecordedRollbackTarget() {
 
 function shouldShowPrimaryUpdateAction() {
   if (state.status?.running) return true
+  if (state.status?.interruptedUpdateRecovery?.detected) return false
   if (isSelectedBranchDifferent()) return true
   return !!state.checkedForUpdates && !!state.status?.updateAvailable
 }
@@ -137,7 +139,10 @@ function isFactoryResetStatusActive() {
 }
 
 function shouldContinuePolling() {
-  return !!state.status?.running || state.status?.stage === "rebooting" || reconnectPending
+  return !!state.status?.running
+    || state.status?.stage === "rebooting"
+    || !!state.status?.interruptedUpdateRecovery?.detected
+    || reconnectPending
 }
 
 function shouldShowRebootNotice() {
@@ -372,7 +377,7 @@ async function setAutomaticUpdates(enabled) {
   }
 }
 
-async function runFastUpdate() {
+async function runFastUpdate(skipConfirmation = false) {
   if (state.updateBusy) return
   if (state.status?.running) {
     showSnackbar("Fast update is already running.")
@@ -383,13 +388,15 @@ async function runFastUpdate() {
     return
   }
 
-  const confirmed = window.confirm(
-    "Fast update warning:\n\n" +
-    "- This update method skips backup creation.\n" +
-    "- Your device will reboot when the update is done.\n\n" +
-    "Continue with fast update?"
-  )
-  if (!confirmed) return
+  if (!skipConfirmation) {
+    const confirmed = window.confirm(
+      "Fast update warning:\n\n" +
+      "- This update method skips backup creation.\n" +
+      "- Your device will reboot when the update is done.\n\n" +
+      "Continue with fast update?"
+    )
+    if (!confirmed) return
+  }
 
   state.updateBusy = true
   try {
@@ -425,7 +432,7 @@ async function runFastUpdate() {
   }
 }
 
-async function runBranchSwitch() {
+async function runBranchSwitch(skipConfirmation = false) {
   if (state.switchBusy) return
   if (state.status?.running) {
     showSnackbar("An update action is already running.")
@@ -444,13 +451,15 @@ async function runBranchSwitch() {
 
   const currentBranch = String(state.status?.branch || "").trim()
   const actionLabel = currentBranch && currentBranch === targetBranch ? "update" : "switch and update"
-  const confirmed = window.confirm(
-    `This will ${actionLabel} to the '${targetBranch}' branch.\n\n` +
-    "- This update method skips backup creation.\n" +
-    "- Your device will reboot when the update is done.\n\n" +
-    "Continue?"
-  )
-  if (!confirmed) return
+  if (!skipConfirmation) {
+    const confirmed = window.confirm(
+      `This will ${actionLabel} to the '${targetBranch}' branch.\n\n` +
+      "- This update method skips backup creation.\n" +
+      "- Your device will reboot when the update is done.\n\n" +
+      "Continue?"
+    )
+    if (!confirmed) return
+  }
 
   state.switchBusy = true
   try {
@@ -490,7 +499,7 @@ async function runBranchSwitch() {
   }
 }
 
-async function runRollback() {
+async function runRollback(skipConfirmation = false) {
   if (state.rollbackBusy) return
   if (state.status?.running) {
     showSnackbar("An update action is already running.")
@@ -508,15 +517,17 @@ async function runRollback() {
     return
   }
 
-  const confirmed = window.confirm(
-    "Roll back to the previous installed version?\n\n" +
-    `Target: ${rollbackBranch || "Unknown"} @ ${shortHash(rollbackCommit)}\n\n` +
-    "- This restores the version this device was running before the last Galaxy update.\n" +
-    "- Automatic updates will be turned off.\n" +
-    "- Your device will reboot when the rollback is done.\n\n" +
-    "Continue?"
-  )
-  if (!confirmed) return
+  if (!skipConfirmation) {
+    const confirmed = window.confirm(
+      "Roll back to the previous installed version?\n\n" +
+      `Target: ${rollbackBranch || "Unknown"} @ ${shortHash(rollbackCommit)}\n\n` +
+      "- This restores the version this device was running before the last Galaxy update.\n" +
+      "- Automatic updates will be turned off.\n" +
+      "- Your device will reboot when the rollback is done.\n\n" +
+      "Continue?"
+    )
+    if (!confirmed) return
+  }
 
   state.rollbackBusy = true
   try {
@@ -551,6 +562,70 @@ async function runRollback() {
     showSnackbar(error?.message || "Failed to start rollback", "error")
   } finally {
     state.rollbackBusy = false
+  }
+}
+
+async function retryInterruptedUpdate() {
+  if (state.recoveryBusy) return
+  if (state.status?.isOnroad) {
+    showSnackbar("Actions are blocked while onroad.", "error")
+    return
+  }
+
+  const recovery = state.status?.interruptedUpdateRecovery || {}
+  if (!recovery.canRecover) {
+    showSnackbar(recovery.reason || "This update cannot be recovered safely yet.", "error")
+    return
+  }
+
+  const confirmed = window.confirm(
+    "Retry the interrupted update safely?\n\n" +
+    "Galaxy will verify that the vehicle is parked and no update or Git process is active. " +
+    "It will clear only the abandoned shallow-update lock, then retry the previous update action."
+  )
+  if (!confirmed) return
+
+  const previousMode = String(state.status?.lastMode || "").trim()
+  const previousBranch = String(state.status?.lastBranch || "").trim()
+  state.recoveryBusy = true
+  try {
+    const response = await fetch("/api/update/recover", { method: "POST" })
+    const payload = await readJsonPayload(response)
+    if (!response.ok) {
+      if (payload.interruptedUpdateRecovery) {
+        state.status = {
+          ...(state.status || {}),
+          interruptedUpdateRecovery: payload.interruptedUpdateRecovery,
+        }
+      }
+      throw new Error(payload.error || response.statusText || "Failed to recover interrupted update")
+    }
+
+    state.status = {
+      ...(state.status || {}),
+      running: false,
+      stage: "idle",
+      message: payload.message || "Interrupted update recovered. Retrying now...",
+      lastError: "",
+      interruptedUpdateRecovery: payload.interruptedUpdateRecovery || { detected: false, canRecover: false },
+    }
+    state.error = ""
+    showSnackbar(payload.message || "Interrupted update recovered. Retrying now...")
+
+    if (previousMode === "branch-switch" && previousBranch) {
+      state.selectedBranch = previousBranch
+      state.hasManualBranchSelection = true
+      await runBranchSwitch(true)
+    } else if (previousMode === "rollback" && state.status?.rollbackAvailable) {
+      await runRollback(true)
+    } else {
+      await runFastUpdate(true)
+    }
+  } catch (error) {
+    showSnackbar(error?.message || "Failed to recover interrupted update", "error")
+    await fetchStatus(false)
+  } finally {
+    state.recoveryBusy = false
   }
 }
 
@@ -696,6 +771,19 @@ export function UpdateManager() {
           ${() => !isFactoryResetStatusActive() && state.status?.lastError ? html`<p class="updateError"><strong>Last Error:</strong> ${state.status.lastError}</p>` : ""}
           ${() => state.error ? html`<p class="updateError"><strong>Error:</strong> ${state.error}</p>` : ""}
 
+          ${() => !state.status?.running && state.status?.interruptedUpdateRecovery?.detected ? html`
+            <div class="updateRecovery">
+              <strong>Interrupted update detected</strong>
+              <p>${state.status.interruptedUpdateRecovery.reason || "Galaxy found a shallow-update lock left by an interrupted update."}</p>
+              <button
+                class="updateButton"
+                disabled="${() => !!state.status?.isOnroad || !!state.status?.running || state.recoveryBusy || !state.status?.interruptedUpdateRecovery?.canRecover || false}"
+                @click="${() => retryInterruptedUpdate()}">
+                ${state.recoveryBusy ? "Checking..." : "Retry Update Safely"}
+              </button>
+            </div>
+          ` : ""}
+
           <div class="updateActions">
             ${() => !isSelectedBranchDifferent() ? html`
               <button class="updateButton" @click="${() => fetchStatus(true)}">
@@ -715,7 +803,7 @@ export function UpdateManager() {
               </button>
             ` : ""}
           </div>
-          ${() => !state.status?.running && !shouldShowPrimaryUpdateAction()
+          ${() => !state.status?.running && !state.status?.interruptedUpdateRecovery?.detected && !shouldShowPrimaryUpdateAction()
             ? html`<p class="updateHint">Run <strong>Check for Updates</strong> first, or select a different branch in advanced options.</p>`
             : ""}
           ${() => shouldShowRebootNotice()

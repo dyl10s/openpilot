@@ -136,6 +136,17 @@
   font-weight: var(--font-weight-bold);
 }
 
+.updateRecovery {
+  border-left: 3px solid var(--main-fg);
+  margin-top: var(--margin-base);
+  padding-left: var(--padding-base);
+}
+
+.updateRecovery p {
+  font-size: var(--font-size-sm);
+  margin: var(--margin-xs) 0 var(--margin-sm);
+}
+
 .updateFooter {
   border-top: 1px solid var(--track-color);
   margin-top: var(--margin-base);
