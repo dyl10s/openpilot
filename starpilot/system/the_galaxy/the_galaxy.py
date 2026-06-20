@@ -5225,6 +5225,48 @@ def setup(app):
     })
     return payload
 
+  @app.route("/api/stats/ignore_drive", methods=["POST"])
+  def ignore_drive_stats():
+    request_data = request.get_json() or {}
+    route_names = request_data.get("routeNames", [])
+    if not isinstance(route_names, list):
+      return jsonify({"error": "routeNames must be a list."}), 400
+
+    try:
+      ignored_routes = utilities.ignore_dashboard_routes(params, route_names)
+    except ValueError as exception:
+      return jsonify({"error": str(exception)}), 400
+
+    _STATS_RESPONSE_CACHE.update({
+      "updated_at": 0.0,
+      "payload": None,
+    })
+    return jsonify({
+      "message": "Drive statistics ignored.",
+      "routeNames": ignored_routes,
+    }), 200
+
+  @app.route("/api/stats/include_drive", methods=["POST"])
+  def include_drive_stats():
+    request_data = request.get_json() or {}
+    route_names = request_data.get("routeNames", [])
+    if not isinstance(route_names, list):
+      return jsonify({"error": "routeNames must be a list."}), 400
+
+    try:
+      included_routes = utilities.include_dashboard_routes(params, route_names)
+    except ValueError as exception:
+      return jsonify({"error": str(exception)}), 400
+
+    _STATS_RESPONSE_CACHE.update({
+      "updated_at": 0.0,
+      "payload": None,
+    })
+    return jsonify({
+      "message": "Drive statistics included.",
+      "routeNames": included_routes,
+    }), 200
+
   @app.route("/api/plots/live", methods=["GET"])
   def get_live_plots():
     _ensure_plots_worker()
