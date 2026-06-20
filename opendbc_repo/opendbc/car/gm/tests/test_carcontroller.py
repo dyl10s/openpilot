@@ -46,7 +46,6 @@ from opendbc.car.gm.carcontroller import (
   shape_truck_positive_accel,
   should_activate_auto_hold,
   should_activate_volt_one_pedal,
-  should_neutralize_volt_long_on_driver_override,
   should_send_adas_status,
   should_send_stock_long_cancel,
   should_spoof_dash_speed,
@@ -474,63 +473,6 @@ def test_volt_one_pedal_requires_time_in_drive_before_arming():
     True,
     structs.CarState.GearShifter.low,
     2.5,
-  )
-
-
-def test_volt_driver_override_neutralization_applies_on_stock_acc_path():
-  assert should_neutralize_volt_long_on_driver_override(
-    SimpleNamespace(
-      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
-      enableGasInterceptorDEPRECATED=False,
-    ),
-    True,
-    False,
-  )
-  assert should_neutralize_volt_long_on_driver_override(
-    SimpleNamespace(
-      carFingerprint=CAR.CHEVROLET_VOLT_CAMERA,
-      enableGasInterceptorDEPRECATED=False,
-    ),
-    False,
-    True,
-  )
-
-
-def test_volt_2019_driver_override_neutralization_skips_park_but_keeps_drive():
-  CP = SimpleNamespace(
-    carFingerprint=CAR.CHEVROLET_VOLT_2019,
-    enableGasInterceptorDEPRECATED=False,
-  )
-
-  assert not should_neutralize_volt_long_on_driver_override(CP, False, True, structs.CarState.GearShifter.park)
-  assert should_neutralize_volt_long_on_driver_override(CP, False, True, structs.CarState.GearShifter.drive)
-
-
-def test_volt_driver_override_neutralization_skips_pedal_and_non_volt_paths():
-  assert not should_neutralize_volt_long_on_driver_override(
-    SimpleNamespace(
-      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
-      enableGasInterceptorDEPRECATED=True,
-    ),
-    True,
-    False,
-  )
-  assert should_neutralize_volt_long_on_driver_override(
-    SimpleNamespace(
-      carFingerprint=CAR.CHEVROLET_VOLT_ASCM,
-      enableGasInterceptorDEPRECATED=False,
-    ),
-    False,
-    True,
-    structs.CarState.GearShifter.park,
-  )
-  assert not should_neutralize_volt_long_on_driver_override(
-    SimpleNamespace(
-      carFingerprint=CAR.CHEVROLET_BOLT_CC_2018_2021,
-      enableGasInterceptorDEPRECATED=False,
-    ),
-    True,
-    False,
   )
 
 

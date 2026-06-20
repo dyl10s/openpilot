@@ -259,18 +259,6 @@ def should_activate_auto_hold(hold_ready: bool, auto_hold_armed: bool, auto_hold
   )
 
 
-def should_neutralize_volt_long_on_driver_override(CP, gas_pressed: bool, brake_pressed: bool,
-                                                   gear_shifter=None) -> bool:
-  if CP.carFingerprint == CAR.CHEVROLET_VOLT_2019 and gear_shifter not in AUTO_HOLD_DRIVE_GEARS:
-    return False
-
-  return (
-    CP.carFingerprint in AUTO_HOLD_VOLT_CARS and
-    not CP.enableGasInterceptorDEPRECATED and
-    (gas_pressed or brake_pressed)
-  )
-
-
 def get_friction_brake_bus(CP):
   volt_gateway_alt_brake = (
     CP.carFingerprint == CAR.CHEVROLET_VOLT and
@@ -824,10 +812,6 @@ class CarController(CarControllerBase):
         if volt_one_pedal_braking:
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = max(self.apply_brake, self.volt_one_pedal_brake)
-
-        if should_neutralize_volt_long_on_driver_override(self.CP, CS.out.gasPressed, CS.out.brakePressed, CS.out.gearShifter):
-          self.apply_gas = self.params.MAX_ACC_REGEN
-          self.apply_brake = 0
 
         maneuver_sng_launch = self.longitudinal_maneuver_mode and self.is_volt
         if (

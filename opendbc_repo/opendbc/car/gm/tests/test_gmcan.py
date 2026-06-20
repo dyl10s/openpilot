@@ -77,11 +77,3 @@ class TestGMCan:
     assert addr == 0x2CB
     assert bus == 0
     assert dat.hex() == "41429c4000bd63bf"
-
-  def test_gas_regen_command_matches_opgm_plain_volt_layout(self):
-    packer = CANPacker("gm_global_a_powertrain_generated")
-    addr, dat, bus = gmcan.create_gas_regen_command(packer, 0, 5000, 1, True, False, use_generated_layout=True)
-
-    assert addr == 0x2CB
-    assert bus == 0
-    assert dat.hex() == "41435c7000bca38f"

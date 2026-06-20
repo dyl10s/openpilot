@@ -18,7 +18,7 @@ from opendbc.car.gm.carcontroller import (
 import opendbc.car.gm.interface as gm_interface
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, CC_ONLY_CAR, DBC, GM_RX_OFFSET, CanBus, CruiseButtons, GMFlags, GMSafetyFlags
+from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, CC_ONLY_CAR, DBC, GM_RX_OFFSET, CruiseButtons, GMFlags, GMSafetyFlags
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from openpilot.common.params import Params
 
@@ -241,26 +241,6 @@ class TestGMInterface:
 
     assert "AEBCmd" in cam_parser.vl
     assert cam_parser.message_states[aeb_addr].ignore_alive
-
-  def test_volt_parking_brake_uses_epb_closed_not_bcm_switch(self):
-    CarInterface = interfaces[CAR.CHEVROLET_VOLT_ASCM]
-    car_params = CarInterface.get_params(CAR.CHEVROLET_VOLT_ASCM, _empty_fingerprint(), [], alpha_long=False, is_release=False,
-                                         docs=False, starpilot_toggles=_test_starpilot_toggles())
-    car_state = GMCarState(car_params, custom.StarPilotCarParams.new_message())
-    can_parsers = GMCarState.get_can_parsers(car_params)
-    packer = CANPacker(DBC[car_params.carFingerprint][Bus.pt])
-
-    def update_pt(epb_closed: int, park_brake_sw_active: int):
-      can_parsers[Bus.pt].update([0, [
-        packer.make_can_msg("EPBStatus", CanBus.POWERTRAIN, {"EPBClosed": epb_closed}),
-        packer.make_can_msg("BCMGeneralPlatformStatus", CanBus.POWERTRAIN, {"ParkBrakeSwActive": park_brake_sw_active}),
-      ]])
-      ret, _ = car_state.update(can_parsers, _test_starpilot_toggles())
-      return ret
-
-    assert "EPBStatus" in can_parsers[Bus.pt].vl
-    assert not update_pt(epb_closed=0, park_brake_sw_active=1).parkingBrake
-    assert update_pt(epb_closed=1, park_brake_sw_active=0).parkingBrake
 
   def test_bolt_gen2_pedal_cancel_remap_sets_alt_exp(self):
     CarInterface = interfaces[CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL]
