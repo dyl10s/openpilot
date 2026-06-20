@@ -962,6 +962,123 @@ def test_lightweight_route_update_preserves_parsed_duration():
   assert stats["routes"]["route-1"]["analysisComplete"] is True
 
 
+def test_log_wall_time_overrides_bad_filesystem_route_time():
+  bad_modified = utilities.datetime(2025, 7, 2, 12, 0, 0).timestamp()
+  wall_start = utilities.datetime(2026, 6, 20, 2, 55, 15).timestamp()
+  route_info = {
+    "name": "00000764--badtime--0",
+    "segments": [],
+    "segmentCount": 1,
+    "analysisSegmentCount": 1,
+    "modifiedAt": bad_modified,
+  }
+  messages = [
+    msg("initData", 10.0, SimpleNamespace(
+      params={"DrivingModelName": b"Pop Model V2"},
+      wallTimeNanos=int(wall_start * 1e9),
+    )),
+    msg("carState", 11.0, SimpleNamespace(vEgo=10.0)),
+    msg("carState", 13.0, SimpleNamespace(vEgo=10.0)),
+  ]
+
+  drive = utilities._analyze_route_messages(messages, route_info, {}, is_metric=False)
+
+  assert drive["date"].startswith("2026-06-20T02:55:15")
+  assert drive["timeSource"] == utilities.DASHBOARD_TIME_SOURCE_LOG
+  assert drive["model"] == "Pop Model V2"
+
+
+def test_invalid_filesystem_route_time_is_not_persisted():
+  params = FakeParams()
+  route_info = {
+    "name": "00000764--badtime--0",
+    "segments": [],
+    "segmentCount": 1,
+    "startedAt": utilities.datetime(2025, 7, 2, 12, 0, 0),
+    "modifiedAt": utilities.datetime(2025, 7, 2, 12, 1, 0).timestamp(),
+  }
+
+  shell_drive = utilities._route_shell_drive(route_info, params, {}, is_metric=False)
+  stats = utilities._update_dashboard_persistent_stats(params, [shell_drive], wall_now=utilities.datetime(2026, 6, 20, 12, 0, 0).timestamp())
+
+  assert shell_drive["date"] == ""
+  assert stats["routes"] == {}
+
+
+def test_invalid_persisted_record_dates_are_not_kept():
+  current = {
+    "longestDrive": {"distanceMeters": 0.0, "date": ""},
+    "mostEngagedDay": {"percent": 0, "date": ""},
+    "bestWeek": {"distanceMeters": 0.0, "weekDate": ""},
+    "highestStreak": {"days": 0},
+    "longestUndistractedDrive": {"duration": 3600, "date": "2026-06-19T09:00:00"},
+    "cleanDriveStreak": {"drives": 1, "startDate": "2026-06-19T09:00:00", "endDate": "2026-06-19T09:00:00"},
+  }
+  previous = {
+    "longestUndistractedDrive": {"duration": 7200, "date": "2025-07-02T09:00:00"},
+    "cleanDriveStreak": {"drives": 4, "startDate": "2025-07-02T09:00:00", "endDate": "2025-07-02T12:00:00"},
+  }
+
+  merged = utilities._merge_personal_records(current, previous)
+
+  assert merged["longestUndistractedDrive"] == current["longestUndistractedDrive"]
+  assert merged["cleanDriveStreak"] == current["cleanDriveStreak"]
+
+
+def test_invalid_persisted_route_dates_are_removed():
+  params = FakeParams({
+    utilities.DASHBOARD_PERSISTENT_STATS_PARAM: {
+      "routes": {
+        "bad-route": {
+          "date": "2025-07-02T09:00:00",
+          "distanceMeters": 1000.0,
+          "duration": 600,
+          "engagedSeconds": 600.0,
+          "model": "Orion",
+          "modifiedAt": 100,
+          "attentionKnown": True,
+          "analysisComplete": True,
+          "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION,
+        },
+        "good-route": {
+          "date": "2026-06-19T09:00:00",
+          "distanceMeters": 1000.0,
+          "duration": 600,
+          "engagedSeconds": 600.0,
+          "model": "Orion",
+          "modifiedAt": 200,
+          "attentionKnown": True,
+          "analysisComplete": True,
+          "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION,
+        },
+      },
+    },
+  })
+
+  stats = utilities._load_dashboard_persistent_stats(params)
+
+  assert "bad-route" not in stats["routes"]
+  assert "good-route" in stats["routes"]
+
+
+def test_invalid_filesystem_time_requests_reanalysis():
+  route = {"name": "route-1", "modifiedAt": 100, "segmentCount": 1}
+  stats = {
+    "routes": {
+      "route-1": {
+        "date": "2025-07-02T09:00:00",
+        "modifiedAt": 100,
+        "timeSource": utilities.DASHBOARD_TIME_SOURCE_FILESYSTEM,
+        "attentionKnown": True,
+        "analysisComplete": True,
+        "analysisVersion": utilities.DASHBOARD_ROUTE_ANALYSIS_VERSION,
+      },
+    },
+  }
+
+  assert utilities._analysis_candidates([route], stats) == [route]
+
+
 def test_github_urls_accept_owner_repo_origin():
   assert utilities.get_github_changelog_url("owner/repo", "main") == "https://github.com/owner/repo/commits/main/"
   assert utilities.get_github_changelog_url("github.com/owner/repo", "main") == "https://github.com/owner/repo/commits/main/"

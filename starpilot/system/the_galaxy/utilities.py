@@ -68,7 +68,7 @@ DASHBOARD_ROUTE_SEGMENT_SAMPLE_LIMIT = 2
 DASHBOARD_PERSISTED_ROUTE_LIMIT = 5000
 DASHBOARD_PERSIST_MIN_ROUTE_AGE_SECONDS = 120
 DASHBOARD_PERSISTENT_STATS_PARAM = "GalaxyDashboardStats"
-DASHBOARD_ROUTE_ANALYSIS_VERSION = 2
+DASHBOARD_ROUTE_ANALYSIS_VERSION = 3
 DASHBOARD_PARAMS_DIR = Path("/data/params/d")
 DASHBOARD_ANALYZER_LOG_PATH = "/tmp/galaxy_dashboard_analyzer.log"
 DASHBOARD_ANALYZER_STATUS_PATH = Path("/tmp/galaxy_dashboard_analyzer_status.json")
@@ -76,6 +76,11 @@ DASHBOARD_ANALYZER_STATUS_MAX_AGE_SECONDS = 30 * 60
 DASHBOARD_TOP_MODEL_LIMIT = 3
 DASHBOARD_EVENT_DISTRACTED = "promptDriverDistracted"
 DASHBOARD_EVENT_UNRESPONSIVE = "driverUnresponsive"
+DASHBOARD_TIME_SOURCE_LOG = "log"
+DASHBOARD_TIME_SOURCE_FILESYSTEM = "filesystem"
+DASHBOARD_MIN_VALID_ROUTE_TIME = datetime(2026, 1, 1)
+DASHBOARD_ROUTE_FUTURE_GRACE_SECONDS = 6 * 60 * 60
+DASHBOARD_LOCAL_ROUTE_MAX_AGE_SECONDS = 45 * 24 * 60 * 60
 
 XOR_KEY = "s8#pL3*Xj!aZ@dWq"
 
@@ -718,6 +723,46 @@ def _jsonable_time(value):
   return ""
 
 
+def _coerce_dashboard_time(value):
+  if isinstance(value, datetime):
+    return value
+  if isinstance(value, str):
+    try:
+      return datetime.fromisoformat(value)
+    except ValueError:
+      return None
+  return None
+
+
+def _dashboard_time_is_valid(value, now=None, require_recent=False):
+  parsed = _coerce_dashboard_time(value)
+  if parsed is None:
+    return False
+  if parsed < DASHBOARD_MIN_VALID_ROUTE_TIME:
+    return False
+
+  now = now or datetime.now()
+  if now < DASHBOARD_MIN_VALID_ROUTE_TIME:
+    return True
+
+  if parsed > now + timedelta(seconds=DASHBOARD_ROUTE_FUTURE_GRACE_SECONDS):
+    return False
+  if require_recent and parsed < now - timedelta(seconds=DASHBOARD_LOCAL_ROUTE_MAX_AGE_SECONDS):
+    return False
+  return True
+
+
+def _timestamp_to_dashboard_time(timestamp, require_recent=False):
+  timestamp = _safe_float(timestamp, 0.0)
+  if timestamp <= 0.0:
+    return None
+  try:
+    parsed = datetime.fromtimestamp(timestamp)
+  except (OSError, OverflowError, ValueError):
+    return None
+  return parsed if _dashboard_time_is_valid(parsed, require_recent=require_recent) else None
+
+
 def _parse_segment_dir_name(name):
   if not SEGMENT_RE.fullmatch(name):
     return None
@@ -793,7 +838,7 @@ def _list_dashboard_routes(footage_paths, limit=DASHBOARD_ROUTE_SCAN_LIMIT):
 
     first_segment = next((segment for segment in segments if segment["num"] == 0), segments[0])
     try:
-      started_at = datetime.fromtimestamp(first_segment["path"].stat().st_mtime)
+      started_at = _timestamp_to_dashboard_time(first_segment["path"].stat().st_mtime, require_recent=True)
     except OSError:
       started_at = None
 
@@ -803,6 +848,7 @@ def _list_dashboard_routes(footage_paths, limit=DASHBOARD_ROUTE_SCAN_LIMIT):
       "segmentCount": len(segments),
       "startedAt": started_at,
       "modifiedAt": route["modified_at"],
+      "timeSource": DASHBOARD_TIME_SOURCE_FILESYSTEM if started_at is not None else "",
     })
 
   route_infos.sort(key=lambda route: (
@@ -970,9 +1016,13 @@ def _log_wall_time_range(first_time, last_time, wall_time_offset, duration_secon
     end_seconds = start_seconds + duration_seconds
 
   try:
-    return _jsonable_time(datetime.fromtimestamp(start_seconds)), _jsonable_time(datetime.fromtimestamp(end_seconds))
+    start_time = datetime.fromtimestamp(start_seconds)
+    end_time = datetime.fromtimestamp(end_seconds)
   except (OSError, OverflowError, ValueError):
     return None
+  if not _dashboard_time_is_valid(start_time) or not _dashboard_time_is_valid(end_time):
+    return None
+  return _jsonable_time(start_time), _jsonable_time(end_time)
 
 
 def _sample_route_info(route_info, limit=DASHBOARD_ROUTE_SEGMENT_SAMPLE_LIMIT):
@@ -1090,6 +1140,7 @@ def _analyze_route_messages(messages, route_info, model_names, is_metric, deadli
   avg_speed = (distance_m / duration_seconds) * (CV.MS_TO_KPH if is_metric else METER_PER_SECOND_TO_MPH) if duration_seconds > 0 else 0.0
   time_range = _log_wall_time_range(first_time, last_time, wall_time_offset, duration_seconds)
   start_date, end_date = time_range if time_range is not None else _route_time_range(route_info, duration_seconds)
+  time_source = DASHBOARD_TIME_SOURCE_LOG if time_range is not None else (DASHBOARD_TIME_SOURCE_FILESYSTEM if start_date else "")
 
   return {
     "name": route_info.get("name", ""),
@@ -1106,6 +1157,7 @@ def _analyze_route_messages(messages, route_info, model_names, is_metric, deadli
     "distractedMoments": distracted_moments,
     "unresponsiveMoments": unresponsive_moments,
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
+    "timeSource": time_source,
     "attentionKnown": True,
     "analysisComplete": analysis_segment_count >= segment_count,
     "analysisVersion": DASHBOARD_ROUTE_ANALYSIS_VERSION,
@@ -1165,11 +1217,15 @@ def _public_drive(drive, is_metric):
 def _route_time_range(route_info, duration_seconds):
   modified_at = _safe_float(route_info.get("modifiedAt", 0.0), 0.0)
   duration_seconds = max(0.0, _safe_float(duration_seconds, 0.0))
-  if modified_at > 0.0 and duration_seconds > 0.0:
-    end_time = datetime.fromtimestamp(modified_at)
+  modified_time = _timestamp_to_dashboard_time(modified_at, require_recent=True)
+  if modified_time is not None and duration_seconds > 0.0:
+    end_time = modified_time
     start_time = end_time - timedelta(seconds=duration_seconds)
     return _jsonable_time(start_time), _jsonable_time(end_time)
-  return _jsonable_time(route_info.get("startedAt")), _jsonable_time(datetime.fromtimestamp(modified_at)) if modified_at > 0.0 else ""
+  started_at = route_info.get("startedAt")
+  if _dashboard_time_is_valid(started_at, require_recent=True):
+    return _jsonable_time(started_at), _jsonable_time(modified_time) if modified_time is not None else ""
+  return "", ""
 
 
 def _distance_from_meters(distance_m, is_metric):
@@ -1207,6 +1263,7 @@ def _route_shell_drive(route_info, params_obj, model_names, is_metric):
     "distractedMoments": 0,
     "unresponsiveMoments": 0,
     "routeModifiedAt": _safe_float(route_info.get("modifiedAt", 0.0), 0.0),
+    "timeSource": DASHBOARD_TIME_SOURCE_FILESYSTEM if start_date else "",
     "attentionKnown": False,
     "analysisComplete": False,
     "analysisVersion": 0,
@@ -1234,6 +1291,7 @@ def _drive_from_persistent_route(route_name, entry, is_metric):
     "distractedMoments": max(0, _safe_int(entry.get("distractedMoments", 0), 0)),
     "unresponsiveMoments": max(0, _safe_int(entry.get("unresponsiveMoments", 0), 0)),
     "routeModifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
+    "timeSource": str(entry.get("timeSource", "") or ""),
     "attentionKnown": bool(entry.get("attentionKnown", True)),
     "analysisComplete": bool(entry.get("analysisComplete", False)),
     "analysisVersion": max(0, _safe_int(entry.get("analysisVersion", 0), 0)),
@@ -1247,7 +1305,7 @@ def _persistent_drives(stats, is_metric):
   return [
     _drive_from_persistent_route(route_name, entry, is_metric)
     for route_name, entry in routes.items()
-    if isinstance(entry, dict)
+    if isinstance(entry, dict) and _dashboard_time_is_valid(entry.get("date", ""))
   ]
 
 
@@ -1340,6 +1398,18 @@ def _week_summary_drives(drives, pending_route_names=None):
   ]
 
 
+def _persistent_route_needs_time_refresh(entry):
+  source = str(entry.get("timeSource", "") or "")
+  version = _safe_int(entry.get("analysisVersion", 0), 0)
+  if not source:
+    return version < DASHBOARD_ROUTE_ANALYSIS_VERSION
+  if source == DASHBOARD_TIME_SOURCE_FILESYSTEM:
+    return not _dashboard_time_is_valid(entry.get("date", ""), require_recent=True)
+  if source == DASHBOARD_TIME_SOURCE_LOG:
+    return not _dashboard_time_is_valid(entry.get("date", ""))
+  return True
+
+
 def _analysis_candidates(route_infos, persistent_stats):
   routes = persistent_stats.get("routes", {}) if isinstance(persistent_stats, dict) else {}
   routes = routes if isinstance(routes, dict) else {}
@@ -1350,6 +1420,8 @@ def _analysis_candidates(route_infos, persistent_stats):
     if not isinstance(entry, dict):
       return True
     if _safe_float(entry.get("modifiedAt", 0.0), 0.0) < _safe_float(route_info.get("modifiedAt", 0.0), 0.0):
+      return True
+    if _persistent_route_needs_time_refresh(entry):
       return True
     if _safe_int(entry.get("analysisVersion", 0), 0) < DASHBOARD_ROUTE_ANALYSIS_VERSION:
       return True
@@ -1576,7 +1648,10 @@ def _build_week_summary(drives, now, is_metric):
 
 def _format_record_date(date_text):
   try:
-    return datetime.fromisoformat(date_text).strftime("%b %-d")
+    parsed = datetime.fromisoformat(date_text)
+    if datetime.now().year == parsed.year:
+      return parsed.strftime("%b %-d")
+    return parsed.strftime("%b %-d, %Y")
   except ValueError:
     return "Unknown date"
 
@@ -1803,7 +1878,7 @@ def _normalize_persistent_routes(raw_routes):
       continue
     name = str(route_name or entry.get("name", "")).strip()
     date = str(entry.get("date", "")).strip()
-    if not name or not date:
+    if not name or not date or not _dashboard_time_is_valid(date):
       continue
     routes[name] = {
       "date": date,
@@ -1819,6 +1894,7 @@ def _normalize_persistent_routes(raw_routes):
       "modelKey": canonical_model_key(entry.get("modelKey", "")),
       "segmentCount": max(0, _safe_int(entry.get("segmentCount", 0), 0)),
       "modifiedAt": _safe_float(entry.get("modifiedAt", 0.0), 0.0),
+      "timeSource": str(entry.get("timeSource", "") or ""),
       "attentionKnown": bool(entry.get("attentionKnown", True)),
       "analysisComplete": bool(entry.get("analysisComplete", False)),
       "analysisVersion": max(0, _safe_int(entry.get("analysisVersion", 0), 0)),
@@ -1868,6 +1944,17 @@ def _better_record(current, previous, metric_key):
   return current
 
 
+def _record_with_valid_dates(record, metric_key, *date_keys):
+  if not isinstance(record, dict):
+    return None
+  if _safe_float(record.get(metric_key, 0.0), 0.0) <= 0.0:
+    return record
+  for key in date_keys:
+    if not _dashboard_time_is_valid(record.get(key, "")):
+      return None
+  return record
+
+
 def _build_personal_records_raw(routes):
   ordered_routes = sorted((routes or {}).items(), key=_route_entry_sort_key)
   records = {
@@ -1888,6 +1975,8 @@ def _build_personal_records_raw(routes):
 
   for _, entry in ordered_routes:
     date_text = str(entry.get("date", "")).strip()
+    if not _dashboard_time_is_valid(date_text):
+      continue
     try:
       drive_date = datetime.fromisoformat(date_text)
     except ValueError:
@@ -1957,27 +2046,43 @@ def _build_personal_records_raw(routes):
 def _merge_personal_records(current, previous, legacy_attention=None):
   previous = previous if isinstance(previous, dict) else {}
   merged = {
-    "longestDrive": _better_record(current.get("longestDrive", {}), previous.get("longestDrive"), "distanceMeters"),
-    "mostEngagedDay": _better_record(current.get("mostEngagedDay", {}), previous.get("mostEngagedDay"), "percent"),
-    "bestWeek": _better_record(current.get("bestWeek", {}), previous.get("bestWeek"), "distanceMeters"),
+    "longestDrive": _better_record(
+      current.get("longestDrive", {}),
+      _record_with_valid_dates(previous.get("longestDrive"), "distanceMeters", "date"),
+      "distanceMeters",
+    ),
+    "mostEngagedDay": _better_record(
+      current.get("mostEngagedDay", {}),
+      _record_with_valid_dates(previous.get("mostEngagedDay"), "percent", "date"),
+      "percent",
+    ),
+    "bestWeek": _better_record(
+      current.get("bestWeek", {}),
+      _record_with_valid_dates(previous.get("bestWeek"), "distanceMeters", "weekDate"),
+      "distanceMeters",
+    ),
     "highestStreak": _better_record(current.get("highestStreak", {}), previous.get("highestStreak"), "days"),
     "longestUndistractedDrive": _better_record(
       current.get("longestUndistractedDrive", {}),
-      previous.get("longestUndistractedDrive"),
+      _record_with_valid_dates(previous.get("longestUndistractedDrive"), "duration", "date"),
       "duration",
     ),
-    "cleanDriveStreak": _better_record(current.get("cleanDriveStreak", {}), previous.get("cleanDriveStreak"), "drives"),
+    "cleanDriveStreak": _better_record(
+      current.get("cleanDriveStreak", {}),
+      _record_with_valid_dates(previous.get("cleanDriveStreak"), "drives", "startDate", "endDate"),
+      "drives",
+    ),
   }
 
   if isinstance(legacy_attention, dict):
     merged["longestUndistractedDrive"] = _better_record(
       merged["longestUndistractedDrive"],
-      legacy_attention.get("longestUndistractedDrive"),
+      _record_with_valid_dates(legacy_attention.get("longestUndistractedDrive"), "duration", "date"),
       "duration",
     )
     merged["cleanDriveStreak"] = _better_record(
       merged["cleanDriveStreak"],
-      legacy_attention.get("cleanDriveStreak"),
+      _record_with_valid_dates(legacy_attention.get("cleanDriveStreak"), "drives", "startDate", "endDate"),
       "drives",
     )
 
@@ -1995,6 +2100,8 @@ def _recalculate_persistent_stats(stats):
   model_usage = {}
 
   for _, entry in ordered_routes:
+    if not _dashboard_time_is_valid(entry.get("date", "")):
+      continue
     if not bool(entry.get("analysisComplete", False)):
       continue
     model_name = _clean_model_label(entry.get("model", ""))
@@ -2028,6 +2135,16 @@ def _drive_stable_for_persistence(drive, wall_now):
   return modified_at <= 0.0 or wall_now - modified_at >= DASHBOARD_PERSIST_MIN_ROUTE_AGE_SECONDS
 
 
+def _drive_time_reliable_for_persistence(drive):
+  source = str(drive.get("timeSource", "") or "")
+  date_text = str(drive.get("date", "")).strip()
+  if source == DASHBOARD_TIME_SOURCE_FILESYSTEM:
+    return _dashboard_time_is_valid(date_text, require_recent=True)
+  if source == DASHBOARD_TIME_SOURCE_LOG:
+    return _dashboard_time_is_valid(date_text)
+  return bool(date_text)
+
+
 def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
   stats = _load_dashboard_persistent_stats(params_obj)
   before = json.dumps(stats, sort_keys=True, separators=(",", ":"))
@@ -2037,12 +2154,13 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
   for drive in sorted(drives, key=_drive_sort_time):
     route_name = str(drive.get("name", "")).strip()
     route_date = str(drive.get("date", "")).strip()
-    if not route_name or not route_date or not _drive_stable_for_persistence(drive, wall_now):
+    if not route_name or not route_date or not _drive_stable_for_persistence(drive, wall_now) or not _drive_time_reliable_for_persistence(drive):
       continue
 
     model_name = _clean_model_label(drive.get("model", ""))
     model_key = _model_usage_key(model_name)
     attention_known = bool(drive.get("attentionKnown", True))
+    time_source = str(drive.get("timeSource", "") or "")
     next_entry = {
       "date": route_date,
       "endDate": str(drive.get("endDate", "")).strip(),
@@ -2057,6 +2175,7 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
       "modelKey": model_key,
       "segmentCount": max(0, _safe_int(drive.get("segmentCount", 0), 0)),
       "modifiedAt": _safe_float(drive.get("routeModifiedAt", 0.0), 0.0),
+      "timeSource": time_source,
       "attentionKnown": attention_known,
       "analysisComplete": bool(drive.get("analysisComplete", False)),
       "analysisVersion": _safe_int(drive.get("analysisVersion", 0), 0),
@@ -2081,6 +2200,7 @@ def _update_dashboard_persistent_stats(params_obj, drives, wall_now):
         next_entry["duration"] = existing_duration if existing_attention_known else max(existing_duration, next_entry["duration"])
         if existing_attention_known and str(existing_entry.get("date", "")).strip():
           next_entry["date"] = str(existing_entry.get("date", "")).strip()
+          next_entry["timeSource"] = str(existing_entry.get("timeSource", "") or next_entry["timeSource"])
         if str(existing_entry.get("endDate", "")).strip():
           next_entry["endDate"] = str(existing_entry.get("endDate", "")).strip()
         next_entry["engagedSeconds"] = max(0.0, _safe_float(existing_entry.get("engagedSeconds", 0.0), 0.0))
