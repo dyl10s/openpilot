@@ -169,18 +169,18 @@ def get_testing_ground_1_brake_switch_bias(v_ego: float) -> int:
 
 
 def shape_truck_positive_accel(accel: float, v_ego: float, enabled: bool) -> float:
-  if not enabled or accel <= 0.0 or v_ego < 8.0:
+  if not enabled or accel <= 0.0 or v_ego < 12.0:
     return accel
 
-  low_scale = float(np.interp(v_ego, [8.0, 15.0, 25.0, 35.0], [0.60, 0.45, 0.32, 0.25]))
-  mid_scale = float(np.interp(v_ego, [8.0, 15.0, 25.0, 35.0], [0.82, 0.72, 0.60, 0.52]))
+  low_scale = float(np.interp(v_ego, [12.0, 18.0, 25.0, 35.0], [0.95, 0.88, 0.82, 0.76]))
+  mid_scale = float(np.interp(v_ego, [12.0, 18.0, 25.0, 35.0], [0.98, 0.94, 0.89, 0.84]))
 
-  if accel <= 0.18:
+  if accel <= 0.12:
     return accel * low_scale
-  if accel <= 0.45:
-    return float(np.interp(accel, [0.18, 0.45], [0.18 * low_scale, 0.45 * mid_scale]))
-  if accel <= 0.8:
-    return float(np.interp(accel, [0.45, 0.8], [0.45 * mid_scale, 0.8]))
+  if accel <= 0.35:
+    return float(np.interp(accel, [0.12, 0.35], [0.12 * low_scale, 0.35 * mid_scale]))
+  if accel <= 0.65:
+    return float(np.interp(accel, [0.35, 0.65], [0.35 * mid_scale, 0.65]))
   return accel
 
 

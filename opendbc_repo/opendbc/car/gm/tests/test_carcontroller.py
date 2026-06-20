@@ -569,13 +569,13 @@ def test_calc_pedal_command_keeps_strong_positive_requests_responsive():
 def test_shape_truck_positive_accel_softens_small_highway_requests():
   shaped = shape_truck_positive_accel(0.12, 26.0, True)
 
-  assert shaped < 0.05
+  assert 0.09 < shaped < 0.10
 
 
 def test_shape_truck_positive_accel_keeps_mid_follow_requests_available():
   shaped = shape_truck_positive_accel(0.45, 13.5, True)
 
-  assert 0.30 < shaped < 0.35
+  assert 0.43 < shaped < 0.45
 
 
 def test_shape_truck_positive_accel_leaves_large_requests_alone():
