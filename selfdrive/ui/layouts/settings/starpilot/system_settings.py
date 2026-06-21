@@ -462,7 +462,7 @@ class SystemSettingsManagerView(PanelManagerView):
     draw_custom_icon("first_aid", icon_x, icon_y, s, icon_color)
 
     content_width = rect.width - AETHER_LIST_METRICS.content_right_gutter
-    summary_y = rect.y + 92
+    summary_y = rect.y + 126
 
     control_rect = rl.Rectangle(rect.x, summary_y, content_width, 108)
     self._drive_mode_control.render(control_rect)

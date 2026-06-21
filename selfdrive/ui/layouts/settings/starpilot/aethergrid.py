@@ -227,7 +227,7 @@ class AetherListMetrics:
   panel_padding_x: int = 16
   panel_padding_top: int = 28
   panel_padding_bottom: int = 22
-  header_height: int = 210
+  header_height: int = 244
   section_gap: int = 28
   section_header_height: int = 34
   section_header_gap: int = 12
@@ -266,7 +266,7 @@ class AetherListFrame:
 
 AETHER_LIST_METRICS = AetherListMetrics()
 AETHER_COMPACT_ROW_HEIGHT = AETHER_LIST_METRICS.utility_row_height
-COMPACT_PANEL_METRICS = replace(AETHER_LIST_METRICS, header_height=96)
+COMPACT_PANEL_METRICS = replace(AETHER_LIST_METRICS, header_height=125)
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,18 +439,34 @@ class AetherInteractiveMixin:
     pass
 
   def _handle_mouse_press(self, mouse_pos: MousePos):
+    global PRESSED_BREADCRUMB
+    breadcrumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=12, pad_y=12)
+    if breadcrumb_target:
+      PRESSED_BREADCRUMB = breadcrumb_target
+      
     self._pressed_target = self._target_at(mouse_pos)
     self._can_click = True
 
   def _handle_mouse_event(self, mouse_event: MouseEvent):
-    if not self._scroll_panel.is_touch_valid():
+    global PRESSED_BREADCRUMB
+    if self._scroll_panel and not self._scroll_panel.is_touch_valid():
       self._can_click = False
       return
     if self._pressed_target is not None and self._target_at(mouse_event.pos) != self._pressed_target:
       self._pressed_target = None
+    if PRESSED_BREADCRUMB and resolve_interactive_target(mouse_event.pos, BREADCRUMB_RECTS, None, pad_x=12, pad_y=12) != PRESSED_BREADCRUMB:
+      PRESSED_BREADCRUMB = None
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
-    target = self._target_at(mouse_pos) if self._scroll_panel.is_touch_valid() else None
+    global PRESSED_BREADCRUMB
+    
+    target = self._target_at(mouse_pos) if self._scroll_panel and self._scroll_panel.is_touch_valid() else None
+    
+    breadcrumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=12, pad_y=12)
+    if breadcrumb_target and breadcrumb_target == PRESSED_BREADCRUMB and self._can_click:
+        handle_breadcrumb_click(breadcrumb_target)
+    PRESSED_BREADCRUMB = None
+
     if self._pressed_target is not None and self._pressed_target == target and self._can_click:
       self._activate_target(target)
     self._pressed_target = None
@@ -843,8 +859,120 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
       self._on_page_changed()
 
 
-PANEL_HEADER_TITLE_Y: int = 4
-PANEL_HEADER_SUBTITLE_Y: int = 48
+BREADCRUMB_RECTS: dict[str, rl.Rectangle] = {}
+PRESSED_BREADCRUMB: str | None = None
+
+def get_breadcrumbs_path() -> list[tuple[str, str]]:
+  import openpilot.selfdrive.ui.layouts.settings.starpilot.main_panel as main_panel
+  layout = getattr(main_panel.StarPilotLayout, "active_instance", None)
+  
+  path = [("HOME", "action:home")]
+  if not layout:
+      return path
+      
+  from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
+  
+  pushed_widgets = gui_app._nav_stack[1:]
+  
+  cat_title = ""
+  is_folder = False
+  if layout._current_category_idx is not None:
+    cat = layout.CATEGORIES[layout._current_category_idx]
+    cat_title = cat["title"].upper()
+    is_folder = "buttons" in cat
+
+    if is_folder:
+      if layout._current_panel != StarPilotPanelType.MAIN:
+        path.append((cat_title, "action:category"))
+      elif pushed_widgets:
+        path.append((cat_title, "action:category"))
+    else:
+      if pushed_widgets:
+        path.append((cat_title, "action:category"))
+
+  if layout._current_panel != StarPilotPanelType.MAIN and pushed_widgets:
+    panel_info = layout._panels[layout._current_panel]
+    if panel_info.name:
+      panel_title = panel_info.name.upper()
+      if is_folder or layout._current_category_idx is None:
+        path.append((panel_title, "action:panel"))
+
+  for i, widget in enumerate(pushed_widgets[:-1]):
+    if hasattr(widget, '_header_title') and widget._header_title:
+      path.append((widget._header_title.upper(), f"action:nav_stack:{i+1}"))
+              
+  return path
+
+def handle_breadcrumb_click(target: str):
+  import openpilot.selfdrive.ui.layouts.settings.starpilot.main_panel as main_panel
+  from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
+  layout = getattr(main_panel.StarPilotLayout, "active_instance", None)
+  if not layout:
+      return
+      
+  if target == "action:home":
+    while len(gui_app._nav_stack) > 1:
+      gui_app.pop_widget()
+    layout._panel_stack.clear()
+    layout._current_category_idx = None
+    layout._set_current_panel(StarPilotPanelType.MAIN)
+  elif target == "action:category":
+    while len(gui_app._nav_stack) > 1:
+      gui_app.pop_widget()
+    layout._panel_stack.clear()
+    layout._set_current_panel(StarPilotPanelType.MAIN)
+  elif target == "action:panel":
+    while len(gui_app._nav_stack) > 1:
+      gui_app.pop_widget()
+    layout._panel_stack.clear()
+    layout._update_sub_panel_visibility()
+  elif target.startswith("action:nav_stack:"):
+    target_idx = int(target.split(":")[-1])
+    while len(gui_app._nav_stack) > target_idx + 1:
+      gui_app.pop_widget()
+
+
+def draw_breadcrumbs(start_pos: rl.Vector2, max_width: float) -> None:
+  BREADCRUMB_RECTS.clear()
+  path = get_breadcrumbs_path()
+  if not path:
+      return
+      
+  font = gui_app.font(FontWeight.SEMI_BOLD)
+  font_size = 18
+  color_normal = rl.Color(160, 170, 185, 255)
+  color_hover = rl.Color(236, 242, 250, 255)
+  color_pressed = rl.Color(255, 255, 255, 180)
+  color_sep = rl.Color(92, 116, 151, 150)
+  
+  current_x = start_pos.x
+  
+  for i, (text, action) in enumerate(path):
+      text_w = measure_text_cached(font, text, font_size).x
+      rect = rl.Rectangle(current_x - 8, start_pos.y - 4, text_w + 16, font_size + 8)
+      
+      mouse_pos = gui_app.last_mouse_event.pos
+      hovered = _point_hits(mouse_pos, rect, None, pad_x=0, pad_y=0)
+      pressed = PRESSED_BREADCRUMB == action
+      
+      color = color_pressed if pressed else (color_hover if hovered else color_normal)
+      
+      BREADCRUMB_RECTS[action] = rect
+      
+      if hovered:
+          rl.draw_rectangle_rounded(rect, 0.3, 8, rl.Color(255, 255, 255, 15))
+          
+      rl.draw_text_ex(font, text, rl.Vector2(current_x, start_pos.y + 2), font_size, 0, color)
+      current_x += text_w + 16
+      
+      if i < len(path) - 1:
+          sep_w = measure_text_cached(font, "/", font_size).x
+          rl.draw_text_ex(font, "/", rl.Vector2(current_x, start_pos.y + 2), font_size, 0, color_sep)
+          current_x += sep_w + 16
+
+
+PANEL_HEADER_TITLE_Y: int = 34
+PANEL_HEADER_SUBTITLE_Y: int = 78
 PANEL_HEADER_TITLE_FONT_SIZE: int = 40
 PANEL_HEADER_SUBTITLE_FONT_SIZE: int = 22
 PANEL_HEADER_TITLE_FONT: FontWeight = FontWeight.SEMI_BOLD
@@ -861,11 +989,14 @@ def draw_settings_panel_header(header_rect: rl.Rectangle, title: str, subtitle: 
                                 subtitle_color: rl.Color = AetherListColors.SUBTEXT,
                                 title_weight: FontWeight = PANEL_HEADER_TITLE_FONT,
                                 subtitle_weight: FontWeight = PANEL_HEADER_SUBTITLE_FONT):
+  draw_breadcrumbs(rl.Vector2(header_rect.x, header_rect.y + 2), header_rect.width)
+
   title_rect = rl.Rectangle(header_rect.x, header_rect.y + PANEL_HEADER_TITLE_Y, header_rect.width * max_title_width, title_size + 2)
   gui_label(title_rect, title, title_size, title_color, title_weight)
   if subtitle:
     subtitle_rect = rl.Rectangle(header_rect.x, header_rect.y + PANEL_HEADER_SUBTITLE_Y, header_rect.width * max_subtitle_width, subtitle_size + 4)
     gui_label(subtitle_rect, subtitle, subtitle_size, subtitle_color, subtitle_weight)
+
 
 
 def draw_soft_card(rect: rl.Rectangle, fill: rl.Color, border: rl.Color, radius: float = 0.08, segments: int = 18):
@@ -2689,6 +2820,160 @@ class AetherCategoryTileView(AetherSettingsView):
     self._scroll_rect = rl.Rectangle(dx + 80, dy + 140, dialog_w - 160, dialog_h - 180)
 
     self._update_visible_tiles()
+    content_width_needed = self._tile_grid.measure_width()
+    content_height_needed = self._tile_grid.measure_height(self._scroll_rect.width)
+    
+    scrolling_enabled = self.is_visible and (content_width_needed > self._scroll_rect.width)
+    self._scroll_panel.set_enabled(scrolling_enabled)
+
+    self._scroll_offset = self._scroll_panel.update(
+      self._scroll_rect, max(content_width_needed, self._scroll_rect.width))
+
+    x_pad = 12
+    y_pad = 24
+    rl.begin_scissor_mode(int(self._scroll_rect.x - x_pad), int(self._scroll_rect.y - y_pad),
+                           int(self._scroll_rect.width + x_pad * 2), int(self._scroll_rect.height + y_pad * 2))
+    
+    self._tile_grid._parent_rect = self._scroll_rect
+    
+    y_margin = max(0, (self._scroll_rect.height - content_height_needed) / 2)
+    x_margin = max(0, (self._scroll_rect.width - content_width_needed) / 2)
+    
+    grid_rect = rl.Rectangle(
+      self._scroll_rect.x + self._scroll_offset + x_margin, 
+      self._scroll_rect.y + y_margin, 
+      max(content_width_needed, self._scroll_rect.width), 
+      self._scroll_rect.height
+    )
+    self._tile_grid.render(grid_rect)
+    
+    rl.end_scissor_mode()
+
+    # Draw horizontal scroll indicator glows on the sides using the thematic color
+    if scrolling_enabled:
+      glow_w = 120
+      fade_dist = 100.0
+      left_remaining = -self._scroll_offset
+      right_remaining = (content_width_needed - self._scroll_rect.width) + self._scroll_offset
+      
+      left_alpha = int(max(0.0, min(1.0, left_remaining / fade_dist)) * 60)
+      right_alpha = int(max(0.0, min(1.0, right_remaining / fade_dist)) * 60)
+      
+      glow_y = int(d_rect.y)
+      glow_h = int(d_rect.height)
+      
+      if left_alpha > 0:
+        rl.draw_rectangle_gradient_h(
+          int(d_rect.x + 2), glow_y, glow_w, glow_h,
+          _with_alpha(self._color, left_alpha), _with_alpha(self._color, 0)
+        )
+      if right_alpha > 0:
+        rl.draw_rectangle_gradient_h(
+          int(d_rect.x + d_rect.width - glow_w - 2), glow_y, glow_w, glow_h,
+          _with_alpha(self._color, 0), _with_alpha(self._color, right_alpha)
+        )
+
+  def _target_at(self, mouse_pos: MousePos) -> str | None:
+    if self._back_btn_rect and rl.check_collision_point_rec(mouse_pos, self._back_btn_rect):
+      return "static:back"
+    return super()._target_at(mouse_pos)
+
+  def _activate_target(self, target_id: str | None):
+    if target_id == "static:back":
+      gui_app.pop_widget()
+    else:
+      super()._activate_target(target_id)
+
+  def _draw_header(self, rect: rl.Rectangle):
+    btn_w = 68.0
+    btn_h = 68.0
+    self._back_btn_rect = rl.Rectangle(rect.x, rect.y + 4.0, btn_w, btn_h)
+    
+    self._interactive_rects["static:back"] = self._back_btn_rect
+    
+    hovered = rl.check_collision_point_rec(gui_app.last_mouse_event.pos, self._back_btn_rect)
+    pressed = self._pressed_target == "static:back" and hovered
+    
+    if pressed:
+      fill = rl.Color(255, 255, 255, 30)
+      border = self._panel_style.accent
+    elif hovered:
+      fill = rl.Color(255, 255, 255, 18)
+      border = self._panel_style.accent
+    else:
+      fill = rl.Color(255, 255, 255, 8)
+      border = rl.Color(255, 255, 255, 20)
+      
+    draw_soft_card(self._back_btn_rect, fill, border, radius=0.5)
+    draw_chevron_icon(self._back_btn_rect, self._panel_style.accent if (hovered or pressed) else AetherListColors.HEADER, direction="left")
+    
+    title_x = rect.x + btn_w + 24
+    title_rect = rl.Rectangle(title_x, rect.y, rect.width - btn_w - 24, rect.height)
+    
+    title = tr(self._header_title) if self._header_title else ""
+    subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
+    
+    draw_settings_panel_header(title_rect, title, subtitle)
+
+
+# ── AetherSubMenuTileView — category panel containing navigation HubTiles ──
+
+class AetherSubMenuTileView(AetherSettingsView):
+  """Reusable nested tile view that displays HubTiles for sub-menu navigation."""
+
+  def __init__(self, controller, title: str, tiles_data: list[dict],
+               *, color: rl.Color | str = "#8B5CF6", subtitle: str = "",
+               panel_style=None):
+    super().__init__(controller, [], header_title=title, header_subtitle=subtitle, panel_style=panel_style)
+    self._color = hex_to_color(color) if isinstance(color, str) else color
+    self._tiles_data = tiles_data
+    
+    self._scroll_panel = GuiScrollPanel2(horizontal=True)
+    self._scroll_panel.snap_interval = 364.0
+    self._tile_grid = TileGrid(padding=16, tile_height=178.0, carousel_rows=3, carousel_tile_width=348.0)
+    self._tile_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
+    self._child(self._tile_grid)
+    
+    for d in self._tiles_data:
+      tile = HubTile(
+        title=d["title"],
+        desc=d["desc"],
+        icon_key=d.get("icon"),
+        on_click=d["on_click"],
+        bg_color=self._color,
+      )
+      self._tile_grid.add_tile(tile)
+
+    self._back_btn_rect = None
+
+  def _measure_content_height(self, width: float) -> float:
+    return self._tile_grid.measure_height(width)
+
+  def _render(self, rect: rl.Rectangle):
+    self.set_rect(rect)
+    self._interactive_rects.clear()
+
+    # Dim background outside the dialog
+    rl.draw_rectangle(int(rect.x), int(rect.y), int(rect.width), int(rect.height), rl.Color(0, 0, 0, 160))
+
+    dialog_w = 1600
+    dialog_h = 750
+    dx = rect.x + (rect.width - dialog_w) / 2
+    dy = rect.y + (rect.height - dialog_h) / 2
+
+    # Draw custom dialog background and top color band
+    d_rect = _snap_rect(rl.Rectangle(dx, dy, dialog_w, dialog_h))
+    _draw_rounded_fill(d_rect, rl.Color(10, 12, 16, 255), radius_px=24)
+    _draw_rounded_stroke(d_rect, rl.Color(255, 255, 255, 16), radius_px=24)
+    rl.draw_rectangle_rec(rl.Rectangle(d_rect.x, d_rect.y, d_rect.width, 3), self._color)
+
+    header_rect = rl.Rectangle(dx + 60, dy + 24, dialog_w - 120, 100)
+    if self._has_header:
+      self._draw_header(header_rect)
+
+    # Configure precise margins for the scroll area (80px sides)
+    self._scroll_rect = rl.Rectangle(dx + 80, dy + 140, dialog_w - 160, dialog_h - 180)
+
     content_width_needed = self._tile_grid.measure_width()
     content_height_needed = self._tile_grid.measure_height(self._scroll_rect.width)
     

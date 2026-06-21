@@ -223,7 +223,7 @@ class AppearanceManagerView(AetherSettingsView):
         margin_x = 12.0
         margin_top = 16.0
         margin_bottom = 16.0
-        header_h = 90.0
+        header_h = 125.0
         gap_after_header = 16.0
 
         # Draw the header at the top of rect:

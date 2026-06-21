@@ -62,6 +62,8 @@ class StarPilotLayout(Widget):
     self._depth_callback: Callable | None = None
     self._settings_layout = None
 
+    StarPilotLayout.active_instance = self
+
     self._panel_stack: list[tuple[StarPilotPanelType, str]] = []  
     self._sub_panel_callbacks: dict[str, Callable] = {}  
 
@@ -228,12 +230,38 @@ class StarPilotLayout(Widget):
     self._update_depth()
 
   def _render(self, rect: rl.Rectangle):
+    import openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid as aethergrid
     if self._current_panel == StarPilotPanelType.MAIN:
-      self._main_grid.render(rect)
+      if self._current_category_idx is not None:
+        # We are in a category folder, draw the breadcrumbs header
+        header_rect = rl.Rectangle(rect.x + 16, rect.y + 28, rect.width - 32, 96)
+        cat = self.CATEGORIES[self._current_category_idx]
+        aethergrid.draw_settings_panel_header(header_rect, tr(cat["title"]), subtitle=None)
+        
+        # Adjust grid to fit under header
+        grid_rect = rl.Rectangle(rect.x, header_rect.y + header_rect.height, rect.width, rect.height - header_rect.height - 28)
+        self._main_grid.render(grid_rect)
+      else:
+        self._main_grid.render(rect)
     else:
       panel = self._panels[self._current_panel]
       if panel.instance:
         panel.instance.render(rect)
+
+  def _handle_mouse_press(self, mouse_pos: MousePos):
+    import openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid as aethergrid
+    aethergrid.PRESSED_BREADCRUMB = aethergrid.resolve_interactive_target(mouse_pos, aethergrid.BREADCRUMB_RECTS, None, pad_x=12, pad_y=12)
+
+  def _handle_mouse_release(self, mouse_pos: MousePos):
+    import openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid as aethergrid
+    target = aethergrid.resolve_interactive_target(mouse_pos, aethergrid.BREADCRUMB_RECTS, None, pad_x=12, pad_y=12)
+    if target and target == aethergrid.PRESSED_BREADCRUMB:
+      aethergrid.handle_breadcrumb_click(target)
+    aethergrid.PRESSED_BREADCRUMB = None
+
+  def _handle_mouse_event(self, mouse_event):
+    pass
+
 
   def show_event(self):
     super().show_event()

@@ -23,6 +23,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   SettingSection,
   AetherSettingsView,
   AetherCategoryTileView,
+  AetherSubMenuTileView,
   TileGrid,
   HubTile,
   hex_to_color,
@@ -133,10 +134,41 @@ class LongitudinalManagerView(AetherSettingsView):
         "icon": "display",
         "color": "#8B5CF6",
         "on_click": lambda: gui_app.push_widget(
-          AetherCategoryTileView(
+          AetherSubMenuTileView(
             self._controller,
             tr("Adaptive Speed Controls"),
-            self._controller._adaptive_rows,
+            [
+              {
+                "title": tr("Conditional Experimental"),
+                "desc": tr("Configure triggers and threshold speeds for automated Experimental Mode switching."),
+                "icon": "steering",
+                "on_click": lambda: gui_app.push_widget(
+                  AetherCategoryTileView(
+                    self._controller,
+                    tr("Conditional Experimental"),
+                    self._controller._conditional_experimental_rows,
+                    color="#8B5CF6",
+                    subtitle=tr("Configure triggers and threshold speeds for automated Experimental Mode switching."),
+                    panel_style=self._panel_style,
+                  )
+                ),
+              },
+              {
+                "title": tr("Curve Speed Controller"),
+                "desc": tr("Configure speed control on curves and reset collected calibration data."),
+                "icon": "navigate",
+                "on_click": lambda: gui_app.push_widget(
+                  AetherCategoryTileView(
+                    self._controller,
+                    tr("Curve Speed Controller"),
+                    self._controller._curve_speed_controller_rows,
+                    color="#8B5CF6",
+                    subtitle=tr("Configure speed control on curves and reset collected calibration data."),
+                    panel_style=self._panel_style,
+                  )
+                ),
+              },
+            ],
             color="#8B5CF6",
             subtitle=tr("Configure Curve Speed Controller and Conditional Experimental Mode triggers."),
             panel_style=self._panel_style,
@@ -469,7 +501,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       ))
 
     # ── 4. Adaptive Speed Controls Rows (CES + CSC) ──
-    self._adaptive_rows = [
+    self._conditional_experimental_rows = [
       SettingRow("ConditionalExperimental", "toggle", tr_noop("Conditional Experimental Mode"),
                  subtitle="",
                  get_state=lambda: self._params.get_bool("ConditionalExperimental"),
@@ -539,6 +571,9 @@ class StarPilotLongitudinalLayout(_SettingsPage):
                  get_state=lambda: self._params.get_bool("ShowCEMStatus"),
                  set_state=lambda s: self._params.put_bool("ShowCEMStatus", s),
                  visible=ce_on),
+    ]
+
+    self._curve_speed_controller_rows = [
       SettingRow("CurveSpeed", "toggle", tr_noop("Curve Speed Controller"),
                  subtitle="",
                  get_state=lambda: self._params.get_bool("CurveSpeedController"),
