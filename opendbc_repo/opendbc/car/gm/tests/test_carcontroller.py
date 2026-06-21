@@ -51,6 +51,7 @@ from opendbc.car.gm.carcontroller import (
   get_testing_ground_1_brake_switch_bias,
   get_stock_cc_active_for_cancel,
   shape_truck_positive_accel,
+  should_use_fixed_stopping_brake,
   should_activate_auto_hold,
   should_activate_volt_one_pedal,
   should_send_adas_status,
@@ -196,6 +197,31 @@ def test_bolt_acc_pedal_friction_command_state_sends_zero_unwind_after_main_off(
   assert command_brake == 0
   assert release_frames >= 0
   assert should_send
+
+
+def test_fixed_stopping_brake_is_disabled_for_bolt_acc_pedal_experiment():
+  CP = SimpleNamespace(
+    carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+    openpilotLongitudinalControl=True,
+    enableGasInterceptorDEPRECATED=True,
+    flags=GMFlags.PEDAL_LONG.value,
+  )
+
+  assert not should_use_fixed_stopping_brake(CP, True, True, False)
+
+
+def test_fixed_stopping_brake_stays_enabled_for_normal_acc_path():
+  CP = SimpleNamespace(
+    carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023,
+    openpilotLongitudinalControl=True,
+    enableGasInterceptorDEPRECATED=False,
+    flags=0,
+  )
+
+  assert should_use_fixed_stopping_brake(CP, True, True, False)
+  assert not should_use_fixed_stopping_brake(CP, False, True, False)
+  assert not should_use_fixed_stopping_brake(CP, True, False, False)
+  assert not should_use_fixed_stopping_brake(CP, True, True, True)
 
 
 def test_stock_cancel_is_suppressed_when_acc_is_faulted():

@@ -333,6 +333,13 @@ def get_bolt_acc_pedal_friction_command_state(apply_brake: int, cruise_main_on: 
   return command_brake, release_frames, should_send
 
 
+def should_use_fixed_stopping_brake(CP, near_stop: bool, stopping: bool, resume: bool) -> bool:
+  if not (near_stop and stopping and not resume):
+    return False
+
+  return not supports_bolt_acc_pedal_friction_experiment(CP)
+
+
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     super().__init__(dbc_names, CP)
@@ -796,7 +803,7 @@ class CarController(CarControllerBase):
           self.regen_release_counter = 0
           self.regen_min_on_frames = 0
           self.regen_min_off_frames = 0
-        elif near_stop and stopping and not CC.cruiseControl.resume:
+        elif should_use_fixed_stopping_brake(self.CP, near_stop, stopping, CC.cruiseControl.resume):
           stop_accel = getattr(starpilot_toggles, "stopAccel", self.CP.stopAccel)
           self.apply_gas = self.params.INACTIVE_REGEN
           self.apply_brake = int(min(-100 * stop_accel, self.params.MAX_BRAKE))
