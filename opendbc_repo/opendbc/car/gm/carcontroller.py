@@ -321,6 +321,10 @@ def get_bolt_acc_pedal_planner_brake_switch(v_ego: float, params, tire_radius: f
   return int(round(planner_torque + params.ZERO_GAS))
 
 
+def get_bolt_acc_pedal_effective_brake_switch(stock_switch: int, planner_switch: int) -> int:
+  return max(stock_switch, planner_switch)
+
+
 def get_bolt_acc_pedal_friction_command_state(apply_brake: int, cruise_main_on: bool, release_frames: int):
   command_brake = apply_brake if cruise_main_on else 0
 
@@ -868,7 +872,7 @@ class CarController(CarControllerBase):
               planner_brake_switch = get_bolt_acc_pedal_planner_brake_switch(
                 CS.out.vEgo, self.params, self.tireRadius, self.mass, self.coeffDrag, self.frontalArea, self.airDensity,
               )
-              brake_switch = min(brake_switch, planner_brake_switch)
+              brake_switch = get_bolt_acc_pedal_effective_brake_switch(brake_switch, planner_brake_switch)
             brake_accel = min((scaled_torque - brake_switch) / (self.tireRadius * self.mass), 0)
             self.apply_gas = int(round(apply_gas_torque))
             self.apply_brake = int(round(np.interp(brake_accel, self.params.BRAKE_LOOKUP_BP, self.params.BRAKE_LOOKUP_V)))

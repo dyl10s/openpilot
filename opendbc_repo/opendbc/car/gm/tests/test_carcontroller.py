@@ -44,6 +44,7 @@ from opendbc.car.gm.carcontroller import (
   get_auto_hold_stop_threshold,
   get_bolt_acc_pedal_friction_brake,
   get_bolt_acc_pedal_friction_command_state,
+  get_bolt_acc_pedal_effective_brake_switch,
   get_bolt_acc_pedal_planner_brake_switch,
   get_bolt_pedal_long_accel_limit,
   get_lka_steering_cmd_counter,
@@ -165,7 +166,7 @@ def test_bolt_pedal_long_accel_limit_matches_planner_regen_envelope():
   assert get_bolt_pedal_long_accel_limit(3.0) == pytest.approx(-1.70, abs=1e-3)
 
 
-def test_bolt_acc_pedal_planner_brake_switch_delays_friction_vs_stock_switch():
+def test_bolt_acc_pedal_planner_brake_switch_is_lower_than_stock_switch():
   params = SimpleNamespace(ZERO_GAS=6150, BRAKE_SWITCH_LOOKUP_BP=[0.5, 10.0], BRAKE_SWITCH_LOOKUP_V=[6150, 5500])
   v_ego = 6.66
 
@@ -175,6 +176,36 @@ def test_bolt_acc_pedal_planner_brake_switch_delays_friction_vs_stock_switch():
   )
 
   assert planner_switch < stock_switch
+
+
+def test_bolt_acc_pedal_effective_brake_switch_never_suppresses_stock_friction():
+  params = SimpleNamespace(ZERO_GAS=6150, BRAKE_SWITCH_LOOKUP_BP=[0.5, 10.0], BRAKE_SWITCH_LOOKUP_V=[6150, 5500])
+  v_ego = 5.434
+  mass = 1805.0
+  tire_radius = 0.075 * 2.63779 + 0.1453
+  frontal_area = 1.05 * 2.63779 + 0.0679
+  coeff_drag = 0.30
+  air_density = 1.225
+  accel_cmd = -1.399
+
+  aero_drag_force = 0.5 * coeff_drag * frontal_area * air_density * v_ego ** 2
+  torque = tire_radius * ((mass * accel_cmd) + aero_drag_force)
+  scaled_torque = torque + params.ZERO_GAS
+
+  stock_switch = int(round(np.interp(v_ego, params.BRAKE_SWITCH_LOOKUP_BP, params.BRAKE_SWITCH_LOOKUP_V)))
+  planner_switch = get_bolt_acc_pedal_planner_brake_switch(
+    v_ego, params, tire_radius=tire_radius, mass=mass,
+    coeff_drag=coeff_drag, frontal_area=frontal_area, air_density=air_density,
+  )
+  effective_switch = get_bolt_acc_pedal_effective_brake_switch(stock_switch, planner_switch)
+
+  stock_brake_accel = min((scaled_torque - stock_switch) / (tire_radius * mass), 0)
+  effective_brake_accel = min((scaled_torque - effective_switch) / (tire_radius * mass), 0)
+
+  assert planner_switch < stock_switch
+  assert effective_switch == stock_switch
+  assert stock_brake_accel < 0
+  assert effective_brake_accel == stock_brake_accel
 
 
 def test_bolt_acc_pedal_friction_command_state_requires_cruise_main_for_positive_brake():
