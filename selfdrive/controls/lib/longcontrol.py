@@ -5,7 +5,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.filter_simple import FirstOrderFilter
-from opendbc.car.gm.values import CarControllerParams, GMFlags
+from opendbc.car.gm.values import CAR, CarControllerParams, GMFlags
 from openpilot.starpilot.common.testing_grounds import testing_ground
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
@@ -131,6 +131,11 @@ class LongControl:
     self.is_volt = bool(
       CP.brand == "gm" and str(CP.carFingerprint).startswith("CHEVROLET_VOLT")
     )
+    self.is_gm_stock_truck = bool(
+      CP.brand == "gm" and
+      getattr(CP, "carFingerprint", None) in (CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_SILVERADO_CC) and
+      not CP.enableGasInterceptorDEPRECATED
+    )
 
   def update_mpc_mode(self, experimental_mode):
     new_mode = 'blended' if experimental_mode else 'acc'
@@ -251,6 +256,29 @@ class LongControl:
     bleed = interp(abs(error), [0.25, 0.75, 1.5], [0.55, 0.25, 0.0])
     self.pid.i *= bleed
 
+  def _trim_gm_truck_positive_hold_integrator(self, a_target, error, CS):
+    if not self.is_gm_stock_truck or self.pid.i <= 0.0:
+      return
+    if self.last_output_accel <= 0.10:
+      return
+    if a_target > 0.03:
+      return
+    if CS.vEgo <= NEGATIVE_TARGET_CREEP_GUARD_SPEED and a_target > -NEGATIVE_TARGET_CREEP_GUARD_DECEL:
+      return
+
+    # Stock-ACC trucks are especially sensitive to hanging onto light positive
+    # torque after the planner has already crossed back to coast or mild decel.
+    # Bleed stale positive I faster in that narrow window so the command can
+    # settle instead of wobbling the converter lock state.
+    authority_mismatch = self.last_output_accel - max(a_target, 0.0)
+    if authority_mismatch <= 0.08 and error > -0.08:
+      return
+
+    target_factor = float(interp(a_target, [-0.30, -0.10, -0.02, 0.03], [0.20, 0.35, 0.60, 0.85]))
+    if error < -0.20:
+      target_factor *= 0.75
+    self.pid.i *= target_factor
+
   def _apply_pedal_long_brake_bias(self, output_accel, a_target, CS):
     if not self.is_gm_pedal_long:
       return output_accel
@@ -318,6 +346,7 @@ class LongControl:
       self.update_mpc_mode(self.experimental_mode)
       self._shape_volt_test_tune_integrator(error, CS.vEgo)
       self._trim_positive_overshoot_integrator(a_target, error, CS)
+      self._trim_gm_truck_positive_hold_integrator(a_target, error, CS)
       feedforward = a_target * self.feedforward_gain
       freeze_integrator = self._get_pedal_long_freeze(a_target, error, CS.vEgo, accel_limits)
       raw_output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=feedforward,
