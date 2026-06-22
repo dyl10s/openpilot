@@ -577,6 +577,15 @@ IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ERROR_WIDTH = 1.0
 IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE = 12.0
 IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE_WIDTH = 5.0
 IONIQ_6_LOW_SPEED_UNWIND_ASSIST_BLEND = 0.45
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_SPEED = 6.8
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_SPEED_WIDTH = 0.55
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_ANGLE = 78.0
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_ANGLE_WIDTH = 7.0
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_TRACKING_RATIO = 0.78
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_TRACKING_RATIO_WIDTH = 0.08
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_DESIRED_LAT = 0.90
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_DESIRED_LAT_WIDTH = 0.18
+IONIQ_6_HIGH_ANGLE_FAULT_TAPER_FLOOR = 0.52
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_BOOST = 0.10
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED = 18.0
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED_WIDTH = 2.5
@@ -1933,6 +1942,21 @@ def get_ioniq_6_low_speed_angle_assist_torque(desired_angle_deg: float, actual_a
   return float(np.clip(current_output_torque + assist_torque, -1.0, 1.0))
 
 
+def get_ioniq_6_high_angle_fault_taper_scale(desired_lateral_accel: float, actual_lateral_accel: float,
+                                             actual_angle_deg: float, v_ego: float) -> float:
+  speed_weight = _ioniq_6_sigmoid((IONIQ_6_HIGH_ANGLE_FAULT_TAPER_SPEED - max(v_ego, 0.0)) /
+                                  IONIQ_6_HIGH_ANGLE_FAULT_TAPER_SPEED_WIDTH)
+  angle_weight = _ioniq_6_sigmoid((abs(actual_angle_deg) - IONIQ_6_HIGH_ANGLE_FAULT_TAPER_ANGLE) /
+                                  IONIQ_6_HIGH_ANGLE_FAULT_TAPER_ANGLE_WIDTH)
+  desired_lat_weight = _ioniq_6_sigmoid((abs(desired_lateral_accel) - IONIQ_6_HIGH_ANGLE_FAULT_TAPER_DESIRED_LAT) /
+                                        IONIQ_6_HIGH_ANGLE_FAULT_TAPER_DESIRED_LAT_WIDTH)
+  tracking_ratio = min(abs(actual_lateral_accel) / max(abs(desired_lateral_accel), 1e-3), 1.5)
+  tracking_weight = _ioniq_6_sigmoid((tracking_ratio - IONIQ_6_HIGH_ANGLE_FAULT_TAPER_TRACKING_RATIO) /
+                                     IONIQ_6_HIGH_ANGLE_FAULT_TAPER_TRACKING_RATIO_WIDTH)
+  taper_weight = speed_weight * angle_weight * desired_lat_weight * tracking_weight
+  return 1.0 - ((1.0 - IONIQ_6_HIGH_ANGLE_FAULT_TAPER_FLOOR) * taper_weight)
+
+
 def kia_ev6_lateral_testing_ground_active() -> bool:
   return testing_ground.use(KIA_EV6_LATERAL_TESTING_GROUND_ID, KIA_EV6_LATERAL_TESTING_GROUND_VARIANT)
 
@@ -2377,6 +2401,7 @@ class LatControlTorque(LatControl):
         actual_angle_no_offset = CS.steeringAngleDeg - params.angleOffsetDeg
         output_torque = get_ioniq_6_low_speed_angle_assist_torque(desired_angle_no_offset, actual_angle_no_offset,
                                                                   output_torque, CS.vEgo)
+        output_torque *= get_ioniq_6_high_angle_fault_taper_scale(setpoint, measurement, actual_angle_no_offset, CS.vEgo)
       elif volt_standard_test_active:
         output_torque *= volt_standard_center_taper
       elif kia_ev6_test_active:
