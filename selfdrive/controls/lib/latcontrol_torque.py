@@ -558,14 +558,22 @@ IONIQ_6_CRAWL_TURN_IN_FF_SPEED_WIDTH = 0.9
 IONIQ_6_CRAWL_TURN_IN_FF_LAT = 0.08
 IONIQ_6_CRAWL_TURN_IN_FF_LAT_WIDTH = 0.045
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE = 0.42
-IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED = 4.5
-IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH = 0.65
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED = 2.95
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH = 0.35
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR = 2.4
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH = 1.35
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE = 6.5
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH = 2.6
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_BP = [0.0, 0.35, 0.65, 1.0]
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_V = [1.0, 1.0, 0.82, 0.0]
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_MAX_TORQUE = 0.26
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_SPEED = 3.05
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_SPEED_WIDTH = 0.35
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ERROR = 1.8
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ERROR_WIDTH = 1.0
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE = 12.0
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE_WIDTH = 5.0
+IONIQ_6_LOW_SPEED_UNWIND_ASSIST_BLEND = 0.45
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_BOOST = 0.10
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED = 18.0
 IONIQ_6_HIGH_SPEED_RIGHT_TURN_IN_FF_SPEED_WIDTH = 2.5
@@ -646,26 +654,26 @@ VOLT_PLEXY_UNWIND_FRICTION_REDUCTION_LEFT = 0.16
 VOLT_PLEXY_UNWIND_FRICTION_REDUCTION_RIGHT = 0.40
 PRIUS_TRANSITION_SPEED = 10.0
 PRIUS_PHASE_SCALE = 0.09
-PRIUS_FF_GAIN_LEFT = 0.10
-PRIUS_FF_GAIN_RIGHT = 0.14
-PRIUS_FF_ONSET = 0.16
-PRIUS_FF_ONSET_WIDTH = 0.08
-PRIUS_FF_CUTOFF = 1.25
-PRIUS_FF_CUTOFF_WIDTH = 0.30
+PRIUS_FF_GAIN_LEFT = 0.12
+PRIUS_FF_GAIN_RIGHT = 0.13
+PRIUS_FF_ONSET = 0.12
+PRIUS_FF_ONSET_WIDTH = 0.07
+PRIUS_FF_CUTOFF = 1.45
+PRIUS_FF_CUTOFF_WIDTH = 0.36
 PRIUS_FRICTION_LAT_RISE = 0.18
 PRIUS_FRICTION_JERK_RISE = 0.22
-PRIUS_TURN_IN_BOOST_LEFT = 0.48
-PRIUS_TURN_IN_BOOST_RIGHT = 0.62
-PRIUS_UNWIND_TAPER_LEFT = 0.44
-PRIUS_UNWIND_TAPER_RIGHT = 0.72
-PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.18
-PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.24
-PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT = 0.28
-PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.44
-PRIUS_TURN_IN_FRICTION_BOOST_LEFT = 0.08
-PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.12
-PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.14
-PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.24
+PRIUS_TURN_IN_BOOST_LEFT = 0.60
+PRIUS_TURN_IN_BOOST_RIGHT = 0.56
+PRIUS_UNWIND_TAPER_LEFT = 0.58
+PRIUS_UNWIND_TAPER_RIGHT = 0.84
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.22
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.22
+PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT = 0.36
+PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.52
+PRIUS_TURN_IN_FRICTION_BOOST_LEFT = 0.10
+PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.10
+PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.22
+PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.32
 
 TRAILER_LOAD_FULL_ASSIST_KG = 15000.0 * CV.LB_TO_KG
 TRAILER_LATERAL_MIN_SPEED = 15.0 * CV.MPH_TO_MS
@@ -1883,24 +1891,37 @@ def get_ioniq_6_output_taper_scale(desired_lateral_accel: float, desired_lateral
 def get_ioniq_6_low_speed_angle_assist_torque(desired_angle_deg: float, actual_angle_deg: float,
                                               current_output_torque: float, v_ego: float) -> float:
   angle_error = desired_angle_deg - actual_angle_deg
-  if desired_angle_deg * angle_error <= 0.0:
-    return current_output_torque
+  if desired_angle_deg * angle_error > 0.0:
+    speed_weight = _ioniq_6_sigmoid((IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED - max(v_ego, 0.0)) /
+                                    IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH)
+    error_weight = _ioniq_6_sigmoid((abs(angle_error) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR) /
+                                    IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH)
+    desired_angle_weight = _ioniq_6_sigmoid((abs(desired_angle_deg) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE) /
+                                            IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH)
+    assist_torque = math.copysign(IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE * speed_weight * error_weight * desired_angle_weight, -angle_error)
+    if abs(assist_torque) < 1e-4:
+      return current_output_torque
 
-  speed_weight = _ioniq_6_sigmoid((IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED - max(v_ego, 0.0)) /
-                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_SPEED_WIDTH)
-  error_weight = _ioniq_6_sigmoid((abs(angle_error) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR) /
-                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH)
-  desired_angle_weight = _ioniq_6_sigmoid((abs(desired_angle_deg) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE) /
-                                          IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH)
-  assist_torque = math.copysign(IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE * speed_weight * error_weight * desired_angle_weight, -angle_error)
+    if current_output_torque * assist_torque >= 0.0:
+      add_scale = float(np.interp(abs(current_output_torque),
+                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_BP,
+                                  IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_V))
+      return float(np.clip(current_output_torque + (assist_torque * add_scale), -1.0, 1.0))
+
+    return float(np.clip(current_output_torque + assist_torque, -1.0, 1.0))
+
+  speed_weight = _ioniq_6_sigmoid((IONIQ_6_LOW_SPEED_UNWIND_ASSIST_SPEED - max(v_ego, 0.0)) /
+                                  IONIQ_6_LOW_SPEED_UNWIND_ASSIST_SPEED_WIDTH)
+  error_weight = _ioniq_6_sigmoid((abs(angle_error) - IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ERROR) /
+                                  IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ERROR_WIDTH)
+  actual_angle_weight = _ioniq_6_sigmoid((abs(actual_angle_deg) - IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE) /
+                                         IONIQ_6_LOW_SPEED_UNWIND_ASSIST_ACTUAL_ANGLE_WIDTH)
+  assist_torque = math.copysign(IONIQ_6_LOW_SPEED_UNWIND_ASSIST_MAX_TORQUE * speed_weight * error_weight * actual_angle_weight, -angle_error)
   if abs(assist_torque) < 1e-4:
     return current_output_torque
 
   if current_output_torque * assist_torque >= 0.0:
-    add_scale = float(np.interp(abs(current_output_torque),
-                                IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_BP,
-                                IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_V))
-    return float(np.clip(current_output_torque + (assist_torque * add_scale), -1.0, 1.0))
+    assist_torque *= IONIQ_6_LOW_SPEED_UNWIND_ASSIST_BLEND
 
   return float(np.clip(current_output_torque + assist_torque, -1.0, 1.0))
 
