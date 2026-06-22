@@ -286,10 +286,10 @@ class DrivingModelManagerView(AetherInteractiveMixin, Widget):
   def _draw_header(self, rect: rl.Rectangle):
     draw_settings_panel_header(rect, tr("Driving Models"), self._controller.header_description_text(), subtitle_size=24)
 
-    current_label_rect = rl.Rectangle(rect.x, rect.y + 96, 150, 22)
+    current_label_rect = rl.Rectangle(rect.x, rect.y + 130, 150, 22)
     gui_label(current_label_rect, tr("Current Model"), 20, AetherListColors.MUTED, FontWeight.MEDIUM)
 
-    current_value_rect = rl.Rectangle(rect.x + 150, rect.y + 94, rect.width * 0.44, 24)
+    current_value_rect = rl.Rectangle(rect.x + 150, rect.y + 128, rect.width * 0.44, 24)
     gui_label(current_value_rect, self._controller._current_model_name, 22, AetherListColors.HEADER, FontWeight.MEDIUM)
 
     right_panel_w = min(390, rect.width * 0.35)

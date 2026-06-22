@@ -79,13 +79,9 @@ class AppearanceManagerView(AetherSettingsView):
 
     def __init__(self, controller, sections, **kwargs):
         super().__init__(controller, sections, **kwargs)
-        self._hero_grid = TileGrid(columns=3, padding=12)
-        self._hero_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
-        self._child(self._hero_grid)
-
-        self._standard_grid = TileGrid(columns=3, padding=12)
-        self._standard_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
-        self._child(self._standard_grid)
+        self._main_grid = TileGrid(columns=3, padding=12)
+        self._main_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
+        self._child(self._main_grid)
 
         self._init_toggles()
 
@@ -192,21 +188,10 @@ class AppearanceManagerView(AetherSettingsView):
             },
         ]
 
-        self._hero_grid.clear()
-        for d in hero_data:
-            self._hero_grid.add_tile(
-                HubTile(
-                    title=d["title"],
-                    desc=d["desc"],
-                    icon_key=d["icon"],
-                    on_click=d["on_click"],
-                    bg_color=d["color"],
-                )
-            )
-
-        self._standard_grid.clear()
-        for d in standard_data:
-            self._standard_grid.add_tile(
+        all_data = hero_data + standard_data
+        self._main_grid.clear()
+        for d in all_data:
+            self._main_grid.add_tile(
                 HubTile(
                     title=d["title"],
                     desc=d["desc"],
@@ -257,24 +242,8 @@ class AppearanceManagerView(AetherSettingsView):
 
     def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
         y = rect.y + self._scroll_offset
-        viewport_h = rect.height
-        
-        gap_y = 12.0
-        padding_bottom = 6.0
-        tile_space = viewport_h - gap_y - padding_bottom
-        
-        # Hero tiles are larger/taller
-        hero_h = tile_space * 0.55
-        standard_h = tile_space * 0.45
-        
-        self._hero_grid._tile_height = hero_h
-        self._standard_grid._tile_height = standard_h
-        
-        self._hero_grid.set_parent_rect(self._scroll_rect)
-        self._hero_grid.render(rl.Rectangle(rect.x, y, width, hero_h))
-        
-        self._standard_grid.set_parent_rect(self._scroll_rect)
-        self._standard_grid.render(rl.Rectangle(rect.x, y + hero_h + gap_y, width, standard_h))
+        self._main_grid.set_parent_rect(self._scroll_rect)
+        self._main_grid.render(rl.Rectangle(rect.x, y, width, rect.height))
 
 
 class StarPilotAppearanceLayout(_SettingsPage):
