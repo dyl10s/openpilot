@@ -50,6 +50,18 @@ def make_sm(*, standstill=True, min_steer_speed=0.0):
   }
 
 
+def update_vcruise(vcruise, sm, toggles, *, now, v_ego=0.0, controls_enabled=True):
+  return vcruise.update(
+    controls_enabled=controls_enabled,
+    now=now,
+    time_validated=True,
+    v_cruise=20.0,
+    v_ego=v_ego,
+    sm=sm,
+    starpilot_toggles=toggles,
+  )
+
+
 def make_toggles():
   return SimpleNamespace(
     force_stops=True,
@@ -163,6 +175,20 @@ def test_engage_while_already_stopped_in_red_light_scene_seeds_force_stop_hold()
   assert vcruise.tracked_model_length == pytest.approx(0.0)
 
 
+def test_engage_from_aol_while_stopped_at_red_light_seeds_force_stop_hold():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=True, forcing_stop=False)
+  sm = make_sm(standstill=True)
+  toggles = make_toggles()
+
+  assert update_vcruise(vcruise, sm, toggles, now=0.0, controls_enabled=False) == pytest.approx(20.0)
+  assert not vcruise.standstill_force_stop_hold
+
+  assert update_vcruise(vcruise, sm, toggles, now=0.05, controls_enabled=True) == pytest.approx(0.0)
+  assert vcruise.standstill_force_stop_hold
+  assert vcruise.standstill_force_stop_reason == "light"
+  assert vcruise.forcing_stop
+
+
 def test_standstill_seeded_force_stop_hold_requires_clear_window_before_release():
   planner, vcruise = make_vcruise(red_light=True, raw_model_stopped=False, forcing_stop=False)
   sm = make_sm(standstill=True)
@@ -212,7 +238,7 @@ def test_standstill_seeded_force_stop_hold_accepts_datetime_now_without_crashing
   planner, vcruise = make_vcruise(red_light=True, raw_model_stopped=False, forcing_stop=False)
   sm = make_sm(standstill=True)
   toggles = make_toggles()
-  base = datetime.datetime(2026, 6, 18, tzinfo=datetime.timezone.utc)
+  base = datetime.datetime(2026, 6, 18, tzinfo=datetime.UTC)
 
   first = vcruise.update(
     controls_enabled=True,
@@ -251,6 +277,63 @@ def test_standstill_seeded_force_stop_hold_accepts_datetime_now_without_crashing
   assert released == pytest.approx(20.0)
   assert not vcruise.standstill_force_stop_hold
   assert not vcruise.forcing_stop
+
+
+def test_standstill_light_hold_expires_and_does_not_rearm_from_stopped_model():
+  planner, vcruise = make_vcruise(red_light=True, raw_model_stopped=True, forcing_stop=False)
+  sm = make_sm(standstill=True)
+  toggles = make_toggles()
+
+  assert update_vcruise(vcruise, sm, toggles, now=0.0) == pytest.approx(0.0)
+  assert vcruise.standstill_force_stop_reason == "light"
+
+  assert update_vcruise(vcruise, sm, toggles, now=4.9) == pytest.approx(0.0)
+  assert vcruise.forcing_stop
+
+  assert update_vcruise(vcruise, sm, toggles, now=5.1) == pytest.approx(20.0)
+  assert not vcruise.forcing_stop
+  assert not vcruise.standstill_force_stop_hold
+
+  # The red-light model remains stopped, but Force Stop must stay released so
+  # Experimental Mode can own the red-to-green departure.
+  assert update_vcruise(vcruise, sm, toggles, now=5.2) == pytest.approx(20.0)
+  assert not vcruise.forcing_stop
+
+
+def test_approach_light_force_stop_expires_without_rearming_at_standstill():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=True, forcing_stop=True)
+  toggles = make_toggles()
+
+  update_vcruise(vcruise, make_sm(standstill=False), toggles, now=0.0, v_ego=1.0)
+  sm = make_sm(standstill=True)
+  for frame in range(60):
+    result = update_vcruise(vcruise, sm, toggles, now=(frame + 1) * 0.05)
+
+  assert result == pytest.approx(20.0)
+  assert not vcruise.forcing_stop
+  assert not vcruise.standstill_force_stop_hold
+
+  assert update_vcruise(vcruise, sm, toggles, now=3.1) == pytest.approx(20.0)
+  assert not vcruise.forcing_stop
+
+
+def test_stop_sign_hold_persists_until_resume():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=True, forcing_stop=False)
+  sm = make_sm(standstill=True)
+  sm["starpilotCarState"].dashboardStopSign = 1
+  toggles = make_toggles()
+
+  assert update_vcruise(vcruise, sm, toggles, now=0.0) == pytest.approx(0.0)
+  assert vcruise.standstill_force_stop_reason == "sign"
+
+  sm["starpilotCarState"].dashboardStopSign = 0
+  assert update_vcruise(vcruise, sm, toggles, now=8.0) == pytest.approx(0.0)
+  assert vcruise.forcing_stop
+
+  sm["starpilotCarState"].accelPressed = True
+  assert update_vcruise(vcruise, sm, toggles, now=8.1) == pytest.approx(20.0)
+  assert not vcruise.forcing_stop
+  assert not vcruise.stop_sign_confirmed
 
 
 def test_nav_turn_speed_control_default_off():

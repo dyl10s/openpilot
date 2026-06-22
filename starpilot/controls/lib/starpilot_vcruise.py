@@ -5,13 +5,14 @@ import math
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
 
-from openpilot.starpilot.common.starpilot_variables import CITY_SPEED_LIMIT, CRUISING_SPEED, PLANNER_TIME
+from openpilot.starpilot.common.starpilot_variables import CITY_SPEED_LIMIT, CRUISING_SPEED
 from openpilot.starpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.starpilot.controls.lib.speed_limit_controller import SpeedLimitController
 
 CSC_MIN_SPEED = CITY_SPEED_LIMIT * CV.MPH_TO_MS
 OVERRIDE_FORCE_STOP_TIMER = 10
 STANDSTILL_FORCE_STOP_CLEAR_TIME = 0.75
+STANDSTILL_FORCE_STOP_LIGHT_HOLD_TIME = 5.0
 NAV_TURN_COMFORT_DECEL = 1.25
 NAV_TURN_DISTANCE_BUFFER = 8.0
 NAV_TURN_MIN_TARGET_DELTA = 0.25
@@ -67,6 +68,9 @@ class StarPilotVCruise:
     self.force_stop_timer = 0.0
     self.standstill_force_stop_hold = False
     self.standstill_force_stop_clear_since = 0.0
+    self.standstill_force_stop_started_at = None
+    self.standstill_force_stop_reason = None
+    self.controls_enabled_previously = False
     # Kinematic distance estimator. Same attribute also published as
     # starpilotPlan.forcingStopLength, so the existing reader keeps working.
     self.tracked_model_length = 0.0
@@ -104,6 +108,12 @@ class StarPilotVCruise:
   def _elapsed_seconds(now, since):
     delta = now - since
     return delta.total_seconds() if hasattr(delta, "total_seconds") else float(delta)
+
+  def _clear_standstill_force_stop_hold(self):
+    self.standstill_force_stop_hold = False
+    self.standstill_force_stop_clear_since = 0.0
+    self.standstill_force_stop_started_at = None
+    self.standstill_force_stop_reason = None
 
   @staticmethod
   def _nav_maneuver_target_speed(maneuver_type, maneuver_modifier):
@@ -222,33 +232,44 @@ class StarPilotVCruise:
 
     raw_model_stopped = bool(getattr(self.starpilot_planner, "raw_model_stopped", False))
     standstill_force_stop_scene_active = bool(force_stop_active or raw_model_stopped)
+    standstill = bool(sm["carState"].standstill)
+    engaged_at_standstill = controls_enabled and not self.controls_enabled_previously and standstill
 
-    # If the driver engages while already stopped at a red light / stop sign, seed
-    # the same stop-hold path openpilot would have had if it made the stop itself.
-    # Without this, a brief model-clear dropout can release the stop immediately.
-    if (
-      controls_enabled and
-      sm["carState"].standstill and
-      standstill_force_stop_scene_active and
-      not self.forcing_stop and
-      self.force_stop_timer < 0.5
-    ):
+    # Stop signs remain latched until the driver resumes. A light hold is only
+    # seeded on the engagement edge; otherwise the expired Force Stop would
+    # immediately re-arm itself from the still-short model trajectory.
+    stop_sign_hold_requested = controls_enabled and standstill and self.stop_sign_confirmed
+    light_hold_requested = engaged_at_standstill and standstill_force_stop_scene_active and not self.stop_sign_confirmed
+    if stop_sign_hold_requested and self.standstill_force_stop_reason != "sign":
       self.standstill_force_stop_hold = True
       self.standstill_force_stop_clear_since = 0.0
+      self.standstill_force_stop_started_at = now
+      self.standstill_force_stop_reason = "sign"
+      self.tracked_model_length = 0.0
+    elif light_hold_requested and not self.standstill_force_stop_hold:
+      self.standstill_force_stop_hold = True
+      self.standstill_force_stop_clear_since = 0.0
+      self.standstill_force_stop_started_at = now
+      self.standstill_force_stop_reason = "light"
       self.tracked_model_length = 0.0
 
     if self.standstill_force_stop_hold:
       pedal_override = bool(sm["carState"].gasPressed or sm["starpilotCarState"].accelPressed)
-      if (not controls_enabled) or (not sm["carState"].standstill) or lead_present or pedal_override:
-        self.standstill_force_stop_hold = False
-        self.standstill_force_stop_clear_since = 0.0
+      light_hold_expired = (
+        self.standstill_force_stop_reason == "light" and
+        self.standstill_force_stop_started_at is not None and
+        self._elapsed_seconds(now, self.standstill_force_stop_started_at) >= STANDSTILL_FORCE_STOP_LIGHT_HOLD_TIME
+      )
+      if pedal_override:
+        self.override_force_stop_timer = OVERRIDE_FORCE_STOP_TIMER
+      if (not controls_enabled) or (not standstill) or lead_present or pedal_override or light_hold_expired:
+        self._clear_standstill_force_stop_hold()
       elif standstill_force_stop_scene_active:
         self.standstill_force_stop_clear_since = 0.0
       elif self.standstill_force_stop_clear_since == 0.0:
         self.standstill_force_stop_clear_since = now
       elif self._elapsed_seconds(now, self.standstill_force_stop_clear_since) >= STANDSTILL_FORCE_STOP_CLEAR_TIME:
-        self.standstill_force_stop_hold = False
-        self.standstill_force_stop_clear_since = 0.0
+        self._clear_standstill_force_stop_hold()
 
     # Timer ramp. Faster commitment when the dashboard confirms.
     if force_stop_active and not sm["carState"].standstill:
@@ -364,8 +385,7 @@ class StarPilotVCruise:
 
     else:
       self.forcing_stop = False
-      self.standstill_force_stop_hold = False
-      self.standstill_force_stop_clear_since = 0.0
+      self._clear_standstill_force_stop_hold()
       # Latch is only meaningful during an active force-stop cycle
       self.stop_sign_confirmed = False
 
@@ -388,4 +408,5 @@ class StarPilotVCruise:
         targets.append(self.nav_turn_target)
       v_cruise = min(targets)
 
+    self.controls_enabled_previously = controls_enabled
     return v_cruise
