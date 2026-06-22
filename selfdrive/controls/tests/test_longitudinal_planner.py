@@ -2919,6 +2919,54 @@ def test_identical_radar_duplicate_source_hold_keeps_previous_label():
   assert sticky == "lead1"
 
 
+def test_identical_radar_duplicate_cruise_hold_keeps_previous_lead_through_route_like_crossover():
+  v_ego = 22.57
+  t_follow = 1.20
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=32.3, v_lead=23.74, a_lead=0.67, radar=True, model_prob=1.0)
+  lead_two = make_lead(status=True, d_rel=32.3, v_lead=23.74, a_lead=0.67, radar=True, model_prob=1.0)
+  lead_one.radarTrackId = 2493
+  lead_two.radarTrackId = 2493
+
+  sticky = planner.mpc.get_identical_radar_duplicate_cruise_hold(
+    "lead0",
+    lead_one,
+    lead_two,
+    144.92,
+    144.91,
+    135.10,
+    v_ego,
+    t_follow,
+  )
+
+  assert sticky == "lead0"
+
+
+def test_identical_radar_duplicate_cruise_hold_skips_clear_pullaway():
+  v_ego = 22.57
+  t_follow = 1.20
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=48.0, v_lead=25.5, a_lead=0.45, radar=True, model_prob=1.0)
+  lead_two = make_lead(status=True, d_rel=48.0, v_lead=25.5, a_lead=0.45, radar=True, model_prob=1.0)
+  lead_one.radarTrackId = 2493
+  lead_two.radarTrackId = 2493
+
+  sticky = planner.mpc.get_identical_radar_duplicate_cruise_hold(
+    "lead0",
+    lead_one,
+    lead_two,
+    180.0,
+    180.0,
+    150.0,
+    v_ego,
+    t_follow,
+  )
+
+  assert sticky is None
+
+
 def test_near_duplicate_lead_source_hysteresis_skips_distinct_leads():
   v_ego = 27.0
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
