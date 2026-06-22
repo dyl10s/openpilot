@@ -522,7 +522,7 @@ IONIQ_6_CENTER_TAPER_LAT = 0.24
 IONIQ_6_CENTER_TAPER_LAT_WIDTH = 0.025
 IONIQ_6_CENTER_TAPER_SPEED = 18.0
 IONIQ_6_CENTER_TAPER_SPEED_WIDTH = 2.5
-IONIQ_6_HIGHWAY_CENTER_TAPER_MAX = 0.034
+IONIQ_6_HIGHWAY_CENTER_TAPER_MAX = 0.038
 IONIQ_6_HIGHWAY_CENTER_TAPER_LAT = 0.09
 IONIQ_6_HIGHWAY_CENTER_TAPER_LAT_WIDTH = 0.03
 IONIQ_6_HIGHWAY_CENTER_TAPER_SPEED = 24.5
@@ -564,6 +564,9 @@ IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR = 2.4
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH = 1.35
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE = 6.5
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH = 2.6
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_START = 0.58
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_WIDTH = 0.14
+IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_FLOOR = 0.18
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_BP = [0.0, 0.35, 0.65, 1.0]
 IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ADD_V = [1.0, 1.0, 0.82, 0.0]
 IONIQ_6_LOW_SPEED_UNWIND_ASSIST_MAX_TORQUE = 0.26
@@ -1898,7 +1901,11 @@ def get_ioniq_6_low_speed_angle_assist_torque(desired_angle_deg: float, actual_a
                                     IONIQ_6_LOW_SPEED_ANGLE_ASSIST_ERROR_WIDTH)
     desired_angle_weight = _ioniq_6_sigmoid((abs(desired_angle_deg) - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE) /
                                             IONIQ_6_LOW_SPEED_ANGLE_ASSIST_DESIRED_ANGLE_WIDTH)
-    assist_torque = math.copysign(IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE * speed_weight * error_weight * desired_angle_weight, -angle_error)
+    tracking_ratio = abs(actual_angle_deg) / max(abs(desired_angle_deg), 1e-3)
+    tracking_taper = _ioniq_6_sigmoid((tracking_ratio - IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_START) /
+                                      IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_WIDTH)
+    tracking_scale = max(1.0 - tracking_taper, IONIQ_6_LOW_SPEED_ANGLE_ASSIST_TRACK_RATIO_FLOOR)
+    assist_torque = math.copysign(IONIQ_6_LOW_SPEED_ANGLE_ASSIST_MAX_TORQUE * speed_weight * error_weight * desired_angle_weight * tracking_scale, -angle_error)
     if abs(assist_torque) < 1e-4:
       return current_output_torque
 
