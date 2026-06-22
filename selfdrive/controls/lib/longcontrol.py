@@ -13,6 +13,7 @@ clip = np.clip
 interp = np.interp
 STOPPING_RELEASE_HYSTERESIS = 0.35
 STOPPING_RELEASE_MIN_ACCEL = 0.15
+STOPPING_RELEASE_STRONG_ACCEL = 0.45
 MOVING_STOP_FOLLOW_MIN_GAP = 0.25
 NEGATIVE_TARGET_CREEP_GUARD_SPEED = 0.35
 NEGATIVE_TARGET_CREEP_GUARD_DECEL = 0.40
@@ -181,6 +182,10 @@ class LongControl:
       return False
 
     if CS.vEgo > starpilot_toggles.vEgoStarting:
+      self.stop_release_counter = int(round(STOPPING_RELEASE_HYSTERESIS / DT_CTRL))
+      return True
+
+    if a_target >= STOPPING_RELEASE_STRONG_ACCEL and not CS.cruiseState.standstill:
       self.stop_release_counter = int(round(STOPPING_RELEASE_HYSTERESIS / DT_CTRL))
       return True
 

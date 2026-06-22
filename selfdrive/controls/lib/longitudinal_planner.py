@@ -46,6 +46,11 @@ STANDSTILL_LEAD_DEPART_MAX_EGO_SPEED = 1.5
 STANDSTILL_LEAD_DEPART_MIN_LEAD_SPEED = 0.6
 STANDSTILL_LEAD_DEPART_MIN_GAP_MARGIN = 0.8
 STANDSTILL_LEAD_DEPART_MIN_MODEL_ACCEL = 0.08
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_ACCEL = 0.18
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_SPEED = 0.25
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_ACCEL = 0.12
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_GAP_MARGIN = 1.4
+STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME = 0.30
 LEAD_DEPART_CONFIDENT_MIN_GAP = 3.75
 LEAD_DEPART_CONFIDENT_MAX_GAP = 5.25
 LEAD_DEPART_CONFIDENT_MIN_LEAD_SPEED = 0.3
@@ -562,6 +567,7 @@ class LongitudinalPlanner:
     self.output_a_target = 0.0
     self.output_should_stop = False
     self.confident_lead_depart_elapsed = 0.0
+    self.slow_creep_lead_depart_elapsed = 0.0
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -1094,6 +1100,28 @@ class LongitudinalPlanner:
       lead_speed >= LEAD_DEPART_CONFIDENT_MIN_LEAD_SPEED and
       lead_delta >= LEAD_DEPART_CONFIDENT_MIN_LEAD_DELTA and
       lead_accel >= LEAD_DEPART_CONFIDENT_MIN_LEAD_ACCEL
+    )
+
+  def is_slow_creep_lead_depart(self, lead, v_ego, standstill_nudge_gap):
+    if lead is None or not lead.status:
+      return False
+
+    lead_radar = bool(getattr(lead, "radar", False))
+    lead_prob = float(getattr(lead, "modelProb", 1.0 if lead_radar else 0.0))
+    if not lead_radar and lead_prob < STANDSTILL_STOPPED_LEAD_GUARD_MIN_MODEL_PROB:
+      return False
+
+    if abs(float(getattr(lead, "yRel", 0.0))) > STANDSTILL_STOPPED_LEAD_GUARD_MAX_LATERAL_OFFSET:
+      return False
+
+    lead_gap = float(getattr(lead, "dRel", 0.0))
+    lead_speed = max(float(getattr(lead, "vLead", 0.0)), 0.0)
+    lead_accel = float(getattr(lead, "aLeadK", 0.0))
+    return bool(
+      float(v_ego) <= STANDSTILL_LEAD_DEPART_MAX_EGO_SPEED and
+      lead_gap >= standstill_nudge_gap + STANDSTILL_LEAD_CREEP_RELEASE_MIN_GAP_MARGIN and
+      lead_speed >= STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_SPEED and
+      lead_accel >= STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_ACCEL
     )
 
   @staticmethod
@@ -2646,11 +2674,33 @@ class LongitudinalPlanner:
       confident_depart_detected and
       self.confident_lead_depart_elapsed >= LEAD_DEPART_CONFIDENT_CONFIRM_TIME
     )
+    slow_creep_depart_detected = any(
+      self.is_slow_creep_lead_depart(lead, float(sm['carState'].vEgo), standstill_nudge_gap)
+      for lead in (self.lead_one, self.lead_two)
+    )
+    if (
+      lead_control_active and
+      sm['carState'].standstill and
+      not depart_safety_veto and
+      not bool(getattr(sm['starpilotPlan'], 'forcingStop', False)) and
+      not bool(getattr(sm['starpilotPlan'], 'redLight', False)) and
+      slow_creep_depart_detected
+    ):
+      self.slow_creep_lead_depart_elapsed = min(
+        STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME,
+        self.slow_creep_lead_depart_elapsed + self.dt,
+      )
+    else:
+      self.slow_creep_lead_depart_elapsed = 0.0
+    slow_creep_depart_ready = (
+      slow_creep_depart_detected and
+      self.slow_creep_lead_depart_elapsed >= STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME
+    )
 
     standstill_stopped_lead_guard_cap = None
     standstill_guard_lead_present = any(bool(getattr(lead, "status", False)) for lead in (self.lead_one, self.lead_two))
     if standstill_guard_lead_present and (bool(sm['carState'].standstill) or float(sm['carState'].vEgo) <= STANDSTILL_STOPPED_LEAD_GUARD_MAX_EGO_SPEED):
-      release_ready = bool(lead_depart_ready or confident_depart_ready)
+      release_ready = bool(lead_depart_ready or confident_depart_ready or slow_creep_depart_ready)
       standstill_stopped_lead_guard_caps = [
         cap for cap in (
           self.get_standstill_stopped_lead_guard_cap(
@@ -2681,15 +2731,18 @@ class LongitudinalPlanner:
     if (
       lead_control_active and
       sm['carState'].standstill and
-      (confident_depart_ready or lead_depart_ready) and
+      (confident_depart_ready or lead_depart_ready or slow_creep_depart_ready) and
       not depart_safety_veto and
       not bool(getattr(sm['starpilotPlan'], 'forcingStop', False)) and
       not bool(getattr(sm['starpilotPlan'], 'redLight', False)) and
-      (confident_depart_ready or model_desired_accel >= STANDSTILL_LEAD_DEPART_MIN_MODEL_ACCEL)
+      (confident_depart_ready or slow_creep_depart_ready or model_desired_accel >= STANDSTILL_LEAD_DEPART_MIN_MODEL_ACCEL)
     ):
       vision_low_speed_stop_active = False
       output_should_stop = False
-      output_a_target = max(output_a_target, STANDSTILL_LEAD_DEPART_MIN_ACCEL)
+      depart_min_accel = STANDSTILL_LEAD_DEPART_MIN_ACCEL
+      if slow_creep_depart_ready and not (confident_depart_ready or lead_depart_ready):
+        depart_min_accel = STANDSTILL_LEAD_CREEP_RELEASE_MIN_ACCEL
+      output_a_target = max(output_a_target, depart_min_accel)
       self.post_departure_follow_settle_until = now_t + POST_DEPARTURE_FOLLOW_SETTLE_LATCH_TIME
 
     if lead_control_active and lead_depart_ready and not depart_safety_veto and not output_should_stop and float(sm['carState'].vEgo) <= STANDSTILL_LEAD_DEPART_MAX_EGO_SPEED:

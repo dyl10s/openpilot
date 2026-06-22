@@ -151,7 +151,7 @@ def test_starting_accel_obeys_a_target_cap_when_custom_profile_enabled():
   assert output_accel == 0.1
 
 
-def test_update_requires_sustained_positive_target_to_leave_stopping():
+def test_update_requires_sustained_moderate_positive_target_to_leave_stopping():
   CP = car.CarParams.new_message(startingState=True, vEgoStarting=0.5)
   CP.longitudinalTuning.kpBP = [0.0]
   CP.longitudinalTuning.kpV = [0.1]
@@ -168,7 +168,7 @@ def test_update_requires_sustained_positive_target_to_leave_stopping():
     output_accel = lc.update(
       active=True,
       CS=CS,
-      a_target=0.5,
+      a_target=longcontrol.STOPPING_RELEASE_STRONG_ACCEL - 0.01,
       should_stop=False,
       accel_limits=(-3.0, 2.0),
       starpilot_toggles=make_toggles(startAccel=1.5),
@@ -179,13 +179,38 @@ def test_update_requires_sustained_positive_target_to_leave_stopping():
   lc.update(
     active=True,
     CS=CS,
-    a_target=0.5,
+    a_target=longcontrol.STOPPING_RELEASE_STRONG_ACCEL - 0.01,
     should_stop=False,
     accel_limits=(-3.0, 2.0),
     starpilot_toggles=make_toggles(startAccel=1.5),
   )
 
   assert lc.long_control_state == LongCtrlState.starting
+
+
+def test_update_releases_stopping_immediately_on_strong_positive_target():
+  CP = car.CarParams.new_message(startingState=True, vEgoStarting=0.5)
+  CP.longitudinalTuning.kpBP = [0.0]
+  CP.longitudinalTuning.kpV = [0.1]
+  CP.longitudinalTuning.kiBP = [0.0]
+  CP.longitudinalTuning.kiV = [0.03]
+
+  lc = LongControl(CP)
+  lc.long_control_state = LongCtrlState.stopping
+  CS = car.CarState.new_message(vEgo=0.0, aEgo=0.0, brakePressed=False)
+  CS.cruiseState.standstill = False
+
+  output_accel = lc.update(
+    active=True,
+    CS=CS,
+    a_target=longcontrol.STOPPING_RELEASE_STRONG_ACCEL,
+    should_stop=False,
+    accel_limits=(-3.0, 2.0),
+    starpilot_toggles=make_toggles(startAccel=1.5),
+  )
+
+  assert lc.long_control_state == LongCtrlState.starting
+  assert output_accel > 0.0
 
 
 def test_update_releases_stopping_on_small_sustained_positive_target():

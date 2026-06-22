@@ -44,7 +44,15 @@ def make_vcruise(*, red_light=False, raw_model_stopped=False, forcing_stop=False
 def make_sm(*, standstill=True, min_steer_speed=0.0):
   return {
     "carControl": SimpleNamespace(longActive=True),
-    "carState": SimpleNamespace(standstill=standstill, gasPressed=False, vCruiseCluster=0.0, vEgoCluster=0.0),
+    "carState": SimpleNamespace(
+      standstill=standstill,
+      gasPressed=False,
+      vCruiseCluster=0.0,
+      vEgoCluster=0.0,
+      leftBlinker=False,
+      rightBlinker=False,
+      steeringAngleDeg=0.0,
+    ),
     "carParams": SimpleNamespace(minSteerSpeed=min_steer_speed),
     "starpilotCarState": SimpleNamespace(accelPressed=False, dashboardStopSign=0, dashboardSpeedLimit=0),
   }
@@ -153,6 +161,32 @@ def test_force_stop_stays_committed_while_moving_even_if_scene_opens():
   assert result == pytest.approx(0.0)
   assert vcruise.force_stop_timer >= 0.5
   assert vcruise.forcing_stop
+
+
+def test_force_stop_turn_scene_veto_blocks_new_activation():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=False, forcing_stop=False)
+  sm = make_sm(standstill=False)
+  sm["carState"].leftBlinker = True
+  sm["carState"].steeringAngleDeg = 15.0
+
+  result = update_vcruise(vcruise, sm, make_toggles(), now=0.0, v_ego=7.0)
+
+  assert result == pytest.approx(20.0)
+  assert vcruise.force_stop_timer == pytest.approx(0.0)
+  assert not vcruise.forcing_stop
+
+
+def test_force_stop_turn_scene_clears_moving_commitment():
+  _, vcruise = make_vcruise(red_light=False, raw_model_stopped=False, forcing_stop=True)
+  sm = make_sm(standstill=False)
+  sm["carState"].rightBlinker = True
+  sm["carState"].steeringAngleDeg = -15.0
+
+  result = update_vcruise(vcruise, sm, make_toggles(), now=0.0, v_ego=8.0)
+
+  assert result == pytest.approx(20.0)
+  assert vcruise.force_stop_timer == pytest.approx(0.0)
+  assert not vcruise.forcing_stop
 
 
 def test_engage_while_already_stopped_in_red_light_scene_seeds_force_stop_hold():

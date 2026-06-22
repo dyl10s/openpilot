@@ -25,15 +25,18 @@ NAV_TURN_TARGET_SPEEDS = {
 }
 
 # Force-stop kinematic profile. The user tunes one signed knob (ForceStopDistanceOffset,
-# in feet); positive = stop later/longer, negative = stop sooner/shorter. All other
-# shape parameters are fixed constants converged from FP-Testing Sessions A-O.
-COMFORT_DECEL = 1.0       # m/s^2 — kinematic decel ceiling
+# in feet); positive = stop later/longer, negative = stop sooner/shorter.
+# Smaller values pull speed down earlier on approach.
+FORCE_STOP_MODEL_APPROACH_DECEL = 0.8
+FORCE_STOP_DASH_APPROACH_DECEL = 1.0
 ACTIVATION_M = 75.0       # m — CEM/model path activates when model_length < this
 MPC_HANDOFF_M = 6.0       # m — below this, command 0 and let MPC finish the stop
 ADAS_MAX_MS = 17.88       # 40 mph — cross-street ADAS guard
 DASH_SEED_M = 27.0        # ~88 ft — typical ADAS detection distance, used to snap
                           # tracked length closer when dashboard confirms a sign
 FT_TO_M = 0.3048
+FORCE_STOP_TURN_VETO_MAX_SPEED = 18.0 * CV.MPH_TO_MS
+FORCE_STOP_TURN_VETO_STEERING_ANGLE = 12.0
 
 # Knob bounds (mirror of UI slider; defense in depth)
 OFFSET_FT_MIN = -20
@@ -190,6 +193,11 @@ class StarPilotVCruise:
 
   def update(self, controls_enabled, now, time_validated, v_cruise, v_ego, sm, starpilot_toggles):
     long_control_active = sm["carControl"].longActive
+    turn_scene_active = bool(
+      v_ego <= FORCE_STOP_TURN_VETO_MAX_SPEED and
+      (getattr(sm["carState"], "leftBlinker", False) or getattr(sm["carState"], "rightBlinker", False)) and
+      abs(float(getattr(sm["carState"], "steeringAngleDeg", 0.0))) >= FORCE_STOP_TURN_VETO_STEERING_ANGLE
+    )
 
     # ----- Activation paths -----
     # Raw lead check: block Force Stop as soon as a relevant lead is present, without
@@ -209,6 +217,7 @@ class StarPilotVCruise:
                 and self.starpilot_planner.model_length < ACTIVATION_M
                 and self.override_force_stop_timer <= 0
                 and not self.starpilot_planner.driving_in_curve
+                and not turn_scene_active
                 and not self.starpilot_planner.tracking_lead
                 and not lead_present)
 
@@ -220,6 +229,7 @@ class StarPilotVCruise:
                  and v_ego < ADAS_MAX_MS
                  and self.override_force_stop_timer <= 0
                  and not self.starpilot_planner.driving_in_curve
+                 and not turn_scene_active
                  and not self.starpilot_planner.tracking_lead
                  and not lead_present)
 
@@ -275,6 +285,8 @@ class StarPilotVCruise:
     if force_stop_active and not sm["carState"].standstill:
       rate = DT_MDL * 2 if dash_active else DT_MDL
       self.force_stop_timer = min(self.force_stop_timer + rate, 2.0)
+    elif turn_scene_active and not sm["carState"].standstill:
+      self.force_stop_timer = 0.0
     elif self.standstill_force_stop_hold:
       self.force_stop_timer = max(self.force_stop_timer, 0.5)
     elif (self.forcing_stop and sm["carState"].standstill and not dash_active and
@@ -285,7 +297,7 @@ class StarPilotVCruise:
 
     force_stop_enabled = self.force_stop_timer >= 0.5
     # Stay committed across model dropouts until standstill
-    force_stop_enabled |= self.forcing_stop and not sm["carState"].standstill
+    force_stop_enabled |= self.forcing_stop and not sm["carState"].standstill and not turn_scene_active
     force_stop_enabled |= self.standstill_force_stop_hold
 
     # Override: gas/accel pedal during an active force stop
@@ -379,7 +391,8 @@ class StarPilotVCruise:
         if effective_d <= MPC_HANDOFF_M:
           v_target = 0.0
         else:
-          v_target = math.sqrt(2.0 * COMFORT_DECEL * (effective_d - MPC_HANDOFF_M))
+          approach_decel = FORCE_STOP_DASH_APPROACH_DECEL if dash_active else FORCE_STOP_MODEL_APPROACH_DECEL
+          v_target = math.sqrt(2.0 * approach_decel * (effective_d - MPC_HANDOFF_M))
 
         v_cruise = min(v_target, v_cruise)
 

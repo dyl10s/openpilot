@@ -1223,6 +1223,57 @@ def test_standstill_tiny_opening_lead_without_accel_does_not_get_nudge_floor(mod
 
 
 @pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
+def test_standstill_slow_creep_depart_releases_after_short_confirm(model_version):
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=0.0)
+
+  sm = make_sm(
+    0.0,
+    desired_accel=0.0,
+    min_accel=-0.5,
+    experimental_mode=False,
+    tracking_lead=True,
+    lead_one=make_lead(status=True, d_rel=7.2, v_lead=0.33, a_lead=0.28, radar=True, model_prob=1.0),
+  )
+  sm["carState"].standstill = True
+  sm["controlsState"].longControlState = LongCtrlState.stopping
+  sm["starpilotPlan"].vCruise = 10.0
+  sm["modelV2"].action.shouldStop = False
+
+  frames = int(round(longitudinal_planner_module.STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME / planner.dt))
+  for _ in range(max(frames, 1)):
+    planner.update(sm, make_toggles(model_version))
+
+  assert not planner.output_should_stop
+  assert planner.output_a_target >= longitudinal_planner_module.STANDSTILL_LEAD_CREEP_RELEASE_MIN_ACCEL
+
+
+@pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
+def test_standstill_slow_creep_depart_does_not_release_on_gap_without_motion_signal(model_version):
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=0.0)
+
+  sm = make_sm(
+    0.0,
+    desired_accel=0.0,
+    min_accel=-0.5,
+    experimental_mode=False,
+    tracking_lead=True,
+    lead_one=make_lead(status=True, d_rel=7.2, v_lead=0.20, a_lead=0.05, radar=True, model_prob=1.0),
+  )
+  sm["carState"].standstill = True
+  sm["controlsState"].longControlState = LongCtrlState.stopping
+  sm["starpilotPlan"].vCruise = 10.0
+  sm["modelV2"].action.shouldStop = False
+
+  frames = int(round(longitudinal_planner_module.STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME / planner.dt)) + 2
+  for _ in range(max(frames, 1)):
+    planner.update(sm, make_toggles(model_version))
+
+  assert planner.output_should_stop
+
+
+@pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
 def test_standstill_moving_lead_applies_resume_floor_once_stop_clears(model_version):
   v_ego = 0.0
 
