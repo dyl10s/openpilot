@@ -920,7 +920,12 @@ def handle_breadcrumb_click(target: str):
     while len(gui_app._nav_stack) > 1:
       gui_app.pop_widget()
     layout._panel_stack.clear()
-    layout._set_current_panel(StarPilotPanelType.MAIN)
+    
+    cat = layout.CATEGORIES[layout._current_category_idx]
+    if "buttons" in cat:
+      layout._set_current_panel(StarPilotPanelType.MAIN)
+    else:
+      layout._update_sub_panel_visibility()
   elif target == "action:panel":
     while len(gui_app._nav_stack) > 1:
       gui_app.pop_widget()
