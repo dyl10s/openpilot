@@ -9,7 +9,7 @@ from opendbc.car.structs import CarControl, CarParams
 from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
 from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalTuningState, GenesisG90LongitudinalTuningState, \
                                              update_ioniq_6_longitudinal_tuning, \
-                                             update_genesis_g90_longitudinal_tuning
+                                             update_genesis_g90_longitudinal_tuning, egmp_dynamic_longitudinal_tuning
 from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
@@ -20,7 +20,7 @@ from opendbc.car.hyundai.values import CAMERA_SCC_CAR, CANFD_CAR, CAN_GEARS, CAR
                                          HYBRID_CAR, EV_CAR, FW_QUERY_CONFIG, LEGACY_SAFETY_MODE_CAR, CANFD_FUZZY_WHITELIST, \
                                          UNSUPPORTED_LONGITUDINAL_CAR, PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
                                          LEGACY_LONGITUDINAL_CAR, CarControllerParams, DBC, HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, \
-                                         HyundaiStarPilotSafetyFlags, Buttons
+                                         HyundaiStarPilotSafetyFlags, Buttons, kia_ev6_gt_line_longitudinal_tuning
 
 LongCtrlState = CarControl.Actuators.LongControlState
 from opendbc.car.hyundai.fingerprints import FW_VERSIONS
@@ -526,6 +526,34 @@ class TestHyundaiFingerprint:
     assert CP.stoppingDecelRate == pytest.approx(0.4)
     assert CP.longitudinalActuatorDelay == pytest.approx(0.5)
     assert CP.startingState
+
+  def test_kia_ev6_gt_line_post_fingerprint_longitudinal_params(self):
+    toggles = get_test_toggles()
+    CP = CarInterface.get_params(CAR.KIA_EV6, gen_empty_fingerprint(), [], True, False, False, toggles)
+    CP.carVin = "KNDC4DLC0P0000000"
+
+    CarInterface.apply_post_fingerprint_params(CP, CAR.KIA_EV6, gen_empty_fingerprint(), [])
+
+    assert CP.startAccel == pytest.approx(1.4)
+    assert CP.vEgoStarting == pytest.approx(0.5)
+    assert CP.longitudinalActuatorDelay == pytest.approx(0.35)
+    assert CP.vEgoStopping == pytest.approx(0.3)
+    assert CP.stoppingDecelRate == pytest.approx(0.4)
+    assert kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, CP.carVin)
+    assert egmp_dynamic_longitudinal_tuning(CP)
+
+  def test_kia_ev6_non_gt_line_keeps_family_longitudinal_params(self):
+    toggles = get_test_toggles()
+    CP = CarInterface.get_params(CAR.KIA_EV6, gen_empty_fingerprint(), [], True, False, False, toggles)
+    CP.carVin = "KNDC3DLC0P0000000"
+
+    CarInterface.apply_post_fingerprint_params(CP, CAR.KIA_EV6, gen_empty_fingerprint(), [])
+
+    assert CP.startAccel == pytest.approx(1.0)
+    assert CP.vEgoStarting == pytest.approx(0.1)
+    assert CP.longitudinalActuatorDelay == pytest.approx(0.5)
+    assert not kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, CP.carVin)
+    assert not egmp_dynamic_longitudinal_tuning(CP)
 
   def test_genesis_g90_longitudinal_params_bias_toward_earlier_stop_handoff(self):
     toggles = get_test_toggles()

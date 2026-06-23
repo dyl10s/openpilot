@@ -914,6 +914,10 @@ CANCEL_BUTTON_ENABLE_CARS = frozenset({
   CAR.HYUNDAI_PALISADE_2023,
 })
 
+KIA_EV6_GT_LINE_LONG_TUNING_VDS_PREFIXES = frozenset({
+  "C4DLC",
+})
+
 
 # These classic HKG platforms publish the LKAS button on CLU13 over the alt bus.
 # Keep G90 excluded until its alt-bus path is route-proven without the recent
@@ -931,6 +935,11 @@ ALT_BUS_LDA_BUTTON_SWL_STAT_CARS = frozenset({
 
 def hyundai_cancel_button_enables_cruise(car_fingerprint) -> bool:
   return car_fingerprint in CANCEL_BUTTON_ENABLE_CARS
+
+
+def kia_ev6_gt_line_longitudinal_tuning(car_fingerprint, vin: str) -> bool:
+  return car_fingerprint == CAR.KIA_EV6 and isinstance(vin, str) and \
+    len(vin) == 17 and vin[3:8] in KIA_EV6_GT_LINE_LONG_TUNING_VDS_PREFIXES
 
 
 def get_platform_codes(fw_versions: list[bytes]) -> set[tuple[bytes, bytes | None]]:
