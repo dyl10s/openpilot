@@ -78,7 +78,13 @@ def use_interceptor_sng_launch(CP, CS, maneuver_mode=False):
   launch_speed = max(CP.vEgoStarting, 0.3)
   if maneuver_mode:
     launch_speed = max(launch_speed, 2.0)
-  return CS.out.cruiseState.standstill and (CS.out.standstill or CS.out.vEgo < launch_speed)
+  near_stop = CS.out.standstill or CS.out.vEgo < launch_speed
+  if (
+    getattr(CP, "carFingerprint", None) == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL and
+    getattr(CP, "enableGasInterceptorDEPRECATED", False)
+  ):
+    return near_stop
+  return CS.out.cruiseState.standstill and near_stop
 
 
 def should_spoof_dash_speed(CP, starpilot_toggles):

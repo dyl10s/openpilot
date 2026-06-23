@@ -744,6 +744,18 @@ def test_use_interceptor_sng_launch_requires_actual_near_stop():
   assert not use_interceptor_sng_launch(CP, _sng_cs(0.0, True, False))
 
 
+def test_bolt_acc_pedal_sng_launch_uses_physical_standstill_without_stock_acc_bit():
+  CP = SimpleNamespace(
+    vEgoStarting=0.25,
+    carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+    enableGasInterceptorDEPRECATED=True,
+  )
+
+  assert use_interceptor_sng_launch(CP, _sng_cs(0.0, True, False))
+  assert use_interceptor_sng_launch(CP, _sng_cs(0.2, False, False))
+  assert not use_interceptor_sng_launch(CP, _sng_cs(1.2, False, False))
+
+
 def test_use_interceptor_sng_launch_extends_for_maneuver_mode():
   CP = SimpleNamespace(vEgoStarting=0.25)
 
