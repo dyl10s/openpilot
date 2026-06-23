@@ -11,6 +11,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT / "scripts") not in sys.path:
+  sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from model_compiler import split_oversized_artifact
+
 DEFAULT_OPENPILOT = Path.home() / "openpilot"
 DEFAULT_WORKSPACE = Path("/Volumes/T5/StarPilot-Model-Rebuild-2026-06-22")
 DEFAULT_SOURCE_MAP = REPO_ROOT / "scripts/model_source_map_v22.json"
@@ -204,9 +209,22 @@ def remote(command: str, *, capture: bool = False):
   return result
 
 
+def stage_ready_artifact(artifact: Path, workspace: Path) -> None:
+  ready_path = workspace / "ready-for-resources" / artifact.name
+  multipart_outputs = split_oversized_artifact(artifact, ready_path.parent)
+  if multipart_outputs:
+    ready_path.unlink(missing_ok=True)
+    for multipart_output in multipart_outputs:
+      multipart_output.chmod(0o644)
+  else:
+    shutil.copyfile(artifact, ready_path)
+    ready_path.chmod(0o644)
+
+
 def compile_model(model_id: str, source: dict, version: str, workspace: Path, force: bool) -> dict:
   local_output = workspace / "compiled" / f"{model_id}_driving_tinygrad.pkl"
   if local_output.is_file() and not force:
+    stage_ready_artifact(local_output, workspace)
     return artifact_result(model_id, local_output, "skipped")
 
   source_dir = workspace / "onnx" / model_id
@@ -230,13 +248,7 @@ def compile_model(model_id: str, source: dict, version: str, workspace: Path, fo
 
   run(["rsync", "-az", f"{REMOTE}:{remote_output}", str(local_output)])
   local_output.chmod(0o644)
-  ready_path = workspace / "ready-for-resources" / local_output.name
-  shutil.copyfile(local_output, ready_path)
-  ready_path.chmod(0o644)
-  if local_output.stat().st_size > 100 * 1024 * 1024:
-    external_path = workspace / "external-upload" / local_output.name
-    shutil.copyfile(local_output, external_path)
-    external_path.chmod(0o644)
+  stage_ready_artifact(local_output, workspace)
   result = artifact_result(model_id, local_output, "compiled")
   (workspace / "results" / f"{model_id}_artifact.json").write_text(json.dumps(result, indent=2) + "\n")
   return result
@@ -249,7 +261,7 @@ def artifact_result(model_id: str, path: Path, status: str) -> dict:
     "path": str(path),
     "size": path.stat().st_size,
     "sha256": sha256_file(path),
-    "external_upload": path.stat().st_size > 100 * 1024 * 1024,
+    "multipart": path.stat().st_size > 100 * 1024 * 1024,
   }
 
 
@@ -288,7 +300,7 @@ def update_manifest(base_manifest: Path, workspace: Path) -> dict:
       "released": "2026-06-17",
       "community_favorite": False,
     })
-  external_handoff = []
+  multipart_handoff = []
   for model in models:
     artifact = workspace / "compiled" / f"{model['id']}_driving_tinygrad.pkl"
     model.pop("artifact_format", None)
@@ -298,19 +310,22 @@ def update_manifest(base_manifest: Path, workspace: Path) -> dict:
     if not artifact.is_file() or artifact.stat().st_size <= 100 * 1024 * 1024:
       model.pop("artifact_url", None)
     else:
-      external_handoff.append({
+      multipart_handoff.append({
         "id": model["id"],
         "filename": artifact.name,
         "size": artifact.stat().st_size,
         "sha256": sha256_file(artifact),
-        "artifact_url": model.get("artifact_url", ""),
+        "parts": [
+          path.name
+          for path in sorted((workspace / "ready-for-resources").glob(f"{artifact.name}.p[0-9][0-9]"))
+        ],
       })
   output = {"models": models}
   output_path = workspace / "manifests/model_names_v22.json"
   output_path.parent.mkdir(parents=True, exist_ok=True)
   output_path.write_text(json.dumps(output, indent=2, ensure_ascii=False) + "\n")
-  (workspace / "external-upload" / "handoff.json").write_text(
-    json.dumps(external_handoff, indent=2) + "\n",
+  (workspace / "ready-for-resources" / "multipart.json").write_text(
+    json.dumps(multipart_handoff, indent=2) + "\n",
   )
   return output
 

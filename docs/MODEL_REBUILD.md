@@ -23,7 +23,7 @@ Important directories:
 - `compiled/`: completed unified driving PKLs.
 - `driver-monitoring/`: DM ONNX, model PKL, metadata, and camera warps.
 - `ready-for-resources/`: flat repository-upload handoff.
-- `external-upload/`: artifacts over 100 MiB plus `handoff.json`.
+- Oversized models are represented by repository-safe `.p00`, `.p01`, and `.sha256` files in `ready-for-resources/`.
 - `logs/`: one remote compilation log per model.
 - `results/`: source and artifact checksum records.
 - `manifests/`: generated `model_names_v22.json`.
@@ -84,6 +84,28 @@ The lower-level device compiler also supports direct use:
 
 `--version` records behavioral semantics only. It does not change artifact layout.
 
+If the compiled PKL exceeds 100 MiB, `./models` automatically keeps the full
+local PKL and creates 95 MiB upload parts beside it:
+
+```text
+deeprl3v2_driving_tinygrad.pkl
+deeprl3v2_driving_tinygrad.pkl.p00
+deeprl3v2_driving_tinygrad.pkl.p01
+deeprl3v2_driving_tinygrad.pkl.sha256
+```
+
+To split an already compiled artifact:
+
+```bash
+./models --split-artifact /path/to/deeprl3v2_driving_tinygrad.pkl \
+  --output-dir /path/to/upload-ready
+```
+
+Upload only the numbered parts and checksum when the full PKL exceeds the
+repository limit. The downloader reassembles into a temporary file, verifies
+the companion SHA-256, and atomically installs the final PKL. No manifest field
+is required for multipart artifacts.
+
 ## Driver Monitoring
 
 Stage the current DM ONNX in `uncompiledmodels`, then run:
@@ -112,14 +134,10 @@ python3 scripts/model_rebuild_pipeline.py manifest \
   --base-manifest /path/to/model_names_v21.json
 ```
 
-The generator preserves existing IDs and behavioral metadata, adds `deeprl3v2`, and writes:
-
-- `artifact_format`
-- `artifact_size`
-- `artifact_sha256`
-- optional `artifact_url`
-
-Files above 100 MiB are listed in `external-upload/handoff.json`. Upload those files to Dropbox, use a direct-download URL, add it as `artifact_url`, and regenerate or edit the final manifest without changing its size or SHA-256 fields.
+The generator preserves existing IDs and behavioral metadata and adds
+`deeprl3v2`. Manifest v22 implies the unified single-PKL runtime layout.
+Repository-hosted multipart files are discovered by naming convention, so no
+size, hash, format, or part-count metadata is required.
 
 ## Runtime Verification
 

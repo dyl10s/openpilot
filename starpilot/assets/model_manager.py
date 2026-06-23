@@ -9,6 +9,7 @@ from pathlib import Path
 from openpilot.starpilot.assets.download_functions import (
   GITLAB_URL,
   download_file,
+  download_multipart_file,
   get_repository_url,
   handle_error,
   handle_request_error,
@@ -584,21 +585,21 @@ class ModelManager:
 
     for filename in required_files:
       file_path = MODELS_PATH / filename
-      candidate_urls: list[tuple[str, bool]] = []
+      candidate_urls: list[tuple[str, bool, bool]] = []
 
       custom_url = artifact_urls.get(filename, "").strip()
       if custom_url:
-        candidate_urls.append((custom_url, True))
+        candidate_urls.append((custom_url, True, False))
 
       file_url = f"{repo_url}/Models/{filename}"
-      candidate_urls.append((file_url, False))
+      candidate_urls.append((file_url, False, True))
 
       fallback_url = f"{GITLAB_URL}/Models/{filename}"
       if fallback_url != file_url:
-        candidate_urls.append((fallback_url, False))
+        candidate_urls.append((fallback_url, False, True))
 
       download_succeeded = False
-      for candidate_url, allow_unknown_size in candidate_urls:
+      for candidate_url, allow_unknown_size, allow_multipart in candidate_urls:
         download_file(
           CANCEL_DOWNLOAD_PARAM,
           file_path,
@@ -607,6 +608,7 @@ class ModelManager:
           MODEL_DOWNLOAD_PARAM,
           self.params_memory,
           allow_unknown_size=allow_unknown_size,
+          suppress_errors=True,
         )
         if self.params_memory.get_bool(CANCEL_DOWNLOAD_PARAM):
           handle_error(None, "Download cancelled...", "Download cancelled...", MODEL_DOWNLOAD_PARAM, DOWNLOAD_PROGRESS_PARAM, self.params_memory)
@@ -619,6 +621,18 @@ class ModelManager:
           allow_unknown_size=allow_unknown_size,
           expected_size=artifact_metadata.get("artifact_size"),
           expected_sha256=artifact_metadata.get("artifact_sha256"),
+        ):
+          download_succeeded = True
+          break
+        delete_file(file_path, print_error=False)
+
+        if allow_multipart and download_multipart_file(
+          CANCEL_DOWNLOAD_PARAM,
+          file_path,
+          DOWNLOAD_PROGRESS_PARAM,
+          candidate_url,
+          MODEL_DOWNLOAD_PARAM,
+          self.params_memory,
         ):
           download_succeeded = True
           break

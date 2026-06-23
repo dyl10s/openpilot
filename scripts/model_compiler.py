@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import codecs
+import hashlib
 import json
 import os
 import pickle
@@ -36,6 +37,8 @@ MEDMODEL_INPUT_SIZE = (512, 256)
 DM_INPUT_SIZE = (1440, 960)
 MODEL_RUN_FREQ = 20
 MODEL_CONTEXT_FREQ = 5
+REPOSITORY_FILE_LIMIT = 100 * 1024 * 1024
+DEFAULT_MULTIPART_SIZE = 95 * 1024 * 1024
 
 
 def build_compile_env() -> dict[str, str]:
@@ -77,6 +80,8 @@ def parse_args() -> argparse.Namespace:
   )
   parser.add_argument("--list", action="store_true", help="List staged models and exit.")
   parser.add_argument("--force", action="store_true", help="Accepted for compatibility; selected outputs are always replaced.")
+  parser.add_argument("--split-artifact", type=Path, help="Split an existing oversized PKL without compiling.")
+  parser.add_argument("--chunk-size-mib", type=int, default=95, help="Multipart size in MiB; must be below 100.")
 
   args, unknown = parser.parse_known_args()
   dynamic_flags = [value[2:] for value in unknown if value.startswith("--")]
@@ -93,6 +98,10 @@ def parse_args() -> argparse.Namespace:
     args.model = None
   if args.dm and args.model:
     parser.error("Use either --dm or a driving model ID.")
+  if args.split_artifact and (args.dm or args.model):
+    parser.error("--split-artifact cannot be combined with --dm or a model ID.")
+  if not 1 <= args.chunk_size_mib < 100:
+    parser.error("--chunk-size-mib must be between 1 and 99.")
   return args
 
 
@@ -264,11 +273,81 @@ def remove_paths(paths: list[Path]) -> int:
   return count
 
 
+def sha256_file(path: Path) -> str:
+  digest = hashlib.sha256()
+  with open(path, "rb") as artifact_file:
+    for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
+      digest.update(chunk)
+  return digest.hexdigest()
+
+
+def multipart_output_paths(artifact: Path, output_dir: Path | None = None) -> list[Path]:
+  output_dir = output_dir or artifact.parent
+  return [
+    *sorted(output_dir.glob(f"{artifact.name}.p[0-9][0-9]")),
+    output_dir / f"{artifact.name}.sha256",
+  ]
+
+
+def split_oversized_artifact(
+  artifact: Path,
+  output_dir: Path | None = None,
+  chunk_size: int = DEFAULT_MULTIPART_SIZE,
+  force: bool = False,
+) -> list[Path]:
+  artifact = artifact.resolve()
+  output_dir = (output_dir or artifact.parent).resolve()
+  if not artifact.is_file():
+    raise FileNotFoundError(artifact)
+  if chunk_size <= 0 or chunk_size >= REPOSITORY_FILE_LIMIT:
+    raise ValueError("Multipart chunk size must be between 1 byte and 100 MiB.")
+
+  remove_paths(multipart_output_paths(artifact, output_dir))
+  if artifact.stat().st_size <= REPOSITORY_FILE_LIMIT and not force:
+    return []
+
+  output_dir.mkdir(parents=True, exist_ok=True)
+  digest = hashlib.sha256()
+  part_paths: list[Path] = []
+  with open(artifact, "rb") as source:
+    for index in range(100):
+      part_path = output_dir / f"{artifact.name}.p{index:02d}"
+      part_size = 0
+      with open(part_path, "wb") as part_file:
+        while part_size < chunk_size:
+          chunk = source.read(min(1024 * 1024, chunk_size - part_size))
+          if not chunk:
+            break
+          part_file.write(chunk)
+          digest.update(chunk)
+          part_size += len(chunk)
+      if part_size == 0:
+        part_path.unlink()
+        break
+      part_paths.append(part_path)
+  if not part_paths:
+    raise ValueError(f"Artifact is empty: {artifact}")
+
+  checksum_path = output_dir / f"{artifact.name}.sha256"
+  checksum_path.write_text(f"{digest.hexdigest()}  {artifact.name}\n")
+
+  verify_digest = hashlib.sha256()
+  for part_path in part_paths:
+    with open(part_path, "rb") as part_file:
+      for chunk in iter(lambda: part_file.read(1024 * 1024), b""):
+        verify_digest.update(chunk)
+  if verify_digest.hexdigest() != digest.hexdigest():
+    remove_paths([*part_paths, checksum_path])
+    raise RuntimeError("Split artifact failed checksum verification.")
+  return [*part_paths, checksum_path]
+
+
 def compile_driving(model_key: str, files: dict[str, Path], input_format: str, version: str, output_dir: Path) -> Path:
   model_type, source_args = driving_compile_args(files, input_format)
   output_path = output_dir / f"{model_key}_driving_tinygrad.pkl"
   removed = remove_paths([
     output_path,
+    *multipart_output_paths(output_path, output_dir),
     *output_dir.glob(f"{model_key}_driving_*_tinygrad.pkl"),
     *output_dir.glob(f"{model_key}_driving_*_metadata.pkl"),
   ])
@@ -349,6 +428,17 @@ def list_models(staged: dict[str, dict[str, Path]], input_root: Path) -> int:
 
 def main() -> int:
   args = parse_args()
+  if args.split_artifact:
+    outputs = split_oversized_artifact(
+      args.split_artifact,
+      args.output_dir,
+      args.chunk_size_mib * 1024 * 1024,
+      force=True,
+    )
+    for output in outputs:
+      print(f"  saved {output.name} ({output.stat().st_size} bytes)")
+    return 0
+
   staged = find_staged_models(args.input_dir)
   if args.list:
     return list_models(staged, args.input_dir)
@@ -379,6 +469,11 @@ def main() -> int:
   print(f"Compiling {model_key} ({input_format}, {version_label}) from {args.input_dir} -> {args.output_dir}")
   output = compile_driving(model_key, files, input_format, version, args.output_dir)
   print(f"  saved {output.name}")
+  multipart_outputs = split_oversized_artifact(output)
+  if multipart_outputs:
+    print("  artifact exceeds 100 MiB; created repository-safe multipart files:")
+    for multipart_output in multipart_outputs:
+      print(f"    {multipart_output.name} ({multipart_output.stat().st_size} bytes)")
   print("Done.")
   return 0
 
