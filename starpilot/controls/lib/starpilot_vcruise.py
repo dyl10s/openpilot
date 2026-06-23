@@ -13,6 +13,13 @@ CSC_MIN_SPEED = CITY_SPEED_LIMIT * CV.MPH_TO_MS
 OVERRIDE_FORCE_STOP_TIMER = 10
 STANDSTILL_FORCE_STOP_CLEAR_TIME = 0.75
 STANDSTILL_FORCE_STOP_LIGHT_HOLD_TIME = 5.0
+SLC_LEAD_DROP_RELAXATION_MIN_SPEED = 20.0 * CV.MPH_TO_MS
+SLC_LEAD_DROP_RELAXATION_MIN_DISTANCE = 30.0
+SLC_LEAD_DROP_RELAXATION_MIN_HEADWAY = 1.2
+SLC_LEAD_DROP_RELAXATION_MAX_CLOSING_SPEED = 0.35
+SLC_LEAD_DROP_RELAXATION_MAX_LEAD_BRAKE = 0.25
+SLC_LEAD_DROP_RELAXATION_OVERSPEED_BP = [0.0, 5.0 * CV.MPH_TO_MS, 10.0 * CV.MPH_TO_MS, 15.0 * CV.MPH_TO_MS]
+SLC_LEAD_DROP_RELAXATION_DECEL_V = [0.7, 0.9, 1.15, 1.35]
 NAV_TURN_COMFORT_DECEL = 1.25
 NAV_TURN_DISTANCE_BUFFER = 8.0
 NAV_TURN_MIN_TARGET_DELTA = 0.25
@@ -56,6 +63,59 @@ def get_active_slc_control_target(speed_limit_controller, set_speed_limit, slc_t
   return max(0.0, base_target - float(v_ego_diff))
 
 
+def _interp_linear(x, xp, fp):
+  if x <= xp[0]:
+    return fp[0]
+  if x >= xp[-1]:
+    return fp[-1]
+
+  for i in range(1, len(xp)):
+    if x <= xp[i]:
+      span = xp[i] - xp[i - 1]
+      if span <= 0.0:
+        return fp[i]
+      ratio = (x - xp[i - 1]) / span
+      return fp[i - 1] + ratio * (fp[i] - fp[i - 1])
+
+  return fp[-1]
+
+
+def get_slc_lead_drop_relaxed_target(raw_target, previous_target, v_ego, tracking_lead, lead, override_active, source):
+  if (
+    raw_target <= 0.0 or
+    previous_target <= 0.0 or
+    override_active or
+    source == "None" or
+    not tracking_lead or
+    lead is None or
+    not getattr(lead, "status", False)
+  ):
+    return raw_target
+
+  if (
+    raw_target >= previous_target - 1e-3 or
+    v_ego < SLC_LEAD_DROP_RELAXATION_MIN_SPEED or
+    raw_target >= v_ego - 0.05
+  ):
+    return raw_target
+
+  d_rel = float(getattr(lead, "dRel", 0.0))
+  if d_rel < max(SLC_LEAD_DROP_RELAXATION_MIN_DISTANCE, float(v_ego) * SLC_LEAD_DROP_RELAXATION_MIN_HEADWAY):
+    return raw_target
+
+  v_lead = float(getattr(lead, "vLead", 0.0))
+  if v_lead < float(v_ego) - SLC_LEAD_DROP_RELAXATION_MAX_CLOSING_SPEED:
+    return raw_target
+
+  lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
+  if lead_brake > SLC_LEAD_DROP_RELAXATION_MAX_LEAD_BRAKE:
+    return raw_target
+
+  overspeed = max(0.0, float(v_ego) - float(raw_target))
+  comfort_decel = _interp_linear(overspeed, SLC_LEAD_DROP_RELAXATION_OVERSPEED_BP, SLC_LEAD_DROP_RELAXATION_DECEL_V)
+  return max(float(raw_target), float(previous_target) - comfort_decel * DT_MDL)
+
+
 class StarPilotVCruise:
   def __init__(self, StarPilotPlanner):
     self.starpilot_planner = StarPilotPlanner
@@ -82,6 +142,7 @@ class StarPilotVCruise:
     self.nav_turn_target = 0.0
     self._nav_instruction_state_raw = None
     self._nav_instruction_state = {}
+    self._applied_slc_control_target = 0.0
 
   def _update_nav_instruction_state(self):
     raw = self.starpilot_planner.params_memory.get("NavInstructionState") or {}
@@ -192,6 +253,9 @@ class StarPilotVCruise:
   # ===== Main update =====
 
   def update(self, controls_enabled, now, time_validated, v_cruise, v_ego, sm, starpilot_toggles):
+    if not controls_enabled or not getattr(starpilot_toggles, "speed_limit_controller", False):
+      self._applied_slc_control_target = 0.0
+
     long_control_active = sm["carControl"].longActive
     turn_scene_active = bool(
       v_ego <= FORCE_STOP_TURN_VETO_MAX_SPEED and
@@ -415,6 +479,16 @@ class StarPilotVCruise:
         self.slc.overridden_speed,
         v_ego_diff,
       )
+      slc_control_target = get_slc_lead_drop_relaxed_target(
+        slc_control_target,
+        self._applied_slc_control_target,
+        v_ego,
+        bool(getattr(self.starpilot_planner, "tracking_lead", False)),
+        getattr(self.starpilot_planner, "lead_one", None),
+        self.slc.overridden_speed > 0.0,
+        getattr(self.slc, "source", "None"),
+      )
+      self._applied_slc_control_target = slc_control_target if slc_control_target > 0.0 else 0.0
       if slc_control_target >= CSC_MIN_SPEED:
         targets.append(slc_control_target)
       if self.nav_turn_target > 0.0:

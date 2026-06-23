@@ -3,7 +3,11 @@ import datetime
 import pytest
 
 from openpilot.common.constants import CV
-from openpilot.starpilot.controls.lib.starpilot_vcruise import StarPilotVCruise, get_active_slc_control_target
+from openpilot.starpilot.controls.lib.starpilot_vcruise import (
+  StarPilotVCruise,
+  get_active_slc_control_target,
+  get_slc_lead_drop_relaxed_target,
+)
 from types import SimpleNamespace
 
 
@@ -106,6 +110,82 @@ def test_active_slc_control_target_applies_offset_and_cluster_diff():
   )
 
   assert target == pytest.approx((48.0 * CV.MPH_TO_MS) - 0.4)
+
+
+def test_slc_lead_drop_relaxed_target_softens_map_stepdown_for_harmless_lead():
+  raw_target = 55.0 * CV.MPH_TO_MS
+  previous_target = 65.0 * CV.MPH_TO_MS
+  v_ego = 65.0 * CV.MPH_TO_MS
+  lead = SimpleNamespace(status=True, dRel=46.0, vLead=71.0 * CV.MPH_TO_MS, aLeadK=0.08)
+
+  relaxed = get_slc_lead_drop_relaxed_target(
+    raw_target,
+    previous_target,
+    v_ego,
+    tracking_lead=True,
+    lead=lead,
+    override_active=False,
+    source="Map Data",
+  )
+
+  assert raw_target < relaxed < previous_target
+
+
+def test_slc_lead_drop_relaxed_target_bails_out_for_override():
+  raw_target = 55.0 * CV.MPH_TO_MS
+  previous_target = 65.0 * CV.MPH_TO_MS
+  v_ego = 65.0 * CV.MPH_TO_MS
+  lead = SimpleNamespace(status=True, dRel=46.0, vLead=71.0 * CV.MPH_TO_MS, aLeadK=0.08)
+
+  relaxed = get_slc_lead_drop_relaxed_target(
+    raw_target,
+    previous_target,
+    v_ego,
+    tracking_lead=True,
+    lead=lead,
+    override_active=True,
+    source="Map Data",
+  )
+
+  assert relaxed == pytest.approx(raw_target)
+
+
+def test_slc_lead_drop_relaxed_target_bails_out_for_threatening_lead():
+  raw_target = 55.0 * CV.MPH_TO_MS
+  previous_target = 65.0 * CV.MPH_TO_MS
+  v_ego = 65.0 * CV.MPH_TO_MS
+  lead = SimpleNamespace(status=True, dRel=20.0, vLead=52.0 * CV.MPH_TO_MS, aLeadK=-0.5)
+
+  relaxed = get_slc_lead_drop_relaxed_target(
+    raw_target,
+    previous_target,
+    v_ego,
+    tracking_lead=True,
+    lead=lead,
+    override_active=False,
+    source="Map Data",
+  )
+
+  assert relaxed == pytest.approx(raw_target)
+
+
+def test_slc_lead_drop_relaxed_target_bails_out_without_tracking_lead():
+  raw_target = 55.0 * CV.MPH_TO_MS
+  previous_target = 65.0 * CV.MPH_TO_MS
+  v_ego = 65.0 * CV.MPH_TO_MS
+  lead = SimpleNamespace(status=True, dRel=46.0, vLead=71.0 * CV.MPH_TO_MS, aLeadK=0.08)
+
+  relaxed = get_slc_lead_drop_relaxed_target(
+    raw_target,
+    previous_target,
+    v_ego,
+    tracking_lead=False,
+    lead=lead,
+    override_active=False,
+    source="Map Data",
+  )
+
+  assert relaxed == pytest.approx(raw_target)
 
 
 def test_force_stop_clears_at_standstill_once_scene_opens():
