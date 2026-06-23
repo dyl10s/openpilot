@@ -62,11 +62,13 @@ LEGACY_STARPILOT_PARAM_RENAMES = {
 EXCLUDED_KEYS = {
   "AvailableModels",
   "AvailableModelNames",
+  "AvailableModelArtifactFormats",
   "StarPilotStats",
   "GithubSshKeys",
   "GithubUsername",
   "MapBoxRequests",
   "ModelDrivesAndScores",
+  "ModelManifestVersion",
   "OverpassRequests",
   "SpeedLimits",
   "SpeedLimitsFiltered",

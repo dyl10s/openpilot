@@ -61,11 +61,6 @@ from openpilot.starpilot.common.maps_catalog import (
   schedule_label,
   schedule_param_value,
 )
-from openpilot.starpilot.common.model_versions import (
-  is_tinygrad_model_version,
-  uses_combined_driving_artifacts,
-  uses_split_off_policy_artifacts,
-)
 from openpilot.starpilot.common.experimental_state import sync_persist_chill_state, sync_persist_experimental_state
 from openpilot.starpilot.common.favorite_slots import FAVORITE_SLOTS_PARAM, normalize_favorite_slots
 from openpilot.starpilot.common.starpilot_utilities import delete_file, get_lock_status, run_cmd
@@ -4680,40 +4675,18 @@ def setup(app):
     return canonical_model_key(current_model) or _default_model_key()
 
   def is_model_installed(model_key, model_version, on_disk_files):
+    del model_version
     if is_builtin_model_key(model_key):
       return True
 
-    if f"{model_key}.thneed" in on_disk_files:
-      return True
-
-    if is_tinygrad_model_version(model_version):
-      if uses_combined_driving_artifacts(model_version):
-        return f"{model_key}_driving_tinygrad.pkl" in on_disk_files
-
-      required_files = {
-        f"{model_key}_driving_policy_tinygrad.pkl",
-        f"{model_key}_driving_vision_tinygrad.pkl",
-        f"{model_key}_driving_policy_metadata.pkl",
-        f"{model_key}_driving_vision_metadata.pkl",
-      }
-      if uses_split_off_policy_artifacts(model_version):
-        required_files |= {
-          f"{model_key}_driving_off_policy_tinygrad.pkl",
-          f"{model_key}_driving_off_policy_metadata.pkl",
-        }
-      return required_files.issubset(on_disk_files)
-
-    if model_version == "v7":
-      return f"{model_key}.pkl" in on_disk_files
-
-    # Fallback for unknown versions
-    return any(file.startswith(f"{model_key}.") or file.startswith(f"{model_key}_") for file in on_disk_files)
+    return f"{model_key}_driving_tinygrad.pkl" in on_disk_files
 
   def get_model_catalog():
     available = [model.strip() for model in (params.get("AvailableModels", encoding="utf-8") or "").split(",")]
     names = [name.strip() for name in (params.get("AvailableModelNames", encoding="utf-8") or "").split(",")]
     series = [entry.strip() for entry in (params.get("AvailableModelSeries", encoding="utf-8") or "").split(",")]
     versions = [entry.strip() for entry in (params.get("ModelVersions", encoding="utf-8") or "").split(",")]
+    artifact_formats = [entry.strip() for entry in (params.get("AvailableModelArtifactFormats", encoding="utf-8") or "").split(",")]
     released_dates = [entry.strip() for entry in (params.get("ModelReleasedDates", encoding="utf-8") or "").split(",")]
 
     community_favorites = {canonical_model_key(entry.strip()) for entry in (params.get("CommunityFavorites", encoding="utf-8") or "").split(",") if entry.strip()}
@@ -4732,6 +4705,7 @@ def setup(app):
 
       label = names[i] if i < len(names) and names[i] else key
       model_version = versions[i] if i < len(versions) else ""
+      artifact_format = artifact_formats[i] if i < len(artifact_formats) else ""
       model_series = series[i] if i < len(series) and series[i] else "Custom Series"
       released = released_dates[i] if i < len(released_dates) else ""
 
@@ -4742,6 +4716,7 @@ def setup(app):
           "label": label,
           "series": model_series,
           "version": model_version,
+          "artifactFormat": artifact_format,
           "released": released,
           "builtin": is_builtin_model_key(canonical_key),
           "communityFavorite": canonical_key in community_favorites,
@@ -4755,6 +4730,8 @@ def setup(app):
         existing["series"] = model_series
       if not existing["version"] and model_version:
         existing["version"] = model_version
+      if not existing.get("artifactFormat") and artifact_format:
+        existing["artifactFormat"] = artifact_format
       if not existing["released"] and released:
         existing["released"] = released
       existing["builtin"] = existing["builtin"] or is_builtin_model_key(canonical_key)
@@ -4767,6 +4744,7 @@ def setup(app):
       "label": _default_model_name(),
       "series": "Custom Series",
       "version": _default_model_version(),
+      "artifactFormat": "tinygrad_single_v1",
       "released": "",
       "builtin": True,
       "communityFavorite": default_key in community_favorites,

@@ -211,6 +211,7 @@ DEVICE_SHUTDOWN_TIMES = {
 
 EXCLUDED_KEYS = {
   "AvailableModelSeries",
+  "AvailableModelArtifactFormats",
   "AvailableModelNames",
   "AvailableModels",
   "CalibratedLateralAcceleration",
@@ -229,6 +230,7 @@ EXCLUDED_KEYS = {
   "ModelReleasedDates",
   "ModelSortMode",
   "ModelVersions",
+  "ModelManifestVersion",
   "openpilotMinutes",
   "OverpassRequests",
   "PandaSignatures",

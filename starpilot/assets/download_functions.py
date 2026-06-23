@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import hashlib
 import os
 import requests
 import tempfile
+import urllib.parse
 
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +13,17 @@ from openpilot.starpilot.common.starpilot_utilities import delete_file, is_url_p
 RESOURCES_REPO = os.getenv("STARPILOT_RESOURCES_REPO", "firestar5683/StarPilot-Resources")
 GITHUB_URL = f"https://raw.githubusercontent.com/{RESOURCES_REPO}"
 GITLAB_URL = f"https://gitlab.com/{RESOURCES_REPO}/-/raw"
+
+
+def normalize_download_url(url: str) -> str:
+  parsed = urllib.parse.urlsplit(str(url or "").strip())
+  if parsed.netloc.lower() not in {"dropbox.com", "www.dropbox.com"}:
+    return url
+  query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+  query = [(key, value) for key, value in query if key != "dl"]
+  query.append(("dl", "1"))
+  return urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
+
 
 def check_github_rate_limit():
   try:
@@ -33,6 +46,7 @@ def check_github_rate_limit():
 
 def download_file(cancel_param, destination, progress_param, url, download_param, params_memory, allow_unknown_size=False, suppress_errors=False):
   try:
+    url = normalize_download_url(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     total_size = get_remote_file_size(url, suppress_errors=suppress_errors or allow_unknown_size)
@@ -83,6 +97,7 @@ def download_file(cancel_param, destination, progress_param, url, download_param
 
 def get_remote_file_size(url, suppress_errors=False):
   try:
+    url = normalize_download_url(url)
     response = requests.head(url, headers={"Accept-Encoding": "identity"}, timeout=10, allow_redirects=True)
     response.raise_for_status()
     return int(response.headers.get("Content-Length", 0))
@@ -119,27 +134,44 @@ def handle_request_error(error, destination, download_param, progress_param, par
   error_message = error_map.get(type(error), "Unexpected error")
   handle_error(destination, f"Failed: {error_message}", error, download_param, progress_param, params_memory)
 
-def verify_download(file_path, url, allow_unknown_size=False):
-  remote_file_size = get_remote_file_size(url, suppress_errors=allow_unknown_size)
-
-  if remote_file_size == 0 and allow_unknown_size:
-    if not file_path.is_file():
-      print(f"File not found: {file_path}")
-      return False
-    if file_path.stat().st_size == 0:
-      print(f"File is empty: {file_path}")
-      return False
-    return True
-
-  if remote_file_size == 0:
-    print(f"Error fetching remote size for {file_path}")
-    return False
+def verify_download(file_path, url, allow_unknown_size=False, expected_size=None, expected_sha256=None):
+  url = normalize_download_url(url)
+  expected_size = int(expected_size or 0)
+  expected_sha256 = str(expected_sha256 or "").strip().lower()
+  remote_file_size = get_remote_file_size(url, suppress_errors=allow_unknown_size or expected_size > 0)
 
   if not file_path.is_file():
     print(f"File not found: {file_path}")
     return False
 
-  if remote_file_size != file_path.stat().st_size:
+  actual_size = file_path.stat().st_size
+  if expected_size and actual_size != expected_size:
+    print(f"Expected size mismatch for {file_path}: {actual_size} != {expected_size}")
+    return False
+
+  if expected_sha256:
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as artifact_file:
+      for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
+        digest.update(chunk)
+    if digest.hexdigest().lower() != expected_sha256:
+      print(f"SHA-256 mismatch for {file_path}")
+      return False
+
+  if remote_file_size == 0 and allow_unknown_size:
+    if actual_size == 0:
+      print(f"File is empty: {file_path}")
+      return False
+    return True
+
+  if remote_file_size == 0 and expected_size:
+    return actual_size == expected_size
+
+  if remote_file_size == 0:
+    print(f"Error fetching remote size for {file_path}")
+    return False
+
+  if remote_file_size != actual_size:
     print(f"File size mismatch for {file_path}")
     return False
 
