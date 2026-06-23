@@ -44,6 +44,7 @@ DASH_SEED_M = 27.0        # ~88 ft — typical ADAS detection distance, used to 
 FT_TO_M = 0.3048
 FORCE_STOP_TURN_VETO_MAX_SPEED = 18.0 * CV.MPH_TO_MS
 FORCE_STOP_TURN_VETO_STEERING_ANGLE = 12.0
+FORCE_STOP_CURVE_VETO_MAX_ROAD_CURVATURE = 0.003
 
 # Knob bounds (mirror of UI slider; defense in depth)
 OFFSET_FT_MIN = -20
@@ -271,6 +272,7 @@ class StarPilotVCruise:
     lead_present = (bool(getattr(lead, "status", False))
                     and float(getattr(lead, "dRel", float("inf"))) < ACTIVATION_M
                     and float(getattr(lead, "vLead", float("inf"))) < v_ego + 2.0)
+    curved_approach_scene = abs(float(getattr(self.starpilot_planner, "road_curvature", 0.0))) >= FORCE_STOP_CURVE_VETO_MAX_ROAD_CURVATURE
 
     # CEM/model path: model predicted stop within ACTIVATION_M.
     # Exclude when a lead is present (raw or filtered) — the handoff_to_stopped_lead path
@@ -281,6 +283,7 @@ class StarPilotVCruise:
                 and self.starpilot_planner.model_length < ACTIVATION_M
                 and self.override_force_stop_timer <= 0
                 and not self.starpilot_planner.driving_in_curve
+                and not curved_approach_scene
                 and not turn_scene_active
                 and not self.starpilot_planner.tracking_lead
                 and not lead_present)

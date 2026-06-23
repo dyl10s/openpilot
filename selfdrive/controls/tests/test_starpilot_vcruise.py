@@ -26,7 +26,7 @@ class FakeParams:
     pass
 
 
-def make_vcruise(*, red_light=False, raw_model_stopped=False, forcing_stop=False, nav_state=None):
+def make_vcruise(*, red_light=False, raw_model_stopped=False, forcing_stop=False, nav_state=None, road_curvature=0.0):
   planner = SimpleNamespace(
     params=FakeParams(),
     params_memory=FakeParams({"NavInstructionState": nav_state or {}}),
@@ -36,6 +36,7 @@ def make_vcruise(*, red_light=False, raw_model_stopped=False, forcing_stop=False
     driving_in_curve=False,
     model_length=60.0,
     raw_model_stopped=raw_model_stopped,
+    road_curvature=road_curvature,
     road_curvature_detected=False,
   )
   vcruise = StarPilotVCruise(planner)
@@ -254,6 +255,32 @@ def test_force_stop_turn_scene_veto_blocks_new_activation():
   assert result == pytest.approx(20.0)
   assert vcruise.force_stop_timer == pytest.approx(0.0)
   assert not vcruise.forcing_stop
+
+
+def test_force_stop_curve_veto_blocks_new_activation():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=False, forcing_stop=False, road_curvature=0.005)
+  sm = make_sm(standstill=False)
+  toggles = make_toggles()
+
+  for frame in range(12):
+    result = update_vcruise(vcruise, sm, toggles, now=frame * 0.05, v_ego=7.0)
+
+  assert result == pytest.approx(20.0)
+  assert vcruise.force_stop_timer == pytest.approx(0.0)
+  assert not vcruise.forcing_stop
+
+
+def test_force_stop_still_activates_for_straight_red_light_approach():
+  _, vcruise = make_vcruise(red_light=True, raw_model_stopped=False, forcing_stop=False, road_curvature=0.001)
+  sm = make_sm(standstill=False)
+  toggles = make_toggles()
+
+  for frame in range(12):
+    result = update_vcruise(vcruise, sm, toggles, now=frame * 0.05, v_ego=7.0)
+
+  assert 0.0 < result < 20.0
+  assert vcruise.force_stop_timer >= 0.5
+  assert vcruise.forcing_stop
 
 
 def test_force_stop_turn_scene_clears_moving_commitment():
