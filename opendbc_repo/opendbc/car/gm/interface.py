@@ -523,6 +523,10 @@ class CarInterface(CarInterfaceBase):
       if not ret.openpilotLongitudinalControl:
         ret.minEnableSpeed = -1.
       if candidate == CAR.CHEVROLET_BLAZER:
+        ret.longitudinalTuning.kpBP = [0.0, 4.0, 12.0, 35.0]
+        ret.longitudinalTuning.kpV = [0.09, 0.075, 0.055, 0.040]
+        ret.longitudinalTuning.kiBP = [0.0, 4.0, 12.0, 35.0]
+        ret.longitudinalTuning.kiV = [0.03, 0.04, 0.055, 0.07]
         ret.minEnableSpeed = 5 * CV.KPH_TO_MS
         ret.stoppingDecelRate = 1.2
         ret.vEgoStopping = 0.35
