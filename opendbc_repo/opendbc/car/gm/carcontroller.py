@@ -110,6 +110,13 @@ def should_send_acc_dashboard_status(CP, dash_speed_spoof_active):
   return status_car and (dash_speed_spoof_active or volt_camera_no_camera)
 
 
+def get_acc_dashboard_status_active(CP, CC):
+  if CC.enabled:
+    return True
+
+  return CP.carFingerprint == CAR.BUICK_LACROSSE_ASCM and CC.latActive
+
+
 def get_acc_dashboard_fcw_alert(hud_alert, CS):
   if hud_alert == VisualAlert.fcw:
     return 0x3
@@ -1016,7 +1023,8 @@ class CarController(CarControllerBase):
 
         if should_send_acc_dashboard_status(self.CP, dash_speed_spoof_active):
           fcw_alert = get_acc_dashboard_fcw_alert(hud_alert, CS)
-          can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, CC.enabled,
+          acc_dashboard_status_active = get_acc_dashboard_status_active(self.CP, CC)
+          can_sends.append(gmcan.create_acc_dashboard_command(self.packer_pt, CanBus.POWERTRAIN, acc_dashboard_status_active,
                                                               hud_v_cruise * CV.MS_TO_KPH, hud_control, fcw_alert))
 
       # Radar needs to know current speed and yaw rate (50hz),
