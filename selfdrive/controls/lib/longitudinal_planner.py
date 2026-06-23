@@ -48,8 +48,8 @@ STANDSTILL_LEAD_DEPART_MIN_GAP_MARGIN = 0.8
 STANDSTILL_LEAD_DEPART_MIN_MODEL_ACCEL = 0.08
 STANDSTILL_LEAD_CREEP_RELEASE_MIN_ACCEL = 0.18
 STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_SPEED = 0.25
-STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_ACCEL = 0.12
-STANDSTILL_LEAD_CREEP_RELEASE_MIN_GAP_MARGIN = 1.4
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_LEAD_ACCEL = 0.08
+STANDSTILL_LEAD_CREEP_RELEASE_MIN_GAP_MARGIN = 0.1
 STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME = 0.30
 LEAD_DEPART_CONFIDENT_MIN_GAP = 3.75
 LEAD_DEPART_CONFIDENT_MAX_GAP = 5.25
@@ -75,7 +75,7 @@ RADAR_DEPART_CONFLICT_MAX_MODEL_LATERAL = 0.9
 RADAR_DEPART_CONFLICT_MAX_MODEL_LEAD_SPEED = 2.0
 RADAR_DEPART_CONFLICT_MAX_DISTANCE_MISMATCH = 4.0
 LEAD_DEPART_ACCEL_HOLD_TIME = 1.2
-LEAD_DEPART_ACCEL_HOLD_MAX_EGO_SPEED = 1.5
+LEAD_DEPART_ACCEL_HOLD_MAX_EGO_SPEED = 2.0
 LEAD_DEPART_ACCEL_HOLD_MIN_LEAD_SPEED = 0.6
 LEAD_DEPART_ACCEL_HOLD_MIN_LEAD_DELTA = 0.5
 LEAD_DEPART_ACCEL_HOLD_MIN_GAP = 3.5
@@ -86,6 +86,10 @@ LEAD_DEPART_ACCEL_HOLD_MIN_MODEL_ACCEL = 0.12
 LEAD_DEPART_ACCEL_HOLD_MAX_LEAD_BRAKE = 0.2
 LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL = 0.25
 LEAD_DEPART_ACCEL_HOLD_MAX_ACCEL = 0.45
+LEAD_DEPART_ACCEL_HOLD_REUSE_MIN_GAP = 3.75
+LEAD_DEPART_ACCEL_HOLD_REUSE_MAX_CLOSING_SPEED = 0.45
+LEAD_DEPART_ACCEL_HOLD_REUSE_MAX_LEAD_BRAKE = 0.2
+LEAD_DEPART_ACCEL_HOLD_REUSE_MIN_HEADWAY_MARGIN = 0.10
 LOW_SPEED_WEAK_LEAD_ACCEL_CAP_MAX_EGO_SPEED = 4.5
 LOW_SPEED_WEAK_LEAD_ACCEL_CAP_MIN_DISTANCE = 4.0
 LOW_SPEED_WEAK_LEAD_ACCEL_CAP_MAX_DISTANCE = 18.0
@@ -595,6 +599,7 @@ class LongitudinalPlanner:
     self.untracked_slow_lead_confirm_t = 0.0
     self.manual_stop_resume_override_until = 0.0
     self.lead_depart_accel_hold_until = 0.0
+    self.lead_depart_accel_hold_floor = None
     self.spacious_follow_cap_bypass_until = 0.0
     self.post_departure_follow_settle_until = 0.0
 
@@ -1215,6 +1220,37 @@ class LongitudinalPlanner:
     accel_cap = LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL + (LEAD_DEPART_ACCEL_HOLD_MAX_ACCEL - LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL) * np.clip(
       0.55 * lead_factor + 0.45 * gap_factor, 0.0, 1.0)
     return min(accel_cap, max(float(model_desired_accel), LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL))
+
+  def get_reusable_lead_depart_accel_floor(self, lead, v_ego, t_follow):
+    if self.lead_depart_accel_hold_floor is None or lead is None or not lead.status:
+      return None
+
+    lead_radar = bool(getattr(lead, "radar", False))
+    lead_prob = float(getattr(lead, "modelProb", 1.0 if lead_radar else 0.0))
+    if not lead_radar and lead_prob < LEAD_DEPART_ACCEL_HOLD_MIN_MODEL_PROB:
+      return None
+
+    if abs(float(getattr(lead, "yRel", 0.0))) > STANDSTILL_STOPPED_LEAD_GUARD_MAX_LATERAL_OFFSET:
+      return None
+
+    d_rel = float(getattr(lead, "dRel", 0.0))
+    if d_rel < LEAD_DEPART_ACCEL_HOLD_REUSE_MIN_GAP:
+      return None
+
+    lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
+    if lead_brake > LEAD_DEPART_ACCEL_HOLD_REUSE_MAX_LEAD_BRAKE:
+      return None
+
+    closing_speed = max(float(v_ego) - float(getattr(lead, "vLead", 0.0)), 0.0)
+    if closing_speed > LEAD_DEPART_ACCEL_HOLD_REUSE_MAX_CLOSING_SPEED:
+      return None
+
+    actual_headway = d_rel / max(float(v_ego), 1e-3)
+    headway_margin = actual_headway - float(t_follow)
+    if headway_margin < LEAD_DEPART_ACCEL_HOLD_REUSE_MIN_HEADWAY_MARGIN:
+      return None
+
+    return float(self.lead_depart_accel_hold_floor)
 
   def get_low_speed_weak_lead_accel_cap(self, lead, v_ego):
     if lead is None or not lead.status:
@@ -2751,8 +2787,10 @@ class LongitudinalPlanner:
 
     if depart_safety_veto or output_should_stop or bool(getattr(sm['starpilotPlan'], 'forcingStop', False)) or bool(getattr(sm['starpilotPlan'], 'redLight', False)):
       self.lead_depart_accel_hold_until = 0.0
+      self.lead_depart_accel_hold_floor = None
 
     lead_depart_accel_floor = None
+    lead_depart_accel_floor_reused = False
     if lead_control_active and not output_should_stop and not depart_safety_veto:
       lead_depart_accel_floors = [
         floor for floor in (
@@ -2762,8 +2800,23 @@ class LongitudinalPlanner:
       ]
       if lead_depart_accel_floors:
         lead_depart_accel_floor = max(lead_depart_accel_floors)
+        self.lead_depart_accel_hold_floor = lead_depart_accel_floor
         if sm['carState'].standstill:
           self.lead_depart_accel_hold_until = now_t + LEAD_DEPART_ACCEL_HOLD_TIME
+      elif self.lead_depart_accel_hold_floor is not None and now_t < self.lead_depart_accel_hold_until:
+        reusable_hold_floors = [
+          floor for floor in (
+            self.get_reusable_lead_depart_accel_floor(self.lead_one, scene_v_ego, effective_t_follow),
+            self.get_reusable_lead_depart_accel_floor(self.lead_two, scene_v_ego, effective_t_follow),
+          ) if floor is not None
+        ]
+        if reusable_hold_floors:
+          lead_depart_accel_floor = max(reusable_hold_floors)
+          lead_depart_accel_floor_reused = True
+        else:
+          self.lead_depart_accel_hold_floor = None
+      elif now_t >= self.lead_depart_accel_hold_until:
+        self.lead_depart_accel_hold_floor = None
 
     lead_depart_accel_hold_active = (
       lead_depart_accel_floor is not None and
@@ -3029,7 +3082,7 @@ class LongitudinalPlanner:
     if lead_depart_accel_hold_active:
       output_a_target = max(output_a_target, lead_depart_accel_floor)
 
-    if low_speed_weak_lead_accel_cap is not None:
+    if low_speed_weak_lead_accel_cap is not None and not (lead_depart_accel_hold_active and lead_depart_accel_floor_reused):
       self.a_desired = min(self.a_desired, low_speed_weak_lead_accel_cap)
       output_a_target = min(output_a_target, low_speed_weak_lead_accel_cap)
 

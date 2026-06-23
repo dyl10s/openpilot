@@ -1249,6 +1249,32 @@ def test_standstill_slow_creep_depart_releases_after_short_confirm(model_version
 
 
 @pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
+def test_standstill_slow_creep_depart_releases_near_stop_gap_with_modest_accel(model_version):
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=0.0)
+
+  sm = make_sm(
+    0.0,
+    desired_accel=0.0,
+    min_accel=-0.5,
+    experimental_mode=False,
+    tracking_lead=True,
+    lead_one=make_lead(status=True, d_rel=5.7, v_lead=1.0, a_lead=0.09, radar=True, model_prob=1.0),
+  )
+  sm["carState"].standstill = True
+  sm["controlsState"].longControlState = LongCtrlState.stopping
+  sm["starpilotPlan"].vCruise = 10.0
+  sm["modelV2"].action.shouldStop = False
+
+  frames = int(round(longitudinal_planner_module.STANDSTILL_LEAD_CREEP_RELEASE_CONFIRM_TIME / planner.dt))
+  for _ in range(max(frames, 1)):
+    planner.update(sm, make_toggles(model_version))
+
+  assert not planner.output_should_stop
+  assert planner.output_a_target >= longitudinal_planner_module.STANDSTILL_LEAD_CREEP_RELEASE_MIN_ACCEL
+
+
+@pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
 def test_standstill_slow_creep_depart_does_not_release_on_gap_without_motion_signal(model_version):
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
   planner = LongitudinalPlanner(CP, init_v=0.0)
@@ -1487,6 +1513,52 @@ def test_standstill_moving_lead_holds_depart_accel_floor_after_stop_release(mode
   assert outputs[2] >= 0.25
   assert outputs[3] >= 0.25
   assert outputs[4] >= 0.25
+
+
+@pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
+def test_standstill_depart_accel_hold_reuses_floor_through_softening_lead_delta(model_version):
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=0.0)
+  toggles = make_toggles(model_version)
+
+  sm_release = make_sm(
+    0.0,
+    desired_accel=0.0,
+    min_accel=-0.5,
+    experimental_mode=False,
+    tracking_lead=True,
+    lead_one=make_lead(status=True, d_rel=4.1, v_lead=1.05, a_lead=1.2, radar=False, model_prob=1.0),
+  )
+  sm_release["carState"].standstill = True
+  sm_release["controlsState"].longControlState = LongCtrlState.stopping
+  sm_release["starpilotPlan"].vCruise = 10.0
+  sm_release["modelV2"].action.shouldStop = False
+
+  for _ in range(6):
+    planner.update(sm_release, toggles)
+    assert planner.output_should_stop
+
+  planner.update(sm_release, toggles)
+  assert not planner.output_should_stop
+  assert planner.output_a_target >= longitudinal_planner_module.LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL
+
+  sm_hold = make_sm(
+    0.5,
+    desired_accel=0.0,
+    min_accel=-0.5,
+    experimental_mode=False,
+    tracking_lead=True,
+    lead_one=make_lead(status=True, d_rel=5.8, v_lead=1.25, a_lead=0.08, radar=False, model_prob=1.0),
+  )
+  sm_hold["carState"].standstill = False
+  sm_hold["controlsState"].longControlState = LongCtrlState.pid
+  sm_hold["starpilotPlan"].vCruise = 10.0
+  sm_hold["modelV2"].action.shouldStop = False
+
+  planner.update(sm_hold, toggles)
+
+  assert not planner.output_should_stop
+  assert planner.output_a_target >= longitudinal_planner_module.LEAD_DEPART_ACCEL_HOLD_MIN_ACCEL
 
 
 @pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])
