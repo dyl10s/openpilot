@@ -4,6 +4,7 @@ from cereal import car
 import pytest
 
 import openpilot.selfdrive.controls.lib.longcontrol as longcontrol
+from opendbc.car.gm.values import CAR, GMFlags
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl, LongCtrlState, long_control_state_trans
 
 
@@ -19,6 +20,20 @@ def make_toggles(**overrides):
   }
   defaults.update(overrides)
   return SimpleNamespace(**defaults)
+
+
+def make_longcontrol_cp(**overrides):
+  CP = car.CarParams.new_message()
+  CP.longitudinalTuning.kpBP = [0.0]
+  CP.longitudinalTuning.kpV = [0.0]
+  CP.longitudinalTuning.kiBP = [0.0]
+  CP.longitudinalTuning.kiV = [0.0]
+  CP.longitudinalTuning.kfDEPRECATED = 1.0
+
+  for key, value in overrides.items():
+    setattr(CP, key, value)
+
+  return CP
 
 
 class TestLongControlStateTransition:
@@ -452,6 +467,51 @@ def test_pedal_long_brake_bias_does_not_touch_non_pedal_or_mild_decel():
 
   assert lc._apply_pedal_long_brake_bias(-1.0, -3.0, CS) == -1.0
   assert lc._apply_pedal_long_brake_bias(-0.4, -0.6, CS) == -0.4
+
+
+def test_bolt_acc_pedal_friction_feedforward_preserves_regen_scaling_within_envelope():
+  CP = make_longcontrol_cp(
+    brand="gm",
+    enableGasInterceptorDEPRECATED=True,
+    flags=GMFlags.PEDAL_LONG.value,
+    carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+  )
+  CP.longitudinalTuning.kfDEPRECATED = 0.20
+
+  lc = LongControl(CP)
+
+  assert lc._get_longitudinal_feedforward(-1.8, 4.73) == pytest.approx(-0.36)
+
+
+def test_bolt_acc_pedal_friction_feedforward_restores_full_gain_beyond_regen_envelope():
+  CP = make_longcontrol_cp(
+    brand="gm",
+    enableGasInterceptorDEPRECATED=True,
+    flags=GMFlags.PEDAL_LONG.value,
+    carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+  )
+  CP.longitudinalTuning.kfDEPRECATED = 0.20
+
+  lc = LongControl(CP)
+  pedal_regen_limit = float(longcontrol.interp(4.73, longcontrol.BOLT_ACC_PEDAL_REGEN_LIMIT_BP,
+                                               longcontrol.BOLT_ACC_PEDAL_REGEN_LIMIT_V))
+  expected = pedal_regen_limit * 0.20 + (-3.22 - pedal_regen_limit)
+
+  assert lc._get_longitudinal_feedforward(-3.22, 4.73) == pytest.approx(expected)
+
+
+def test_bolt_cc_pedal_friction_feedforward_remains_fully_scaled_by_kf():
+  CP = make_longcontrol_cp(
+    brand="gm",
+    enableGasInterceptorDEPRECATED=True,
+    flags=GMFlags.PEDAL_LONG.value,
+    carFingerprint=CAR.CHEVROLET_BOLT_CC_2022_2023,
+  )
+  CP.longitudinalTuning.kfDEPRECATED = 0.20
+
+  lc = LongControl(CP)
+
+  assert lc._get_longitudinal_feedforward(-3.22, 4.73) == pytest.approx(-0.644)
 
 
 def test_gm_stock_truck_positive_i_bleeds_on_coast_request():

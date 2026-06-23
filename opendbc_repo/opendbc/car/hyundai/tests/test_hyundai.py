@@ -9,7 +9,8 @@ from opendbc.car.structs import CarControl, CarParams
 from opendbc.car.fw_versions import build_fw_dict, match_fw_to_car
 from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalTuningState, GenesisG90LongitudinalTuningState, \
                                              update_ioniq_6_longitudinal_tuning, \
-                                             update_genesis_g90_longitudinal_tuning, egmp_dynamic_longitudinal_tuning
+                                             update_genesis_g90_longitudinal_tuning, egmp_dynamic_longitudinal_tuning, \
+                                             should_reset_ev6_gt_line_longitudinal_tuning, reset_ev6_gt_line_longitudinal_tuning
 from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
@@ -541,6 +542,16 @@ class TestHyundaiFingerprint:
     assert CP.stoppingDecelRate == pytest.approx(0.4)
     assert kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, CP.carVin)
     assert egmp_dynamic_longitudinal_tuning(CP)
+    assert should_reset_ev6_gt_line_longitudinal_tuning(CP, LongCtrlState.off)
+    assert not should_reset_ev6_gt_line_longitudinal_tuning(CP, LongCtrlState.pid)
+
+    stale_state = Ioniq6LongitudinalTuningState(desired_accel=-2.2, actual_accel=-2.2, accel_last=-2.2,
+                                                jerk_upper=1.0, jerk_lower=5.0,
+                                                long_control_state_last=LongCtrlState.stopping)
+    reset_state = reset_ev6_gt_line_longitudinal_tuning(stale_state, CP, LongCtrlState.off)
+    assert reset_state.actual_accel == pytest.approx(0.0)
+    assert reset_state.accel_last == pytest.approx(0.0)
+    assert reset_state.long_control_state_last == LongCtrlState.off
 
   def test_kia_ev6_non_gt_line_keeps_family_longitudinal_params(self):
     toggles = get_test_toggles()
@@ -554,6 +565,9 @@ class TestHyundaiFingerprint:
     assert CP.longitudinalActuatorDelay == pytest.approx(0.5)
     assert not kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, CP.carVin)
     assert not egmp_dynamic_longitudinal_tuning(CP)
+    assert not should_reset_ev6_gt_line_longitudinal_tuning(CP, LongCtrlState.off)
+    stale_state = Ioniq6LongitudinalTuningState(actual_accel=-2.2, accel_last=-2.2)
+    assert reset_ev6_gt_line_longitudinal_tuning(stale_state, CP, LongCtrlState.off) is stale_state
 
   def test_genesis_g90_longitudinal_params_bias_toward_earlier_stop_handoff(self):
     toggles = get_test_toggles()

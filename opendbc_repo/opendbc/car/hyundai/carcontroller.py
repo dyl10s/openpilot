@@ -71,6 +71,11 @@ def egmp_dynamic_longitudinal_tuning(CP) -> bool:
     kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, getattr(CP, "carVin", ""))
 
 
+def should_reset_ev6_gt_line_longitudinal_tuning(CP, long_control_state: LongCtrlState) -> bool:
+  return kia_ev6_gt_line_longitudinal_tuning(CP.carFingerprint, getattr(CP, "carVin", "")) and \
+    long_control_state == LongCtrlState.off
+
+
 @dataclass
 class Ioniq6LongitudinalTuningState:
   desired_accel: float = 0.0
@@ -82,6 +87,13 @@ class Ioniq6LongitudinalTuningState:
   stopping: bool = False
   stopping_count: int = 0
   long_control_state_last: LongCtrlState = LongCtrlState.off
+
+
+def reset_ev6_gt_line_longitudinal_tuning(state: Ioniq6LongitudinalTuningState, CP,
+                                           long_control_state: LongCtrlState) -> Ioniq6LongitudinalTuningState:
+  if should_reset_ev6_gt_line_longitudinal_tuning(CP, long_control_state):
+    return Ioniq6LongitudinalTuningState(long_control_state_last=long_control_state)
+  return state
 
 
 @dataclass
@@ -434,7 +446,10 @@ class CarController(CarControllerBase):
 
     use_egmp_dynamic_long_tuning = egmp_dynamic_longitudinal_tuning(self.CP) and self.long_active_ecu and \
                                    actuators.longControlState in (LongCtrlState.starting, LongCtrlState.pid, LongCtrlState.stopping)
-    if use_egmp_dynamic_long_tuning and self.frame % 5 == 0:
+    if should_reset_ev6_gt_line_longitudinal_tuning(self.CP, actuators.longControlState):
+      self._ioniq_6_long_tuning = reset_ev6_gt_line_longitudinal_tuning(self._ioniq_6_long_tuning, self.CP,
+                                                                         actuators.longControlState)
+    elif use_egmp_dynamic_long_tuning and self.frame % 5 == 0:
       self._ioniq_6_long_tuning = update_ioniq_6_longitudinal_tuning(self._ioniq_6_long_tuning, accel_cmd,
                                                                       CS.out.vEgo, CS.out.aEgo,
                                                                       actuators.longControlState, self.long_active_ecu)

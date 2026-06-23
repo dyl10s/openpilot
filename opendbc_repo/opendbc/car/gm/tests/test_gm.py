@@ -1,4 +1,5 @@
 import pytest
+import numpy as np
 from types import SimpleNamespace
 from parameterized import parameterized
 
@@ -18,7 +19,7 @@ from opendbc.car.gm.carcontroller import (
 import opendbc.car.gm.interface as gm_interface
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.gm.fingerprints import FINGERPRINTS
-from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, CC_ONLY_CAR, DBC, GM_RX_OFFSET, CruiseButtons, GMFlags, GMSafetyFlags
+from opendbc.car.gm.values import CAMERA_ACC_CAR, CAR, CC_ONLY_CAR, DBC, GM_RX_OFFSET, CarControllerParams, CruiseButtons, GMFlags, GMSafetyFlags
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from openpilot.common.params import Params
 
@@ -63,6 +64,31 @@ class TestGMFingerprint:
 
 
 class TestGMInterface:
+  def test_bolt_acc_pedal_pid_accel_limits_keep_full_negative_authority(self):
+    cp = SimpleNamespace(
+      enableGasInterceptorDEPRECATED=True,
+      flags=GMFlags.PEDAL_LONG.value,
+      carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+    )
+
+    accel_min, accel_max = gm_interface.CarInterface.get_pid_accel_limits(cp, 4.73, 0.0)
+
+    assert accel_min == pytest.approx(CarControllerParams.ACCEL_MIN)
+    assert accel_max == pytest.approx(np.interp(4.73, [0.0, 1.5, 4.0, 8.0, 15.0],
+                                                [0.54, 0.74, 1.03, 1.46, CarControllerParams.ACCEL_MAX]))
+
+  def test_bolt_cc_pedal_pid_accel_limits_remain_regen_limited(self):
+    cp = SimpleNamespace(
+      enableGasInterceptorDEPRECATED=True,
+      flags=GMFlags.PEDAL_LONG.value,
+      carFingerprint=CAR.CHEVROLET_BOLT_CC_2022_2023,
+    )
+
+    accel_min, _ = gm_interface.CarInterface.get_pid_accel_limits(cp, 4.73, 0.0)
+
+    assert accel_min == pytest.approx(np.interp(4.73, [0.0, 1.5, 4.0, 8.0, 15.0, 30.0],
+                                                [-0.93, -1.28, -1.98, -2.58, -2.86, -2.95]))
+
   def test_missing_hard_cruise_signal_defaults_to_init(self):
     assert get_hard_cruise_buttons({"ACCButtons": CruiseButtons.RES_ACCEL}) == CruiseButtons.INIT
     assert get_hard_cruise_buttons({"ACCButtonsHard": CruiseButtons.DECEL_SET}) == CruiseButtons.DECEL_SET

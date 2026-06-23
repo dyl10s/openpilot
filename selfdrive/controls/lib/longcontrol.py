@@ -17,6 +17,8 @@ STOPPING_RELEASE_STRONG_ACCEL = 0.45
 MOVING_STOP_FOLLOW_MIN_GAP = 0.25
 NEGATIVE_TARGET_CREEP_GUARD_SPEED = 0.35
 NEGATIVE_TARGET_CREEP_GUARD_DECEL = 0.40
+BOLT_ACC_PEDAL_REGEN_LIMIT_BP = [0.0, 1.5, 4.0, 8.0, 15.0, 30.0]
+BOLT_ACC_PEDAL_REGEN_LIMIT_V = [-0.93, -1.28, -1.98, -2.58, -2.86, -2.95]
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
@@ -136,6 +138,12 @@ class LongControl:
       CP.brand == "gm" and
       getattr(CP, "carFingerprint", None) in (CAR.CHEVROLET_SILVERADO, CAR.CHEVROLET_SILVERADO_CC) and
       not CP.enableGasInterceptorDEPRECATED
+    )
+    self.is_bolt_acc_pedal_friction_car = bool(
+      CP.brand == "gm" and
+      CP.enableGasInterceptorDEPRECATED and
+      getattr(CP, "carFingerprint", None) == CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL and
+      (CP.flags & GMFlags.PEDAL_LONG.value)
     )
 
   def update_mpc_mode(self, experimental_mode):
@@ -315,6 +323,22 @@ class LongControl:
     positive_cap = interp(a_target, [-1.5, -0.6, -0.1], [0.0, 0.0, 0.05])
     return min(output_accel, float(positive_cap))
 
+  def _get_longitudinal_feedforward(self, a_target, v_ego):
+    feedforward = a_target * self.feedforward_gain
+    if not self.is_bolt_acc_pedal_friction_car or a_target >= 0.0:
+      return feedforward
+
+    pedal_regen_limit = float(interp(v_ego, BOLT_ACC_PEDAL_REGEN_LIMIT_BP, BOLT_ACC_PEDAL_REGEN_LIMIT_V))
+    if a_target >= pedal_regen_limit:
+      return feedforward
+
+    # Preserve the existing pedal/interceptor shaping up to the known regen
+    # envelope, then restore full-gain feedforward only for the extra decel
+    # that must be satisfied by friction blending.
+    pedal_component = pedal_regen_limit * self.feedforward_gain
+    friction_component = a_target - pedal_regen_limit
+    return pedal_component + friction_component
+
   def update(self, active, CS, a_target, should_stop, accel_limits, starpilot_toggles):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     self.pid.neg_limit = accel_limits[0]
@@ -352,7 +376,7 @@ class LongControl:
       self._shape_volt_test_tune_integrator(error, CS.vEgo)
       self._trim_positive_overshoot_integrator(a_target, error, CS)
       self._trim_gm_truck_positive_hold_integrator(a_target, error, CS)
-      feedforward = a_target * self.feedforward_gain
+      feedforward = self._get_longitudinal_feedforward(a_target, CS.vEgo)
       freeze_integrator = self._get_pedal_long_freeze(a_target, error, CS.vEgo, accel_limits)
       raw_output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=feedforward,
                                          freeze_integrator=freeze_integrator)
@@ -438,7 +462,7 @@ class LongControl:
       error = self.v_pid - CS.vEgo
       error_deadzone = apply_deadzone(error, deadzone)
       freeze_integrator = prevent_overshoot or self._get_pedal_long_freeze(a_target, error_deadzone, CS.vEgo, accel_limits)
-      feedforward = a_target * self.feedforward_gain
+      feedforward = self._get_longitudinal_feedforward(a_target, CS.vEgo)
       output_accel = self.pid.update(error_deadzone, speed=CS.vEgo,
                                      feedforward=feedforward,
                                      freeze_integrator=freeze_integrator)
