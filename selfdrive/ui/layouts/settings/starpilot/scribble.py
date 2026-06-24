@@ -63,28 +63,28 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
     rl.draw_circle_v(rl.Vector2(cx, cy), r, color)
 
   if key == "sound":
-    # Sounds & Alerts: Speaker icon on the right, sound waves on the left
+    # Sounds & Alerts: Speaker icon on the left, sound waves on the right (proportionate weight & scale)
     x_c = x + 30.0 * s
     y_c = y + 30.0 * s
 
-    thick = 2.5 * s
+    thick = 3.0 * s
     r_cap = thick / 2.0
 
-    # Draw speaker body outline
-    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), thick, color)
-    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), thick, color)
-    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), thick, color)
-    rl.draw_line_ex(rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), thick, color)
-    rl.draw_line_ex(rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), thick, color)
-    rl.draw_line_ex(rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), thick, color)
+    # Draw speaker body outline (Driver on the left, mouth opening to the right)
+    rl.draw_line_ex(rl.Vector2(x_c - 3.0 * s, y_c - 18.0 * s), rl.Vector2(x_c - 3.0 * s, y_c + 18.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 3.0 * s, y_c - 18.0 * s), rl.Vector2(x_c - 12.0 * s, y_c - 7.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 3.0 * s, y_c + 18.0 * s), rl.Vector2(x_c - 12.0 * s, y_c + 7.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 12.0 * s, y_c - 7.0 * s), rl.Vector2(x_c - 22.0 * s, y_c - 7.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 12.0 * s, y_c + 7.0 * s), rl.Vector2(x_c - 22.0 * s, y_c + 7.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 22.0 * s, y_c - 7.0 * s), rl.Vector2(x_c - 22.0 * s, y_c + 7.0 * s), thick, color)
 
-    # Draw circles at speaker body vertices to round the corners
-    rl.draw_circle_v(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), r_cap, color)
-    rl.draw_circle_v(rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), r_cap, color)
-    rl.draw_circle_v(rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), r_cap, color)
-    rl.draw_circle_v(rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), r_cap, color)
-    rl.draw_circle_v(rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), r_cap, color)
-    rl.draw_circle_v(rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), r_cap, color)
+    # Draw circles at speaker body vertices to round the corners beautifully
+    rl.draw_circle_v(rl.Vector2(x_c - 3.0 * s, y_c - 18.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c - 3.0 * s, y_c + 18.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c - 12.0 * s, y_c - 7.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c - 12.0 * s, y_c + 7.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c - 22.0 * s, y_c - 7.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c - 22.0 * s, y_c + 7.0 * s), r_cap, color)
 
     # Helper to draw rounded concentric sound wave arcs
     def draw_rounded_arc(cx: float, cy: float, r: float, start_deg: float, end_deg: float):
@@ -94,10 +94,10 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
       rl.draw_circle_v(rl.Vector2(cx + r * math.cos(rad_start), cy + r * math.sin(rad_start)), r_cap, color)
       rl.draw_circle_v(rl.Vector2(cx + r * math.cos(rad_end), cy + r * math.sin(rad_end)), r_cap, color)
 
-    # Draw three concentric sound wave arcs
-    draw_rounded_arc(x_c + 2.0 * s, y_c, 6.0 * s, 155.0, 205.0)
-    draw_rounded_arc(x_c + 2.0 * s, y_c, 11.0 * s, 142.5, 217.5)
-    draw_rounded_arc(x_c + 2.0 * s, y_c, 16.0 * s, 130.0, 230.0)
+    # Draw three concentric sound wave arcs (curving on the right side)
+    draw_rounded_arc(x_c - 3.0 * s, y_c, 8.0 * s, -25.0, 25.0)
+    draw_rounded_arc(x_c - 3.0 * s, y_c, 15.0 * s, -37.5, 37.5)
+    draw_rounded_arc(x_c - 3.0 * s, y_c, 22.0 * s, -50.0, 50.0)
 
   elif key == "steering":
     # Driving Controls: Minimalist 3-spoke steering wheel
