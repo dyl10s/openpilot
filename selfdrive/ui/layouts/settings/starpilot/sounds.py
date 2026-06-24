@@ -248,13 +248,13 @@ class SoundsManagerView(PanelManagerView):
 
     default_adjustor_h = float(AETHER_LIST_METRICS.adjustor_row_height)
 
-    left_h = (len(self._controller.VOLUME_KEYS) * default_adjustor_h)
-    left_h += (3 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP))
+    # 9 adjustors (8 volume keys + 1 cooldown key) and 2 group headers ("SYSTEM STATE" and "INFORMATIONAL")
+    left_h = ((len(self._controller.VOLUME_KEYS) + 1) * default_adjustor_h)
+    left_h += (2 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP))
     left_natural_container_h = left_h + 16
 
-    cd_h = default_adjustor_h
-    tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24 + GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP
-    right_natural_container_h = cd_h + SECTION_GAP + tiles_needed_h
+    tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24
+    right_natural_container_h = tiles_needed_h
 
     max_natural_h = max(left_natural_container_h, right_natural_container_h)
     section_overhead = SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
@@ -268,22 +268,19 @@ class SoundsManagerView(PanelManagerView):
     max_container_h = available_container_h
 
     # Scale the left column adjustor rows to fit within max_container_h
-    # Formula: max_container_h = 8 * left_row_h + 3 * 22 (headers) + 16 (padding)
-    left_available_for_rows = max_container_h - 66 - 16
-    left_row_h = max(60.0, left_available_for_rows / len(self._controller.VOLUME_KEYS))
+    # Formula: max_container_h = 9 * left_row_h + 2 * 22 (headers) + 16 (padding)
+    left_available_for_rows = max_container_h - 44.0 - 16.0
+    left_row_h = max(60.0, left_available_for_rows / (len(self._controller.VOLUME_KEYS) + 1))
     for key in self._controller.VOLUME_KEYS:
       self._adjustor_rows[key].custom_row_height = left_row_h
-
-    # Scale cooldown and toggle tiles to fit within max_container_h
-    cd_row_h = left_row_h
-    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = cd_row_h
+    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = left_row_h
 
     self._left_container_h = max_container_h
-    self._tiles_container_h = max_container_h - cd_row_h - SECTION_GAP
+    self._tiles_container_h = max_container_h
 
     # Right column tiles: self._tiles_container_h = tile_grid_container
-    # Available height for grid: self._tiles_container_h - 22 (group header) - 24 (padding)
-    right_available_for_grid = self._tiles_container_h - 22 - 24
+    # Available height for grid: self._tiles_container_h - 24 (padding)
+    right_available_for_grid = self._tiles_container_h - 24
     # The grid has 3 rows of tiles, with 2 gaps of 12px = 24px
     right_available_for_tile_rows = right_available_for_grid - 24
     tile_h = max(80.0, min(130.0, right_available_for_tile_rows / 3))
@@ -326,21 +323,17 @@ class SoundsManagerView(PanelManagerView):
     self._draw_volume_column(y, rect.x, col_width)
     self._draw_utility_column(y, rect.x + col_width + SECTION_GAP, col_width)
 
-
-
-
   def _draw_volume_column(self, y: float, x: float, width: float):
     safety_keys = ["WarningImmediateVolume", "WarningSoftVolume", "RefuseVolume", "PromptDistractedVolume"]
     system_keys = ["EngageVolume", "DisengageVolume"]
     info_keys = ["PromptVolume", "BelowSteerSpeedVolume"]
 
     groups = [
-      (tr("SAFETY ALERTS"), safety_keys),
+      (None, safety_keys),
       (tr("SYSTEM STATE"), system_keys),
-      (tr("INFORMATIONAL"), info_keys),
+      (tr("INFORMATIONAL"), info_keys + [self._controller.COOLDOWN_KEY]),
     ]
 
-    total_h = sum(GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP + sum(self._adjustor_rows[k].measure_height(width) for k in keys) for _, keys in groups)
     draw_list_group_shell(
       rl.Rectangle(x, y, width, self._left_container_h),
       style=PANEL_STYLE
@@ -348,7 +341,8 @@ class SoundsManagerView(PanelManagerView):
 
     current_y = y + 8
     for label, keys in groups:
-      current_y = draw_group_header(x + 24, current_y, width - 48, label)
+      if label is not None:
+        current_y = draw_group_header(x + 24, current_y, width - 48, label)
       for index, key in enumerate(keys):
         adjustor = self._adjustor_rows[key]
         row_h = adjustor.measure_height(width)
@@ -359,23 +353,7 @@ class SoundsManagerView(PanelManagerView):
         current_y += row_h
 
   def _draw_utility_column(self, y: float, x: float, width: float):
-    current_y = y
-
-    cd_key = self._controller.COOLDOWN_KEY
-    adjustor = self._adjustor_rows[cd_key]
-    row_h = adjustor.measure_height(width)
-
-    draw_list_group_shell(rl.Rectangle(x, current_y, width, row_h), style=PANEL_STYLE)
-
-    adjustor.set_is_last(True)
-    adjustor.set_parent_rect(self._scroll_rect)
-    adjustor.render(rl.Rectangle(x, current_y, width, row_h))
-    current_y += row_h + SECTION_GAP
-
-    current_y = draw_group_header(x + 24, current_y, width - 48, tr("CUSTOM ALERTS"))
-
-    grid_container_h = self._tiles_container_h - (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP)
-    self._draw_two_column_tile_grid(self._toggle_grid, x, current_y, width, grid_container_h, title=None, style=PANEL_STYLE)
+    self._draw_two_column_tile_grid(self._toggle_grid, x, y, width, self._tiles_container_h, title=None, style=PANEL_STYLE)
 
 
 class StarPilotSoundsLayout(_SettingsPage):

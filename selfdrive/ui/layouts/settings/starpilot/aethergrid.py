@@ -2115,7 +2115,7 @@ class AetherAdjustorRow(Widget):
     )
 
     hint_y = rect.y + rect.height - 18.0 * scale_y if rect.height < 94 else rect.y + 76
-    hint_h = max(3.0, 4.0 * scale_y) if rect.height < 94 else 4
+    hint_h = max(6.0, 8.0 * scale_y) if rect.height < 94 else 8
     self._hint_rect = _snap_rect(rl.Rectangle(content_left, hint_y, rect.width - 48, hint_h + 4))
     hint_track = _snap_rect(rl.Rectangle(self._hint_rect.x, self._hint_rect.y + 2, self._hint_rect.width, hint_h))
     rl.draw_rectangle_rounded(hint_track, 1.0, 10, rl.Color(255, 255, 255, 10))
