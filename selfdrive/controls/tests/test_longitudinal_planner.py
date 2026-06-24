@@ -3039,6 +3039,36 @@ def test_identical_radar_duplicate_cruise_hold_skips_clear_pullaway():
   assert sticky is None
 
 
+def test_identical_radar_duplicate_cruise_bias_penalizes_near_target_follow():
+  v_ego = 23.8
+  t_follow = 1.15
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=35.8, v_lead=23.2, a_lead=0.02, radar=True, model_prob=1.0)
+  lead_two = make_lead(status=True, d_rel=35.8, v_lead=23.2, a_lead=0.02, radar=True, model_prob=1.0)
+  lead_one.radarTrackId = 2493
+  lead_two.radarTrackId = 2493
+
+  bias = planner.mpc.get_identical_radar_duplicate_cruise_bias(lead_one, lead_two, v_ego, t_follow)
+
+  assert bias > 0.0
+
+
+def test_identical_radar_duplicate_cruise_bias_skips_far_pullaway_follow():
+  v_ego = 23.8
+  t_follow = 1.15
+  CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
+  planner = LongitudinalPlanner(CP, init_v=v_ego)
+  lead_one = make_lead(status=True, d_rel=52.0, v_lead=25.5, a_lead=0.08, radar=True, model_prob=1.0)
+  lead_two = make_lead(status=True, d_rel=52.0, v_lead=25.5, a_lead=0.08, radar=True, model_prob=1.0)
+  lead_one.radarTrackId = 2493
+  lead_two.radarTrackId = 2493
+
+  bias = planner.mpc.get_identical_radar_duplicate_cruise_bias(lead_one, lead_two, v_ego, t_follow)
+
+  assert bias == 0.0
+
+
 def test_near_duplicate_lead_source_hysteresis_skips_distinct_leads():
   v_ego = 27.0
   CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
