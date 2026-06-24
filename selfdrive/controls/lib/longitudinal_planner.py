@@ -626,10 +626,14 @@ class LongitudinalPlanner:
   @staticmethod
   def get_model_speed_error(model_msg, v_ego):
     try:
-      if len(model_msg.temporalPose.trans):
-        return float(np.clip(model_msg.temporalPose.trans[0] - v_ego, -5.0, 5.0))
+      temporal_pose = model_msg.temporalPoseDEPRECATED
     except AttributeError:
-      pass
+      try:
+        temporal_pose = model_msg.temporalPose
+      except AttributeError:
+        return 0.0
+    if len(temporal_pose.trans):
+      return float(np.clip(temporal_pose.trans[0] - v_ego, -5.0, 5.0))
     return 0.0
 
   @staticmethod
