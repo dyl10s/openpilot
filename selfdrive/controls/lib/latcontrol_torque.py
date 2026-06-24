@@ -527,6 +527,11 @@ IONIQ_6_HIGHWAY_CENTER_TAPER_LAT = 0.09
 IONIQ_6_HIGHWAY_CENTER_TAPER_LAT_WIDTH = 0.03
 IONIQ_6_HIGHWAY_CENTER_TAPER_SPEED = 24.5
 IONIQ_6_HIGHWAY_CENTER_TAPER_SPEED_WIDTH = 1.8
+IONIQ_6_HIGHWAY_OUTPUT_TAPER_MAX = 0.09
+IONIQ_6_HIGHWAY_OUTPUT_TAPER_LAT = 0.14
+IONIQ_6_HIGHWAY_OUTPUT_TAPER_LAT_WIDTH = 0.04
+IONIQ_6_HIGHWAY_OUTPUT_TAPER_SPEED = 23.5
+IONIQ_6_HIGHWAY_OUTPUT_TAPER_SPEED_WIDTH = 2.0
 IONIQ_6_LOW_MID_CENTER_TAPER_MAX = 0.088
 IONIQ_6_LOW_MID_CENTER_TAPER_LAT = 0.28
 IONIQ_6_LOW_MID_CENTER_TAPER_LAT_WIDTH = 0.06
@@ -1875,6 +1880,14 @@ def get_ioniq_6_output_taper_scale(desired_lateral_accel: float, desired_lateral
   return center_scale * directional_scale
 
 
+def get_ioniq_6_highway_output_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _ioniq_6_sigmoid((v_ego - IONIQ_6_HIGHWAY_OUTPUT_TAPER_SPEED) / IONIQ_6_HIGHWAY_OUTPUT_TAPER_SPEED_WIDTH)
+  center_weight = _ioniq_6_sigmoid((IONIQ_6_HIGHWAY_OUTPUT_TAPER_LAT - abs(desired_lateral_accel)) /
+                                   IONIQ_6_HIGHWAY_OUTPUT_TAPER_LAT_WIDTH)
+  reduction = IONIQ_6_HIGHWAY_OUTPUT_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
+
+
 def get_ioniq_6_low_speed_angle_assist_torque(desired_angle_deg: float, actual_angle_deg: float,
                                               current_output_torque: float, v_ego: float) -> float:
   angle_error = desired_angle_deg - actual_angle_deg
@@ -2324,6 +2337,8 @@ class LatControlTorque(LatControl):
         actual_angle_no_offset = CS.steeringAngleDeg - params.angleOffsetDeg
         output_torque = get_ioniq_6_low_speed_angle_assist_torque(desired_angle_no_offset, actual_angle_no_offset,
                                                                   output_torque, CS.vEgo)
+      if ioniq_6_active:
+        output_torque *= get_ioniq_6_highway_output_taper_scale(setpoint, CS.vEgo)
       elif volt_standard_test_active:
         output_torque *= volt_standard_center_taper
       elif volt_plexy_test_active:
