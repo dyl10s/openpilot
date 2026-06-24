@@ -29,7 +29,7 @@ class StarPilotLayout(Widget):
     {
       "title": "Driving Controls",
       "icon": "steering",
-      "buttons": [("DRIVING MODEL", "DRIVING_MODEL"), ("GAS / BRAKE", "LONGITUDINAL"), ("STEERING", "LATERAL")],
+      "buttons": [("DRIVING MODEL", "DRIVING_MODEL", "aicar"), ("GAS / BRAKE", "LONGITUDINAL", "road"), ("STEERING", "LATERAL", "steering")],
     },
     {
       "title": "Map Data",
@@ -203,7 +203,13 @@ class StarPilotLayout(Widget):
       cat = self.CATEGORIES[self._current_category_idx]
       visible_buttons = cat["buttons"]
       
-      for label, panel_key in visible_buttons:
+      for button_info in visible_buttons:
+        if len(button_info) == 3:
+          label, panel_key, btn_icon = button_info
+        else:
+          label, panel_key = button_info
+          btn_icon = cat["icon"]
+          
         p_type = panel_type_map[panel_key]
         def on_btn_click(p=p_type):
           self._set_current_panel(p)
@@ -211,7 +217,7 @@ class StarPilotLayout(Widget):
         tile = HubTile(
           title=tr(label),
           desc="",
-          icon_key=cat["icon"],
+          icon_key=btn_icon,
           on_click=on_btn_click,
           bg_color=cat.get("color")
         )

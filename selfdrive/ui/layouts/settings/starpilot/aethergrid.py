@@ -3519,7 +3519,7 @@ class HubTile(AetherTile):
     self.get_status = get_status
     self.title = title
     self.desc = desc
-    self.custom_icon_key = icon_key if icon_key in ("sound", "steering", "navigate", "system", "display", "vehicle") else None
+    self.custom_icon_key = icon_key if icon_key in ("sound", "steering", "navigate", "system", "display", "vehicle", "road", "aicar") else None
     self._icon = None
     self._font_title = gui_app.font(FontWeight.BOLD)
     self._font_desc = gui_app.font(FontWeight.MEDIUM)
