@@ -63,42 +63,41 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
     rl.draw_circle_v(rl.Vector2(cx, cy), r, color)
 
   if key == "sound":
-    # Sounds & Alerts: Bell with single side arcs
+    # Sounds & Alerts: Speaker icon on the right, sound waves on the left
     x_c = x + 30.0 * s
     y_c = y + 30.0 * s
 
-    # Top loop (handle)
-    draw_ellipse_arc(x_c, y_c - 14.0 * s, 3.0 * s, 3.0 * s, 0.0, 180.0, 360.0, 2.0 * s)
+    thick = 2.5 * s
+    r_cap = thick / 2.0
 
-    # Bell dome
-    rl.draw_circle_sector(rl.Vector2(x_c, y_c - 6.0 * s), 8.0 * s, 180.0, 360.0, 48, color)
+    # Draw speaker body outline
+    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), thick, color)
 
-    # Main bell body
-    rl.draw_rectangle_rec(rl.Rectangle(x_c - 8.0 * s, y_c - 6.0 * s, 16.0 * s, 16.0 * s), color)
+    # Draw circles at speaker body vertices to round the corners
+    rl.draw_circle_v(rl.Vector2(x_c + 2.0 * s, y_c - 15.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c + 2.0 * s, y_c + 15.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c + 10.0 * s, y_c - 6.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c + 10.0 * s, y_c + 6.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c + 18.0 * s, y_c - 6.0 * s), r_cap, color)
+    rl.draw_circle_v(rl.Vector2(x_c + 18.0 * s, y_c + 6.0 * s), r_cap, color)
 
-    # Flared side triangles
-    rl.draw_triangle(
-      rl.Vector2(x_c - 8.0 * s, y_c - 6.0 * s),
-      rl.Vector2(x_c - 15.0 * s, y_c + 10.0 * s),
-      rl.Vector2(x_c - 8.0 * s, y_c + 10.0 * s),
-      color
-    )
-    rl.draw_triangle(
-      rl.Vector2(x_c + 8.0 * s, y_c - 6.0 * s),
-      rl.Vector2(x_c + 8.0 * s, y_c + 10.0 * s),
-      rl.Vector2(x_c + 15.0 * s, y_c + 10.0 * s),
-      color
-    )
+    # Helper to draw rounded concentric sound wave arcs
+    def draw_rounded_arc(cx: float, cy: float, r: float, start_deg: float, end_deg: float):
+      draw_ellipse_arc(cx, cy, r, r, 0.0, start_deg, end_deg, thick)
+      rad_start = math.radians(start_deg)
+      rad_end = math.radians(end_deg)
+      rl.draw_circle_v(rl.Vector2(cx + r * math.cos(rad_start), cy + r * math.sin(rad_start)), r_cap, color)
+      rl.draw_circle_v(rl.Vector2(cx + r * math.cos(rad_end), cy + r * math.sin(rad_end)), r_cap, color)
 
-    # Bottom lip
-    rl.draw_rectangle_rounded(rl.Rectangle(x_c - 17.0 * s, y_c + 10.0 * s, 34.0 * s, 3.5 * s), 0.5, 4, color)
-
-    # Clapper
-    rl.draw_circle_v(rl.Vector2(x_c, y_c + 16.0 * s), 3.5 * s, color)
-
-    # Single elegant wave arc per side (well-spaced) using custom ellipse arc helper to prevent split bugs
-    draw_ellipse_arc(x_c, y_c, 26.0 * s, 26.0 * s, 0.0, 150.0, 210.0, 2.5 * s)
-    draw_ellipse_arc(x_c, y_c, 26.0 * s, 26.0 * s, 0.0, -30.0, 30.0, 2.5 * s)
+    # Draw three concentric sound wave arcs
+    draw_rounded_arc(x_c + 2.0 * s, y_c, 6.0 * s, 155.0, 205.0)
+    draw_rounded_arc(x_c + 2.0 * s, y_c, 11.0 * s, 142.5, 217.5)
+    draw_rounded_arc(x_c + 2.0 * s, y_c, 16.0 * s, 130.0, 230.0)
 
   elif key == "steering":
     # Driving Controls: Minimalist 3-spoke steering wheel
@@ -121,7 +120,7 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
     x_c = x + 30.0 * s
     y_c = y + 21.0 * s
 
-    # Teardrop head outline (using safe ellipse arc helper to prevent split bugs)
+    # Teardrop head outline
     draw_ellipse_arc(x_c, y_c, 10.0 * s, 10.0 * s, 0.0, 150.0, 390.0, 3.0 * s)
 
     # Tapered sides to tip
