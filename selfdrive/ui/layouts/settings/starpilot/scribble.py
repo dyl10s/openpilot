@@ -165,31 +165,41 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
       )
 
   elif key == "display":
-    # Appearance: Minimalist widescreen display with core brightness/sun symbol
-    # Screen frame outline
-    rl.draw_line_ex(rl.Vector2(x + 9.0 * s, y + 12.0 * s), rl.Vector2(x + 51.0 * s, y + 12.0 * s), 2.0 * s, color)
-    rl.draw_line_ex(rl.Vector2(x + 51.0 * s, y + 12.0 * s), rl.Vector2(x + 51.0 * s, y + 36.0 * s), 2.0 * s, color)
-    rl.draw_line_ex(rl.Vector2(x + 51.0 * s, y + 36.0 * s), rl.Vector2(x + 9.0 * s, y + 36.0 * s), 2.0 * s, color)
-    rl.draw_line_ex(rl.Vector2(x + 9.0 * s, y + 36.0 * s), rl.Vector2(x + 9.0 * s, y + 12.0 * s), 2.0 * s, color)
+    # Appearance Settings: A horizontal control panel rectangle with 4 vertical slider tracks and thumbs at various levels
+    x_c = x + 30.0 * s
+    y_c = y + 30.0 * s
 
-    # Screen stand (pillar & base)
-    rl.draw_line_ex(rl.Vector2(x + 30.0 * s, y + 36.0 * s), rl.Vector2(x + 30.0 * s, y + 44.0 * s), 3.0 * s, color)
-    rl.draw_line_ex(rl.Vector2(x + 22.0 * s, y + 44.0 * s), rl.Vector2(x + 38.0 * s, y + 44.0 * s), 2.0 * s, color)
+    thick = 2.5 * s
+    inner_thick = 1.5 * s
+    thumb_r = 2.5 * s
 
-    # Minimal sun / brightness symbol in screen center
-    sx_c = x + 30.0 * s
-    sy_c = y + 24.0 * s
-    rl.draw_circle_v(rl.Vector2(sx_c, sy_c), 3.5 * s, color)
-    for k in range(8):
-      angle_rad = math.radians(k * 45.0)
-      cos_a = math.cos(angle_rad)
-      sin_a = math.sin(angle_rad)
-      rl.draw_line_ex(
-        rl.Vector2(sx_c + cos_a * 6.0 * s, sy_c + sin_a * 6.0 * s),
-        rl.Vector2(sx_c + cos_a * 8.5 * s, sy_c + sin_a * 8.5 * s),
-        1.5 * s,
-        color
-      )
+    # 1. Draw outer rounded rectangle outline manually for perfect geometry and scaling
+    # Top and bottom horizontal lines
+    rl.draw_line_ex(rl.Vector2(x_c - 17.0 * s, y_c - 16.0 * s), rl.Vector2(x_c + 17.0 * s, y_c - 16.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c - 17.0 * s, y_c + 16.0 * s), rl.Vector2(x_c + 17.0 * s, y_c + 16.0 * s), thick, color)
+    # Left and right vertical lines
+    rl.draw_line_ex(rl.Vector2(x_c - 22.0 * s, y_c - 11.0 * s), rl.Vector2(x_c - 22.0 * s, y_c + 11.0 * s), thick, color)
+    rl.draw_line_ex(rl.Vector2(x_c + 22.0 * s, y_c - 11.0 * s), rl.Vector2(x_c + 22.0 * s, y_c + 11.0 * s), thick, color)
+    # Four corner arcs
+    draw_ellipse_arc(x_c - 17.0 * s, y_c - 11.0 * s, 5.0 * s, 5.0 * s, 0.0, 180.0, 270.0, thick)
+    draw_ellipse_arc(x_c + 17.0 * s, y_c - 11.0 * s, 5.0 * s, 5.0 * s, 0.0, 270.0, 360.0, thick)
+    draw_ellipse_arc(x_c + 17.0 * s, y_c + 11.0 * s, 5.0 * s, 5.0 * s, 0.0, 0.0, 90.0, thick)
+    draw_ellipse_arc(x_c - 17.0 * s, y_c + 11.0 * s, 5.0 * s, 5.0 * s, 0.0, 90.0, 180.0, thick)
+
+    # 2. Draw 4 vertical slider tracks
+    x_positions = [x_c - 12.0 * s, x_c - 4.0 * s, x_c + 4.0 * s, x_c + 12.0 * s]
+    for px in x_positions:
+      rl.draw_line_ex(rl.Vector2(px, y_c - 9.0 * s), rl.Vector2(px, y_c + 9.0 * s), inner_thick, color)
+
+    # 3. Draw slider thumbs (solid circles at different vertical levels)
+    # Track 1 (left): low level
+    rl.draw_circle_v(rl.Vector2(x_positions[0], y_c + 3.0 * s), thumb_r, color)
+    # Track 2 (mid-left): center level
+    rl.draw_circle_v(rl.Vector2(x_positions[1], y_c - 2.0 * s), thumb_r, color)
+    # Track 3 (mid-right): low level
+    rl.draw_circle_v(rl.Vector2(x_positions[2], y_c + 3.0 * s), thumb_r, color)
+    # Track 4 (right): high level
+    rl.draw_circle_v(rl.Vector2(x_positions[3], y_c - 6.0 * s), thumb_r, color)
 
   elif key == "vehicle":
     # Vehicle Settings: Little Car
