@@ -171,14 +171,14 @@ class AppearanceManagerView(AetherSettingsView):
                 )
             },
             {
-                "title": tr("Developer & Beta Metrics"),
+                "title": tr("Advanced Metrics"),
                 "desc": tr("Adjust radar plots, lead vehicle info, and stop sign metrics."),
                 "icon": "sound",
                 "color": "#8B5CF6",
                 "on_click": lambda: gui_app.push_widget(
                     AetherCategoryTileView(
                         self._controller,
-                        tr("Developer & Beta Metrics"),
+                        tr("Advanced Metrics"),
                         self._controller._dev_rows,
                         color="#8B5CF6",
                         subtitle=tr("Adjust radar plots, lead vehicle info, and stop sign metrics."),
@@ -491,7 +491,7 @@ class StarPilotAppearanceLayout(_SettingsPage):
                        on_click=self._show_startup_alert_selector),
         ]
 
-        # ═══ 6. Developer & Beta Metrics ═══
+        # ═══ 6. Advanced Metrics ═══
         self._dev_rows = [
             SettingRow("DeveloperSidebar", "toggle", tr_noop("Developer Sidebar"),
                        subtitle=tr_noop("Driving metrics panel on the right"),
