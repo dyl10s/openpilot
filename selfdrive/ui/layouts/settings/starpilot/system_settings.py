@@ -39,6 +39,9 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   draw_selection_list_row,
   draw_settings_panel_header,
   draw_soft_card,
+  GROUP_HEADER_GAP,
+  GROUP_HEADER_HEIGHT,
+  draw_group_header,
   draw_tab_bar,
   AetherSliderDialog,
   _mix_colors,
@@ -475,15 +478,52 @@ class SystemSettingsManagerView(PanelManagerView):
 
     if self._uses_two_columns(width):
       column_w = self._column_width(width)
+      
+      # Reset custom heights to calculate natural measurements first
+      for key in self._display_slider_keys + self._power_slider_keys:
+        self._adjustor_rows[key].custom_row_height = None
+      self._connectivity_tile_grid._tile_height = None
+
       display_container_h = self._slider_section_height(self._display_slider_keys, column_w)
       power_container_h = self._slider_section_height(self._power_slider_keys, column_w)
-      header_overhead = (SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP) * 2
-      viewport_h = self._scroll_rect.height if self._scroll_rect else 0.0
-      needed_gap = viewport_h - (display_container_h + power_container_h + header_overhead)
-      section_gap = max(AETHER_LIST_METRICS.section_gap, needed_gap)
-      left_h = display_container_h + power_container_h + header_overhead + section_gap
-      return self._compute_two_column_height(left_h)
+
+      left_overhead = 8.0 + 2 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP) + SECTION_GAP
+      left_natural_content_h = left_overhead + display_container_h + power_container_h
+      
+      tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, column_w - 24)
+      right_natural_container_h = tiles_content_h + 24
+
+      max_natural_h = max(left_natural_content_h, right_natural_container_h)
+
+      if self._scroll_rect:
+        available_container_h = self._scroll_rect.height - 12.0
+      else:
+        available_container_h = max_natural_h
+
+      # Always stretch container to fill available height, preventing empty space at bottom
+      max_container_h = available_container_h
+
+      # Scale adjustors if needed
+      if max_container_h < max_natural_h:
+        scale_f = (max_container_h - left_overhead) / (left_natural_content_h - left_overhead)
+        row_h = max(60.0, 94.0 * scale_f)
+        for key in self._display_slider_keys + self._power_slider_keys:
+          self._adjustor_rows[key].custom_row_height = row_h
+
+      self._system_max_container_h = max_container_h
+
+      # Scale connectivity tiles
+      right_available_for_grid = self._system_max_container_h - 24
+      right_available_for_tile_rows = right_available_for_grid - 12
+      tile_h = max(80.0, min(130.0, right_available_for_tile_rows / 2))
+      self._connectivity_tile_grid._tile_height = tile_h
+
+      return self._compute_two_column_height(max_container_h)
     else:
+      # Ensure defaults are restored in single column mode
+      for key in self._display_slider_keys + self._power_slider_keys:
+        self._adjustor_rows[key].custom_row_height = None
+      self._connectivity_tile_grid._tile_height = None
       tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, width - 24)
       return self._stacked_section_height([display_h, power_h, tiles_content_h + 24])
 
@@ -503,20 +543,21 @@ class SystemSettingsManagerView(PanelManagerView):
       column_w = self._column_width(width)
       display_container_h = self._slider_section_height(self._display_slider_keys, column_w)
       power_container_h = self._slider_section_height(self._power_slider_keys, column_w)
-      header_overhead = (SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP) * 2
+      # Single unified shell for the left side
+      draw_list_group_shell(rl.Rectangle(x, y, column_w, self._system_max_container_h), style=PANEL_STYLE)
+      
+      current_y = y + 8
+      current_y = draw_group_header(x + 24, current_y, column_w - 48, tr("DISPLAY"))
+      for index, key in enumerate(self._display_slider_keys):
+        current_y = self._draw_slider_row(rl.Rectangle(x, current_y, column_w, 0), key, is_last=index == len(self._display_slider_keys) - 1)
+        
+      current_y += SECTION_GAP
+      
+      current_y = draw_group_header(x + 24, current_y, column_w - 48, tr("POWER"))
+      for index, key in enumerate(self._power_slider_keys):
+        current_y = self._draw_slider_row(rl.Rectangle(x, current_y, column_w, 0), key, is_last=index == len(self._power_slider_keys) - 1)
 
-      viewport_h = self._scroll_rect.height if self._scroll_rect else 0.0
-      needed_gap = viewport_h - (display_container_h + power_container_h + header_overhead)
-      section_gap = max(AETHER_LIST_METRICS.section_gap, needed_gap)
-
-      display_bottom = self._draw_slider_section(y, x, column_w, tr("Display"), self._display_slider_keys)
-      power_y = display_bottom + section_gap
-      self._draw_slider_section(power_y, x, column_w, tr("Power"), self._power_slider_keys)
-
-      container_top = y + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
-      left_h = display_container_h + power_container_h + header_overhead + section_gap
-      container_height = left_h - (SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP)
-      self._draw_two_column_tile_grid(self._connectivity_tile_grid, x + column_w + self.COLUMN_GAP, container_top, column_w, container_height)
+      self._draw_two_column_tile_grid(self._connectivity_tile_grid, x + column_w + self.COLUMN_GAP, y, column_w, self._system_max_container_h)
       return
     y = self._draw_slider_section(y, x, width, tr("Display"), self._display_slider_keys)
     y += SECTION_GAP

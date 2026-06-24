@@ -332,7 +332,16 @@ class VehicleSettingsManagerView(PanelManagerView):
         tiles_height = SECTION_GAP + self._section_block_height(tiles_content_h + 24)
 
     if self._uses_two_columns(width):
-      return self._compute_two_column_height(left_h)
+      column_w = self._column_width(width)
+      tiles_content_h = self.measure_page_grid_height(self._toggle_grid, column_w - 24)
+      right_natural_container_h = tiles_content_h + 24
+      left_natural_content_h = identity_h + SECTION_GAP + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP + steering_h
+      
+      max_container_h = max(left_natural_content_h, right_natural_container_h)
+      self._vehicle_max_container_h = max_container_h
+      self._vehicle_section_gap = max(SECTION_GAP, max_container_h - (identity_h + steering_h + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP))
+      
+      return self._compute_two_column_height(max_container_h + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP)
     return left_h + tiles_height
 
   def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
@@ -378,7 +387,7 @@ class VehicleSettingsManagerView(PanelManagerView):
         self._draw_row(row_rect, row, is_last=index == len(identity_rows) - 1)
       curr_y += len(identity_rows) * ROW_HEIGHT
 
-      curr_y += SECTION_GAP
+      curr_y += self._vehicle_section_gap
       draw_section_header(rl.Rectangle(x, curr_y, column_w, SECTION_HEADER_HEIGHT), tr("Steering Controls"), style=PANEL_STYLE)
       curr_y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
       container_rect = rl.Rectangle(x, curr_y, column_w, len(steering_rows) * ROW_HEIGHT)
@@ -390,8 +399,7 @@ class VehicleSettingsManagerView(PanelManagerView):
       # Right Column: Features
       if self._toggle_grid.tiles:
         rx = x + column_w + self.COLUMN_GAP
-        left_h = curr_y - y
-        self._draw_two_column_tile_grid(self._toggle_grid, rx, y, column_w, left_h, title=tr("Features"), style=PANEL_STYLE)
+        self._draw_two_column_tile_grid(self._toggle_grid, rx, y, column_w, self._vehicle_max_container_h, title=tr("Features"), style=PANEL_STYLE)
     else:
       # Single Column Stacked Layout
       draw_section_header(rl.Rectangle(x, y, width, SECTION_HEADER_HEIGHT), tr("Vehicle Identity"), style=PANEL_STYLE)

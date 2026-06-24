@@ -1389,6 +1389,18 @@ def draw_metric_strip(
       )
 
 
+GROUP_HEADER_HEIGHT = 20.0
+GROUP_HEADER_GAP = 2.0
+GROUP_HAIRLINE_COLOR = rl.Color(255, 255, 255, 10)
+GROUP_HEADER_COLOR = rl.Color(255, 255, 255, 90)
+
+def draw_group_header(x: float, y: float, width: float, label: str) -> float:
+  gui_label(rl.Rectangle(x, y, width, GROUP_HEADER_HEIGHT), label, 14, GROUP_HEADER_COLOR, FontWeight.MEDIUM)
+  y += GROUP_HEADER_HEIGHT
+  rl.draw_line(int(x), int(y), int(x + width), int(y), GROUP_HAIRLINE_COLOR)
+  return y + GROUP_HEADER_GAP
+
+
 def draw_section_header(
   rect: rl.Rectangle,
   title: str = "",
@@ -1924,6 +1936,7 @@ class AetherAdjustorRow(Widget):
     self._unit = unit
     self._labels = labels or {}
     self._step = step
+    self.custom_row_height = None
 
   @property
   def is_interacting(self) -> bool:
@@ -1951,6 +1964,8 @@ class AetherAdjustorRow(Widget):
 
   def measure_height(self, width: float) -> float:
     del width
+    if getattr(self, "custom_row_height", None) is not None:
+      return float(self.custom_row_height)
     if not self._active():
       return float(AETHER_LIST_METRICS.adjustor_row_height)
     preset_height = AETHER_LIST_METRICS.adjustor_preset_height + AETHER_LIST_METRICS.adjustor_preset_gap if self._presets else 0
@@ -2058,36 +2073,51 @@ class AetherAdjustorRow(Widget):
       current_border=current_border,
     )
 
+    scale_y = rect.height / 94.0
+    title_fs = max(14, int(24 * scale_y)) if rect.height < 94 else 24
+    sub_fs = max(11, int(18 * scale_y)) if rect.height < 94 else 18
+    val_fs = max(11, int(18 * scale_y)) if rect.height < 94 else 18
+
     value_pill_w = min(float(AETHER_LIST_METRICS.adjustor_value_pill_width), max(118.0, rect.width * 0.22))
+    value_pill_h = max(24.0, 36.0 * scale_y) if rect.height < 94 else AETHER_LIST_METRICS.adjustor_value_pill_height
+    value_y = rect.y + 14.0 * scale_y if rect.height < 94 else rect.y + 14
+
     self._header_rect = rl.Rectangle(rect.x, rect.y, rect.width, min(rect.height, 78))
-    self._value_rect = _snap_rect(rl.Rectangle(rect.x + rect.width - value_pill_w - 18, rect.y + 14, value_pill_w, AETHER_LIST_METRICS.adjustor_value_pill_height))
+    self._value_rect = _snap_rect(rl.Rectangle(rect.x + rect.width - value_pill_w - 18, value_y, value_pill_w, value_pill_h))
     content_right = self._value_rect.x - 18
     content_left = rect.x + 24
     content_width = max(120.0, content_right - content_left)
 
-    gui_label(rl.Rectangle(content_left, rect.y + 14, content_width, 28), self._title, 24, self._style.title_color, FontWeight.MEDIUM)
-    gui_label(rl.Rectangle(content_left, rect.y + 44, content_width, 22), self._subtitle, 18, self._style.subtitle_color, FontWeight.NORMAL)
+    title_y = rect.y + 14.0 * scale_y if rect.height < 94 else rect.y + 14
+    title_h = max(18.0, 28.0 * scale_y) if rect.height < 94 else 28
+    gui_label(rl.Rectangle(content_left, title_y, content_width, title_h), self._title, title_fs, self._style.title_color, FontWeight.MEDIUM)
+
+    sub_y = rect.y + 44.0 * scale_y if rect.height < 94 else rect.y + 44
+    sub_h = max(14.0, 22.0 * scale_y) if rect.height < 94 else 22
+    gui_label(rl.Rectangle(content_left, sub_y, content_width, sub_h), self._subtitle, sub_fs, self._style.subtitle_color, FontWeight.NORMAL)
 
     pill_fill = rl.Color(255, 255, 255, 5)
     pill_border = rl.Color(255, 255, 255, 14)
     if active:
       pill_fill = _mix_colors(rl.Color(18, 22, 28, 255), self._color, 0.20, alpha=255)
       pill_border = _with_alpha(self._color, 64)
-    _draw_rounded_fill(self._value_rect, pill_fill, radius_px=16)
-    _draw_rounded_stroke(self._value_rect, pill_border, radius_px=16)
+    _draw_rounded_fill(self._value_rect, pill_fill, radius_px=16 * scale_y if rect.height < 94 else 16)
+    _draw_rounded_stroke(self._value_rect, pill_border, radius_px=16 * scale_y if rect.height < 94 else 16)
+    val_text_y = self._value_rect.y + (self._value_rect.height - val_fs) / 2 - 2
     _draw_text_fit_common(
       self._font_value,
       self.formatted_value(),
-      rl.Vector2(self._value_rect.x + 14, self._value_rect.y + 8),
-      max(1.0, self._value_rect.width - 28),
-      18,
+      rl.Vector2(self._value_rect.x + 10, val_text_y),
+      max(1.0, self._value_rect.width - 20),
+      val_fs,
       align_center=True,
       color=self._style.title_color,
     )
 
-    hint_y = rect.y + 76
-    self._hint_rect = _snap_rect(rl.Rectangle(content_left, hint_y, rect.width - 48, 8))
-    hint_track = _snap_rect(rl.Rectangle(self._hint_rect.x, self._hint_rect.y + 2, self._hint_rect.width, 4))
+    hint_y = rect.y + rect.height - 18.0 * scale_y if rect.height < 94 else rect.y + 76
+    hint_h = max(3.0, 4.0 * scale_y) if rect.height < 94 else 4
+    self._hint_rect = _snap_rect(rl.Rectangle(content_left, hint_y, rect.width - 48, hint_h + 4))
+    hint_track = _snap_rect(rl.Rectangle(self._hint_rect.x, self._hint_rect.y + 2, self._hint_rect.width, hint_h))
     rl.draw_rectangle_rounded(hint_track, 1.0, 10, rl.Color(255, 255, 255, 10))
     fill_w = hint_track.width * self._scrubber._value_fraction(self._current_value())
     if fill_w > 0:

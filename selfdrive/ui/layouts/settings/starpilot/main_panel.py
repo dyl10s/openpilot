@@ -22,7 +22,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import TileGri
 class StarPilotLayout(Widget):
   CATEGORIES = [
     {
-      "title": "Alerts & Sounds",
+      "title": "Sounds & Alerts",
       "icon": "sound",
       "panel": "SOUNDS",
     },

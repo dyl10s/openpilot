@@ -63,7 +63,7 @@ def draw_custom_icon(key: str, x: float, y: float, s: float, color: rl.Color):
     rl.draw_circle_v(rl.Vector2(cx, cy), r, color)
 
   if key == "sound":
-    # Alerts & Sounds: Bell with single side arcs
+    # Sounds & Alerts: Bell with single side arcs
     x_c = x + 30.0 * s
     y_c = y + 30.0 * s
 

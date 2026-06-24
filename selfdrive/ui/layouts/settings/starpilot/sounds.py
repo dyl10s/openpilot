@@ -29,18 +29,17 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   draw_section_header,
   draw_settings_panel_header,
   AetherSliderDialog,
+  GROUP_HEADER_HEIGHT,
+  GROUP_HEADER_GAP,
+  GROUP_HAIRLINE_COLOR,
+  GROUP_HEADER_COLOR,
+  draw_group_header,
 )
 
 PANEL_STYLE = DEFAULT_PANEL_STYLE
 SECTION_GAP = AETHER_LIST_METRICS.section_gap
 SECTION_HEADER_HEIGHT = AETHER_LIST_METRICS.section_header_height
 SECTION_HEADER_GAP = AETHER_LIST_METRICS.section_header_gap
-
-GROUP_HEADER_HEIGHT = 20
-GROUP_HEADER_GAP = 2
-GROUP_HAIRLINE_COLOR = rl.Color(255, 255, 255, 10)
-GROUP_HEADER_COLOR = rl.Color(255, 255, 255, 90)
-
 SOUNDS_PANEL_METRICS = replace(
   COMPACT_PANEL_METRICS,
   outer_margin_y=14,
@@ -240,21 +239,57 @@ class SoundsManagerView(PanelManagerView):
 
   def _measure_content_height(self, content_width: float) -> float:
     col_width = (content_width - SECTION_GAP) / 2
-    left_h = 0.0
+
+    # Reset any previous custom heights to calculate natural measurements first
     for key in self._controller.VOLUME_KEYS:
-      left_h += self._adjustor_rows[key].measure_height(col_width)
-    left_h += GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP
-    left_h += GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP
-    left_h += GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP
-    left_column_total_h = left_h + 16
+      self._adjustor_rows[key].custom_row_height = None
+    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = None
+    self._toggle_grid._tile_height = None
 
-    cd_h = self._adjustor_rows[self._controller.COOLDOWN_KEY].measure_height(col_width)
+    default_adjustor_h = float(AETHER_LIST_METRICS.adjustor_row_height)
 
-    tiles_container_h = left_column_total_h - cd_h - SECTION_GAP
-    self._tiles_container_h = max(130.0, tiles_container_h)
+    left_h = (len(self._controller.VOLUME_KEYS) * default_adjustor_h)
+    left_h += (3 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP))
+    left_natural_container_h = left_h + 16
 
+    cd_h = default_adjustor_h
+    tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24 + GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP
+    right_natural_container_h = cd_h + SECTION_GAP + tiles_needed_h
+
+    max_natural_h = max(left_natural_container_h, right_natural_container_h)
     section_overhead = SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
-    return self._compute_two_column_height(section_overhead + max(left_column_total_h, cd_h + SECTION_GAP + self._tiles_container_h))
+
+    if self._scroll_rect:
+      available_container_h = self._scroll_rect.height - section_overhead - 6.0
+    else:
+      available_container_h = max_natural_h
+
+    # Always stretch container to fill available height, preventing empty space at bottom
+    max_container_h = available_container_h
+
+    # Scale the left column adjustor rows to fit within max_container_h
+    # Formula: max_container_h = 8 * left_row_h + 3 * 22 (headers) + 16 (padding)
+    left_available_for_rows = max_container_h - 66 - 16
+    left_row_h = max(60.0, left_available_for_rows / len(self._controller.VOLUME_KEYS))
+    for key in self._controller.VOLUME_KEYS:
+      self._adjustor_rows[key].custom_row_height = left_row_h
+
+    # Scale cooldown and toggle tiles to fit within max_container_h
+    cd_row_h = left_row_h
+    self._adjustor_rows[self._controller.COOLDOWN_KEY].custom_row_height = cd_row_h
+
+    self._left_container_h = max_container_h
+    self._tiles_container_h = max_container_h - cd_row_h - SECTION_GAP
+
+    # Right column tiles: self._tiles_container_h = tile_grid_container
+    # Available height for grid: self._tiles_container_h - 22 (group header) - 24 (padding)
+    right_available_for_grid = self._tiles_container_h - 22 - 24
+    # The grid has 3 rows of tiles, with 2 gaps of 12px = 24px
+    right_available_for_tile_rows = right_available_for_grid - 24
+    tile_h = max(80.0, min(130.0, right_available_for_tile_rows / 3))
+    self._toggle_grid._tile_height = tile_h
+
+    return self._compute_two_column_height(section_overhead + max_container_h)
 
   def _draw_header(self, rect: rl.Rectangle):
     draw_settings_panel_header(rect, tr("Sounds & Alerts"), tr("Manage system volumes and custom alert toggles."), subtitle_size=24)
@@ -291,11 +326,8 @@ class SoundsManagerView(PanelManagerView):
     self._draw_volume_column(y, rect.x, col_width)
     self._draw_utility_column(y, rect.x + col_width + SECTION_GAP, col_width)
 
-  def _draw_group_header(self, x: float, y: float, width: float, label: str) -> float:
-    gui_label(rl.Rectangle(x, y, width, GROUP_HEADER_HEIGHT), label, 14, GROUP_HEADER_COLOR, FontWeight.MEDIUM)
-    y += GROUP_HEADER_HEIGHT
-    rl.draw_line(int(x), int(y), int(x + width), int(y), GROUP_HAIRLINE_COLOR)
-    return y + GROUP_HEADER_GAP
+
+
 
   def _draw_volume_column(self, y: float, x: float, width: float):
     safety_keys = ["WarningImmediateVolume", "WarningSoftVolume", "RefuseVolume", "PromptDistractedVolume"]
@@ -310,18 +342,18 @@ class SoundsManagerView(PanelManagerView):
 
     total_h = sum(GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP + sum(self._adjustor_rows[k].measure_height(width) for k in keys) for _, keys in groups)
     draw_list_group_shell(
-      rl.Rectangle(x, y, width, total_h + 16),
+      rl.Rectangle(x, y, width, self._left_container_h),
       style=PANEL_STYLE
     )
 
     current_y = y + 8
     for label, keys in groups:
-      current_y = self._draw_group_header(x + 24, current_y, width - 48, label)
-      for key in keys:
+      current_y = draw_group_header(x + 24, current_y, width - 48, label)
+      for index, key in enumerate(keys):
         adjustor = self._adjustor_rows[key]
         row_h = adjustor.measure_height(width)
         row_rect = rl.Rectangle(x, current_y, width, row_h)
-        adjustor.set_is_last(True)
+        adjustor.set_is_last(index == len(keys) - 1)
         adjustor.set_parent_rect(self._scroll_rect)
         adjustor.render(row_rect)
         current_y += row_h
@@ -340,7 +372,7 @@ class SoundsManagerView(PanelManagerView):
     adjustor.render(rl.Rectangle(x, current_y, width, row_h))
     current_y += row_h + SECTION_GAP
 
-    current_y = self._draw_group_header(x + 24, current_y, width - 48, tr("CUSTOM ALERTS"))
+    current_y = draw_group_header(x + 24, current_y, width - 48, tr("CUSTOM ALERTS"))
 
     grid_container_h = self._tiles_container_h - (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP)
     self._draw_two_column_tile_grid(self._toggle_grid, x, current_y, width, grid_container_h, title=None, style=PANEL_STYLE)
