@@ -12,6 +12,7 @@ from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_butt
 from opendbc.car.gm.carcontroller import (
   VisualAlert,
   get_acc_dashboard_fcw_alert,
+  get_volt_one_pedal_lift_brake,
   should_send_acc_dashboard_status,
   should_send_cc_button_spam,
   should_spoof_dash_speed,
@@ -349,6 +350,11 @@ class TestGMCarController:
     cp = SimpleNamespace(openpilotLongitudinalControl=True, enableGasInterceptorDEPRECATED=False)
 
     assert should_spoof_dash_speed(cp, SimpleNamespace(disable_openpilot_long=False))
+
+  def test_volt_one_pedal_lift_brake_seeds_low_speed_braking(self):
+    assert get_volt_one_pedal_lift_brake(2.1 * CV.MPH_TO_MS) == 0
+    assert get_volt_one_pedal_lift_brake(2.0 * CV.MPH_TO_MS) == 20
+    assert get_volt_one_pedal_lift_brake(0.10) == 80
 
   def test_volt_camera_no_camera_sends_acc_dashboard_without_dash_spoof(self):
     cp = SimpleNamespace(carFingerprint=CAR.CHEVROLET_VOLT_CAMERA, flags=GMFlags.NO_CAMERA.value)
