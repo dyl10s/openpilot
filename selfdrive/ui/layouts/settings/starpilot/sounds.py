@@ -76,7 +76,7 @@ class SoundsManagerView(PanelManagerView):
     )
 
   def _init_toggles(self):
-    self._toggle_grid = TileGrid(columns=2, padding=12)
+    self._toggle_grid = TileGrid(columns=2, padding=12, min_tile_height=130.0, max_tile_height=180.0)
     self._child(self._toggle_grid)
     self._page_grid = self._toggle_grid
 
@@ -277,14 +277,6 @@ class SoundsManagerView(PanelManagerView):
 
     self._left_container_h = max_container_h
     self._tiles_container_h = max_container_h
-
-    # Right column tiles: self._tiles_container_h = tile_grid_container
-    # Available height for grid: self._tiles_container_h - 24 (padding)
-    right_available_for_grid = self._tiles_container_h - 24
-    # The grid has 3 rows of tiles, with 2 gaps of 12px = 24px
-    right_available_for_tile_rows = right_available_for_grid - 24
-    tile_h = max(80.0, min(130.0, right_available_for_tile_rows / 3))
-    self._toggle_grid._tile_height = tile_h
 
     return self._compute_two_column_height(section_overhead + max_container_h)
 

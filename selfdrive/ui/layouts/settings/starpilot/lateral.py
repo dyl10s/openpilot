@@ -83,7 +83,7 @@ class SteeringManagerView(PanelManagerView):
     self._controller = controller
     self._shell_rect = rl.Rectangle(0, 0, 0, 0)
 
-    self._toggle_grid = TileGrid(columns=2, padding=12, min_tile_width=100)
+    self._toggle_grid = TileGrid(columns=2, padding=12, min_tile_width=100, min_tile_height=130.0, max_tile_height=180.0)
     self._toggle_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
     self._child(self._toggle_grid)
 

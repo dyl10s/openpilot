@@ -3736,32 +3736,59 @@ class ToggleTile(AetherTile):
     title_size = max(20, int(round(24 * text_scale)))
 
     if not enabled:
-      self._draw_text_fit(self._font, self.title,
-                          rl.Vector2(rx + content_pad, ry + int(rh * 0.40)),
-                          max_w, title_size, align_center=True, color=_HUD_TEXT_DIM)
-      disabled_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
+      title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
       desc_size = max(14, int(round(16 * text_scale)))
-      self._draw_text_fit(self._font_desc, disabled_text,
-                          rl.Vector2(rx + content_pad, ry + int(rh * 0.68)),
-                          max_w, desc_size, align_center=True, color=_HUD_TEXT_DIM)
+      disabled_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
+      desc_lines = self._wrap_text(self._font_desc, disabled_text, max_w, desc_size, max_lines=2)
+
+      total_text_h = len(title_lines) * (title_size + 4) + len(desc_lines) * (desc_size + 2) + 6
+      start_y = ry + (rh - total_text_h) / 2
+
+      curr_y = start_y
+      for line in title_lines:
+        self._draw_text_fit(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=_HUD_TEXT_DIM)
+        curr_y += title_size + 4
+      curr_y += 6
+      for line in desc_lines:
+        self._draw_text_fit(self._font_desc, line, rl.Vector2(rx + content_pad, curr_y), max_w, desc_size, align_center=True, color=_HUD_TEXT_DIM)
+        curr_y += desc_size + 2
     else:
       title_color = rl.WHITE if active else _HUD_TEXT_DIM
       if self.desc:
-        desc_size = max(16, int(round(18 * text_scale)))
-        self._draw_text_fit(self._font, self.title,
-                            rl.Vector2(rx + content_pad, ry + int(rh * 0.28)),
-                            max_w, title_size, align_center=True, color=title_color)
-        self._draw_text_fit(self._font_desc, self.desc,
-                            rl.Vector2(rx + content_pad, ry + int(rh * 0.50)),
-                            max_w, desc_size, align_center=True, color=rl.Color(255, 255, 255, 140))
+        title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
+        desc_size = max(14, int(round(16 * text_scale)))
+        desc_lines = self._wrap_text(self._font_desc, self.desc, max_w, desc_size, max_lines=2)
+
+        if len(title_lines) == 1:
+          title_y = ry + int(rh * 0.22)
+        else:
+          title_y = ry + int(rh * 0.16)
+
+        curr_y = title_y
+        for line in title_lines:
+          self._draw_text_fit(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=title_color)
+          curr_y += title_size + 4
+
+        desc_y = title_y + len(title_lines) * (title_size + 4) + 6
+        curr_y = desc_y
+        for line in desc_lines:
+          self._draw_text_fit(self._font_desc, line, rl.Vector2(rx + content_pad, curr_y), max_w, desc_size, align_center=True, color=rl.Color(255, 255, 255, 140))
+          curr_y += desc_size + 2
+
         led_cx = rx + rw // 2
-        led_cy = ry + int(rh * 0.78)
+        led_cy = ry + rh - 22
       else:
-        self._draw_text_fit(self._font, self.title,
-                            rl.Vector2(rx + content_pad, ry + int(rh * 0.50)),
-                            max_w, title_size, align_center=True, color=title_color)
+        title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
+        led_cy = ry + rh - 24
+        total_text_h = len(title_lines) * (title_size + 4)
+        title_y = ry + (rh - 24 - total_text_h) / 2
+
+        curr_y = title_y
+        for line in title_lines:
+          self._draw_text_fit(self._font, line, rl.Vector2(rx + content_pad, curr_y), max_w, title_size, align_center=True, color=title_color)
+          curr_y += title_size + 4
+
         led_cx = rx + rw // 2
-        led_cy = ry + int(rh * 0.75)
 
       if active:
         rl.draw_circle(int(led_cx), int(led_cy), 11, rl.Color(accent.r, accent.g, accent.b, 24))
@@ -5129,7 +5156,7 @@ class AetherSegmentedControl(Widget):
 
 
 class TileGrid(Widget):
-  def __init__(self, columns: int | None = None, padding: int | None = None, uniform_width: bool = False, min_tile_width: int | None = None, tile_height: float | None = None, force_square: bool = False, carousel_rows: int | None = None, carousel_tile_width: float | None = None):
+  def __init__(self, columns: int | None = None, padding: int | None = None, uniform_width: bool = False, min_tile_width: int | None = None, tile_height: float | None = None, force_square: bool = False, carousel_rows: int | None = None, carousel_tile_width: float | None = None, min_tile_height: float | None = None, max_tile_height: float | None = None):
     super().__init__()
     self._columns = columns
     self._gap = padding if padding is not None else SPACING.tile_gap
@@ -5140,6 +5167,8 @@ class TileGrid(Widget):
     self.force_square = force_square
     self.carousel_rows = carousel_rows
     self.carousel_tile_width = carousel_tile_width
+    self.min_tile_height = min_tile_height
+    self.max_tile_height = max_tile_height
 
 
   @property
@@ -5215,7 +5244,14 @@ class TileGrid(Widget):
       col_w = (width - (self._gap * (cols - 1))) / cols
       h = col_w
     else:
-      h = self._tile_height if self._tile_height is not None else 130.0
+      if self._tile_height is not None:
+        h = self._tile_height
+      else:
+        h = 140.0 if rows == 1 else (160.0 if rows == 2 else 180.0)
+        if self.min_tile_height is not None:
+          h = max(h, self.min_tile_height)
+        if self.max_tile_height is not None:
+          h = min(h, self.max_tile_height)
     return rows * h + self.get_internal_gap_height(count, available_width=width)
 
   def measure_width(self) -> float:
@@ -5255,6 +5291,7 @@ class TileGrid(Widget):
 
     cols = self.get_effective_column_count(rect.width, count)
     rows = self.get_row_count(count, available_width=rect.width)
+
     if self.force_square:
       uniform_tile_w = (rect.width - (self._gap * (cols - 1))) / cols
       tile_h = uniform_tile_w
@@ -5263,6 +5300,10 @@ class TileGrid(Widget):
         tile_h = self._tile_height
       else:
         tile_h = (rect.height - (self._gap * (rows - 1))) / rows
+        if self.min_tile_height is not None:
+          tile_h = max(self.min_tile_height, tile_h)
+        if self.max_tile_height is not None:
+          tile_h = min(self.max_tile_height, tile_h)
       uniform_tile_w = (rect.width - (self._gap * (cols - 1))) / cols if self._uniform_width else 0
     tile_idx = 0
     for r in range(rows):

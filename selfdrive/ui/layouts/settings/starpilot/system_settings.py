@@ -305,7 +305,7 @@ class SystemSettingsManagerView(PanelManagerView):
 
     self._basics_tile_grid_h = 0.0
 
-    self._connectivity_tile_grid = TileGrid(columns=2, padding=12)
+    self._connectivity_tile_grid = TileGrid(columns=2, padding=12, min_tile_height=130.0, max_tile_height=180.0)
     for toggle_def in self._toggle_defs:
       tile = self._make_toggle_tile(toggle_def)
       self._connectivity_tile_grid.add_tile(tile)
@@ -512,11 +512,7 @@ class SystemSettingsManagerView(PanelManagerView):
 
       self._system_max_container_h = max_container_h
 
-      # Scale connectivity tiles
-      right_available_for_grid = self._system_max_container_h - 24
-      right_available_for_tile_rows = right_available_for_grid - 12
-      tile_h = max(80.0, min(130.0, right_available_for_tile_rows / 2))
-      self._connectivity_tile_grid._tile_height = tile_h
+      pass
 
       return self._compute_two_column_height(max_container_h)
     else:
