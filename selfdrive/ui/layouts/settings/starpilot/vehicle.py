@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import threading
+import time
+
 import pyray as rl
 
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import FontWeight, gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import DialogResult, Widget
-from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
+from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog, alert_dialog
 from openpilot.system.ui.widgets.label import gui_label
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
@@ -144,9 +147,15 @@ class VehicleSettingsManagerView(PanelManagerView):
       })
     if cs.isGM and cs.hasOpenpilotLongitudinal:
       toggles.append({
+        "title": tr("CAN Ignition Only"),
+        "subtitle": tr("Use Panda firmware that ignores the physical ignition line and starts only from CAN ignition."),
+        "get_state": lambda: self._controller._params.get_bool("IgnoreIgnitionLine"),
+        "set_state": lambda s: self._controller._on_panda_firmware_toggle("IgnoreIgnitionLine", tr("CAN Ignition Only requires a Panda firmware update.")),
+      })
+      toggles.append({
         "title": tr("Remote Start Panda"),
         "get_state": lambda: self._controller._params.get_bool("RemoteStartBootsComma"),
-        "set_state": lambda s: self._controller._on_toggle("RemoteStartBootsComma"),
+        "set_state": lambda s: self._controller._on_panda_firmware_toggle("RemoteStartBootsComma", tr("Remote Start requires a Panda firmware update.")),
       })
     if cs.isGM and cs.isVolt and not cs.hasSNG:
       toggles.append({
@@ -558,6 +567,29 @@ class StarPilotVehicleSettingsLayout(_SettingsPage):
     starpilot_state.update(force=True)
     if param_key == "ForceFingerprint":
       self._manager_view._rebuild_toggle_grid()
+
+  def _on_panda_firmware_toggle(self, param_key: str, prompt: str):
+    current = self._params.get_bool(param_key) if self._params.get(param_key) is not None else False
+    new_state = not current
+
+    def flash_and_reboot():
+      self._params_memory.put_bool("FlashPanda", True)
+      while self._params_memory.get_bool("FlashPanda"):
+        time.sleep(0.1)
+      HARDWARE.reboot()
+
+    def on_confirm(res):
+      if res != DialogResult.CONFIRM:
+        starpilot_state.update(force=True)
+        self._manager_view._rebuild_toggle_grid()
+        return
+      self._params.put_bool(param_key, new_state)
+      threading.Thread(target=flash_and_reboot, daemon=True).start()
+      starpilot_state.update(force=True)
+      self._manager_view._rebuild_toggle_grid()
+      gui_app.push_widget(alert_dialog(tr("Panda flashing started. Device will reboot when finished.")))
+
+    gui_app.push_widget(ConfirmDialog(prompt, tr("Flash"), callback=on_confirm))
 
   def _on_select(self, key: str):
     if key in ("CarMake", "CarModel") and not self._params.get_bool("ForceFingerprint"):
