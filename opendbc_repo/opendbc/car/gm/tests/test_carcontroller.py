@@ -683,6 +683,20 @@ def test_friction_brake_mode_uses_near_stop_hold_mode_for_volt_auto_hold():
   assert get_friction_brake_mode(120, False, True, True, CP, allow_near_stop_mode=True) == 0xd
 
 
+def test_friction_brake_mode_uses_stock_bolt_unwind_for_pedal_print_when_enabled():
+  CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL)
+
+  assert get_friction_brake_mode(0, False, True, False, CP) == 0x1
+  assert get_friction_brake_mode(0, True, True, False, CP) == 0x9
+
+
+def test_friction_brake_mode_keeps_bolt_pedal_braking_mode_unchanged():
+  CP = SimpleNamespace(carFingerprint=CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL)
+
+  assert get_friction_brake_mode(120, True, False, False, CP) == 0xa
+  assert get_friction_brake_mode(120, True, True, True, CP) == 0xd
+
+
 def test_calc_pedal_command_small_accel_deadband_keeps_creep_target_stable():
   pos_controller = _controller()
   neg_controller = _controller()
