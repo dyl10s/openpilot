@@ -16,7 +16,7 @@ STANDSTILL_FORCE_STOP_LIGHT_HOLD_TIME = 5.0
 SLC_LEAD_DROP_RELAXATION_MIN_SPEED = 20.0 * CV.MPH_TO_MS
 SLC_LEAD_DROP_RELAXATION_MIN_DISTANCE = 30.0
 SLC_LEAD_DROP_RELAXATION_MIN_HEADWAY = 1.2
-SLC_LEAD_DROP_RELAXATION_MAX_CLOSING_SPEED = 0.35
+SLC_LEAD_DROP_RELAXATION_MAX_POST_DROP_CLOSING_SPEED = 0.35
 SLC_LEAD_DROP_RELAXATION_MAX_LEAD_BRAKE = 0.25
 SLC_LEAD_DROP_RELAXATION_OVERSPEED_BP = [0.0, 5.0 * CV.MPH_TO_MS, 10.0 * CV.MPH_TO_MS, 15.0 * CV.MPH_TO_MS]
 SLC_LEAD_DROP_RELAXATION_DECEL_V = [0.7, 0.9, 1.15, 1.35]
@@ -109,7 +109,7 @@ def get_slc_lead_drop_relaxed_target(raw_target, previous_target, v_ego, trackin
     return raw_target
 
   v_lead = float(getattr(lead, "vLead", 0.0))
-  if v_lead < float(v_ego) - SLC_LEAD_DROP_RELAXATION_MAX_CLOSING_SPEED:
+  if v_lead < float(raw_target) - SLC_LEAD_DROP_RELAXATION_MAX_POST_DROP_CLOSING_SPEED:
     return raw_target
 
   lead_brake = max(0.0, -float(getattr(lead, "aLeadK", 0.0)))
