@@ -278,13 +278,13 @@ class TestHyundaiFingerprint:
     assert CP.steerControlType == CarParams.SteerControlType.angle
     assert CP.safetyConfigs[-1].safetyParam & HyundaiSafetyFlags.CANFD_ANGLE_STEERING
 
-  def test_ev9_angle_smoothing_is_ev9_specific(self):
+  def test_ev9_uses_shared_angle_smoothing(self):
     ev9_cp = SimpleNamespace(carFingerprint=CAR.KIA_EV9)
     other_cp = SimpleNamespace(carFingerprint=CAR.KIA_SPORTAGE_HEV_2026)
 
-    assert get_angle_smoothing_alpha(ev9_cp, 0.0) == pytest.approx(0.05)
-    assert get_angle_smoothing_alpha(ev9_cp, 13.8) == pytest.approx(0.6)
-    assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(1.0)
+    assert get_angle_smoothing_alpha(ev9_cp, 0.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 0.0))
+    assert get_angle_smoothing_alpha(ev9_cp, 13.8) == pytest.approx(get_angle_smoothing_alpha(other_cp, 13.8))
+    assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 20.0))
     assert get_angle_smoothing_alpha(other_cp, 20.0) == pytest.approx(0.0)
 
   def test_checked_angle_limiter_blocks_rate_accel_conflict(self):

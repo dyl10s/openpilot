@@ -66,8 +66,6 @@ REDNECK_BUTTON_COPIES_TIME_METRIC = [REDNECK_BUTTON_COPIES_TIME, 40]
 ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_SPORTAGE_HEV_2026)
 DEFAULT_ANGLE_SMOOTHING_VEGO_BP = [5.0, 10.0, 20.0]
 DEFAULT_ANGLE_SMOOTHING_ALPHA_V = [0.2, 0.1, 0.0]
-KIA_EV9_ANGLE_SMOOTHING_VEGO_BP = [0.0, 8.5, 11.0, 13.8, 18.0]
-KIA_EV9_ANGLE_SMOOTHING_ALPHA_V = [0.05, 0.1, 0.3, 0.6, 1.0]
 
 
 def egmp_dynamic_longitudinal_tuning(CP) -> bool:
@@ -225,8 +223,6 @@ def get_baseline_safety_cp():
 
 
 def get_angle_smoothing_alpha(CP, v_ego: float) -> float:
-  if CP.carFingerprint == CAR.KIA_EV9:
-    return float(np.interp(v_ego, KIA_EV9_ANGLE_SMOOTHING_VEGO_BP, KIA_EV9_ANGLE_SMOOTHING_ALPHA_V))
   return float(np.interp(v_ego, DEFAULT_ANGLE_SMOOTHING_VEGO_BP, DEFAULT_ANGLE_SMOOTHING_ALPHA_V))
 
 
