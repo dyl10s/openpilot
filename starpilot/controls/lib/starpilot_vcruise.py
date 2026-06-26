@@ -43,7 +43,11 @@ DASH_SEED_M = 27.0        # ~88 ft — typical ADAS detection distance, used to 
                           # tracked length closer when dashboard confirms a sign
 FT_TO_M = 0.3048
 FORCE_STOP_TURN_VETO_MAX_SPEED = 18.0 * CV.MPH_TO_MS
-FORCE_STOP_TURN_VETO_STEERING_ANGLE = 12.0
+# Real-turn steering angle. A stop-then-turn is still ~straight on approach, so a low
+# threshold caused legit stops to be skipped when the blinker came on early. Only suppress
+# Force Stop once the wheel is actually wound into the turn (turn instead of stop), and only
+# for *new* activation — an in-progress stop is carried through (see force_stop_timer logic).
+FORCE_STOP_TURN_VETO_STEERING_ANGLE = 25.0
 FORCE_STOP_CURVE_VETO_MAX_ROAD_CURVATURE = 0.003
 
 # Knob bounds (mirror of UI slider; defense in depth)
@@ -352,7 +356,9 @@ class StarPilotVCruise:
     if force_stop_active and not sm["carState"].standstill:
       rate = DT_MDL * 2 if dash_active else DT_MDL
       self.force_stop_timer = min(self.force_stop_timer + rate, 2.0)
-    elif turn_scene_active and not sm["carState"].standstill:
+    elif turn_scene_active and not self.forcing_stop and not sm["carState"].standstill:
+      # Suppress only a *new* stop while turning. If we're already forcing a stop
+      # (stop-then-turn), carry it through to the stop line instead of releasing here.
       self.force_stop_timer = 0.0
     elif self.standstill_force_stop_hold:
       self.force_stop_timer = max(self.force_stop_timer, 0.5)
@@ -363,8 +369,9 @@ class StarPilotVCruise:
       self.force_stop_timer = max(self.force_stop_timer - DT_MDL * 0.25, 0.0)
 
     force_stop_enabled = self.force_stop_timer >= 0.5
-    # Stay committed across model dropouts until standstill
-    force_stop_enabled |= self.forcing_stop and not sm["carState"].standstill and not turn_scene_active
+    # Stay committed across model dropouts until standstill. Signaling a turn does not
+    # abandon a stop already in progress — we bring the car to the stop line, then turn.
+    force_stop_enabled |= self.forcing_stop and not sm["carState"].standstill
     force_stop_enabled |= self.standstill_force_stop_hold
 
     # Override: gas/accel pedal during an active force stop
