@@ -227,7 +227,7 @@ class AetherListMetrics:
   panel_padding_x: int = 16
   panel_padding_top: int = 28
   panel_padding_bottom: int = 22
-  header_height: int = 244
+  header_height: int = 0
   section_gap: int = 28
   section_header_height: int = 34
   section_header_gap: int = 12
@@ -266,7 +266,7 @@ class AetherListFrame:
 
 AETHER_LIST_METRICS = AetherListMetrics()
 AETHER_COMPACT_ROW_HEIGHT = AETHER_LIST_METRICS.utility_row_height
-COMPACT_PANEL_METRICS = replace(AETHER_LIST_METRICS, header_height=125)
+COMPACT_PANEL_METRICS = replace(AETHER_LIST_METRICS, header_height=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +336,26 @@ def _hit_rect(rect: rl.Rectangle, parent_rect: rl.Rectangle | None = None, pad_x
 def _point_hits(mouse_pos: MousePos, rect: rl.Rectangle, parent_rect: rl.Rectangle | None = None, pad_x: float = 10, pad_y: float = 6) -> bool:
   hit = _hit_rect(rect, parent_rect, pad_x, pad_y)
   return hit.width > 0 and hit.height > 0 and rl.check_collision_point_rec(mouse_pos, hit)
+
+
+def wrap_text(font: rl.Font, text: str, max_width: float, font_size: float, max_lines: int = 2) -> list[str]:
+  spacing = font_size * 0.15
+  words = text.split()
+  lines: list[str] = []
+  current = ""
+  for word in words:
+    candidate = f"{current} {word}".strip() if current else word
+    if measure_text_cached(font, candidate, int(font_size), spacing=spacing).x <= max_width:
+      current = candidate
+    else:
+      if current:
+        lines.append(current)
+      current = word
+      if len(lines) >= max_lines:
+        break
+  if current and len(lines) < max_lines:
+    lines.append(current)
+  return lines if lines else [text]
 
 
 def build_list_panel_frame(rect: rl.Rectangle, metrics: AetherListMetrics = AETHER_LIST_METRICS) -> AetherListFrame:
@@ -864,40 +884,34 @@ PRESSED_BREADCRUMB: str | None = None
 
 def get_breadcrumbs_path() -> list[tuple[str, str]]:
   import openpilot.selfdrive.ui.layouts.settings.starpilot.main_panel as main_panel
+  from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
   layout = getattr(main_panel.StarPilotLayout, "active_instance", None)
   
   path = [("HOME", "action:home")]
   if not layout:
       return path
       
-  from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
-  
   pushed_widgets = gui_app._nav_stack[1:]
   
+  # 1. Add Category if selected
   cat_title = ""
   is_folder = False
   if layout._current_category_idx is not None:
     cat = layout.CATEGORIES[layout._current_category_idx]
     cat_title = cat["title"].upper()
     is_folder = "buttons" in cat
-
-    if is_folder:
-      if layout._current_panel != StarPilotPanelType.MAIN:
-        path.append((cat_title, "action:category"))
-      elif pushed_widgets:
-        path.append((cat_title, "action:category"))
-    else:
-      if pushed_widgets:
-        path.append((cat_title, "action:category"))
-
-  if layout._current_panel != StarPilotPanelType.MAIN and pushed_widgets:
+    path.append((cat_title, "action:category"))
+ 
+  # 2. Add Sub-panel if active
+  if layout._current_panel != StarPilotPanelType.MAIN:
     panel_info = layout._panels[layout._current_panel]
     if panel_info.name:
-      panel_title = panel_info.name.upper()
       if is_folder or layout._current_category_idx is None:
+        panel_title = panel_info.name.upper()
         path.append((panel_title, "action:panel"))
-
-  for i, widget in enumerate(pushed_widgets[:-1]):
+ 
+  # 3. Add any pushed widgets from nav stack
+  for i, widget in enumerate(pushed_widgets):
     if hasattr(widget, '_header_title') and widget._header_title:
       path.append((widget._header_title.upper(), f"action:nav_stack:{i+1}"))
               
@@ -935,45 +949,152 @@ def handle_breadcrumb_click(target: str):
     target_idx = int(target.split(":")[-1])
     while len(gui_app._nav_stack) > target_idx + 1:
       gui_app.pop_widget()
+  elif target == "action:breadcrumb_history":
+    full_path = get_breadcrumbs_path()
+    middle_steps = full_path[1:-1]
+    options = [text for text, action in middle_steps]
+    action_map = {text: action for text, action in middle_steps}
+    
+    def on_select(res):
+      if res == DialogResult.CONFIRM and dialog.selection:
+        chosen_action = action_map.get(dialog.selection)
+        if chosen_action:
+          handle_breadcrumb_click(chosen_action)
+          
+    from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
+    dialog = MultiOptionDialog(tr("Navigation History"), options, "", callback=on_select)
+    gui_app.push_widget(dialog)
 
 
-def draw_breadcrumbs(start_pos: rl.Vector2, max_width: float) -> None:
+def draw_breadcrumbs(rect: rl.Rectangle) -> None:
+  """Draw the breadcrumb trail centered inside `rect`.
+
+  All glyphs — past-step labels, chevrons, and the active-step label — share
+  a single vertical midline so nothing looks dropped or misaligned.
+  """
   BREADCRUMB_RECTS.clear()
   path = get_breadcrumbs_path()
   if not path:
-      return
-      
-  font = gui_app.font(FontWeight.SEMI_BOLD)
-  font_size = 18
-  color_normal = rl.Color(160, 170, 185, 255)
-  color_hover = rl.Color(236, 242, 250, 255)
-  color_pressed = rl.Color(255, 255, 255, 180)
-  color_sep = rl.Color(92, 116, 151, 150)
-  
-  current_x = start_pos.x
-  
-  for i, (text, action) in enumerate(path):
+    return
+
+  display_path = list(path)
+  if len(path) > 3:
+    display_path = [path[0], ("...", "action:breadcrumb_history"), path[-1]]
+
+  # Sizes
+  ACTIVE_SIZE   = 26   # font size for current/last step
+  PAST_SIZE     = 19   # font size for ancestor steps
+  CHEVRON_SIZE  = 16   # visual half-height of chevron arms
+  CHEVRON_W     = 14   # horizontal extent of chevron
+  GAP           = 14   # spacing between every element
+
+  center_y = rect.y + rect.height / 2  # single shared vertical center
+
+  # ── measure total row width so we can clip/left-align ─────────────────────
+  # (We just render left-to-right; no centering needed for breadcrumbs)
+
+  color_sep = rl.Color(80, 90, 115, 160)
+  mouse_pos = gui_app.last_mouse_event.pos
+
+  current_x = rect.x + 20   # left inset inside the pill
+
+  for i, (text, action) in enumerate(display_path):
+    is_last     = (i == len(display_path) - 1)
+    is_overflow = (action == "action:breadcrumb_history")
+    pressed     = PRESSED_BREADCRUMB == action
+
+    if is_overflow:
+      # ── glowing "..." capsule ────────────────────────────────────────────
+      capsule_w, capsule_h = 50, 26
+      cap_rect = rl.Rectangle(
+        current_x,
+        center_y - capsule_h / 2,
+        capsule_w,
+        capsule_h,
+      )
+      hovered = _point_hits(mouse_pos, cap_rect, None, pad_x=4, pad_y=6)
+      BREADCRUMB_RECTS[action] = cap_rect
+
+      if pressed:
+        fill, outline, glow, dots_c = (
+          rl.Color(45, 30, 75, 230),
+          rl.Color(167, 139, 250, 255),
+          rl.Color(167, 139, 250, 90),
+          rl.Color(255, 255, 255, 255),
+        )
+      elif hovered:
+        fill, outline, glow, dots_c = (
+          rl.Color(30, 20, 50, 200),
+          rl.Color(139, 92, 246, 200),
+          rl.Color(139, 92, 246, 60),
+          rl.Color(255, 255, 255, 255),
+        )
+      else:
+        fill, outline, glow, dots_c = (
+          rl.Color(20, 15, 30, 150),
+          rl.Color(120, 110, 220, 80),
+          rl.Color(120, 110, 220, 20),
+          rl.Color(190, 180, 220, 180),
+        )
+
+      # outer glow halo
+      rl.draw_rectangle_rounded_lines_ex(
+        rl.Rectangle(cap_rect.x - 2, cap_rect.y - 2, cap_rect.width + 4, cap_rect.height + 4),
+        1.0, 16, 1.5, glow,
+      )
+      rl.draw_rectangle_rounded(cap_rect, 1.0, 16, fill)
+      rl.draw_rectangle_rounded_lines_ex(cap_rect, 1.0, 16, 1.0, outline)
+
+      font_dots = gui_app.font(FontWeight.BOLD)
+      dots_w = measure_text_cached(font_dots, "...", 18).x
+      rl.draw_text_ex(
+        font_dots, "...",
+        rl.Vector2(cap_rect.x + (cap_rect.width - dots_w) / 2, center_y - 10),
+        18, 0, dots_c,
+      )
+      current_x += capsule_w + GAP
+
+    else:
+      # ── normal breadcrumb label ──────────────────────────────────────────
+      if is_last:
+        font      = gui_app.font(FontWeight.BOLD)
+        font_size = ACTIVE_SIZE
+        c_normal  = rl.Color(255, 255, 255, 255)
+        c_hover   = rl.Color(255, 255, 255, 255)
+        c_pressed = rl.Color(200, 200, 200, 255)
+      else:
+        font      = gui_app.font(FontWeight.MEDIUM)
+        font_size = PAST_SIZE
+        c_normal  = rl.Color(110, 105, 130, 255)
+        c_hover   = rl.Color(160, 155, 185, 255)
+        c_pressed = rl.Color(190, 185, 215, 255)
+
       text_w = measure_text_cached(font, text, font_size).x
-      rect = rl.Rectangle(current_x - 8, start_pos.y - 4, text_w + 16, font_size + 8)
-      
-      mouse_pos = gui_app.last_mouse_event.pos
-      hovered = _point_hits(mouse_pos, rect, None, pad_x=0, pad_y=0)
-      pressed = PRESSED_BREADCRUMB == action
-      
-      color = color_pressed if pressed else (color_hover if hovered else color_normal)
-      
-      BREADCRUMB_RECTS[action] = rect
-      
-      if hovered:
-          rl.draw_rectangle_rounded(rect, 0.3, 8, rl.Color(255, 255, 255, 15))
-          
-      rl.draw_text_ex(font, text, rl.Vector2(current_x, start_pos.y + 2), font_size, 0, color)
-      current_x += text_w + 16
-      
-      if i < len(path) - 1:
-          sep_w = measure_text_cached(font, "/", font_size).x
-          rl.draw_text_ex(font, "/", rl.Vector2(current_x, start_pos.y + 2), font_size, 0, color_sep)
-          current_x += sep_w + 16
+      # hit rect: generous padding for touch
+      hit_rect = rl.Rectangle(current_x - 6, center_y - 20, text_w + 12, 40)
+      hovered  = _point_hits(mouse_pos, hit_rect, None, pad_x=0, pad_y=0)
+      BREADCRUMB_RECTS[action] = hit_rect
+
+      color = c_pressed if pressed else (c_hover if hovered else c_normal)
+
+      if hovered and not is_last:
+        rl.draw_rectangle_rounded(hit_rect, 0.4, 8, rl.Color(255, 255, 255, 12))
+
+      # draw text centered on the shared midline
+      text_y = center_y - font_size / 2
+      rl.draw_text_ex(font, text, rl.Vector2(current_x, text_y), font_size, 0, color)
+      current_x += text_w + GAP
+
+    # ── chevron separator ──────────────────────────────────────────────────
+    if i < len(display_path) - 1:
+      chev_rect = rl.Rectangle(
+        current_x,
+        center_y - CHEVRON_SIZE / 2,
+        CHEVRON_W,
+        CHEVRON_SIZE,
+      )
+      draw_chevron_icon(chev_rect, color_sep, thickness=2.0, direction="right")
+      current_x += CHEVRON_W + GAP
 
 
 PANEL_HEADER_TITLE_Y: int = 34
@@ -994,13 +1115,7 @@ def draw_settings_panel_header(header_rect: rl.Rectangle, title: str, subtitle: 
                                 subtitle_color: rl.Color = AetherListColors.SUBTEXT,
                                 title_weight: FontWeight = PANEL_HEADER_TITLE_FONT,
                                 subtitle_weight: FontWeight = PANEL_HEADER_SUBTITLE_FONT):
-  draw_breadcrumbs(rl.Vector2(header_rect.x, header_rect.y + 2), header_rect.width)
-
-  title_rect = rl.Rectangle(header_rect.x, header_rect.y + PANEL_HEADER_TITLE_Y, header_rect.width * max_title_width, title_size + 2)
-  gui_label(title_rect, title, title_size, title_color, title_weight)
-  if subtitle:
-    subtitle_rect = rl.Rectangle(header_rect.x, header_rect.y + PANEL_HEADER_SUBTITLE_Y, header_rect.width * max_subtitle_width, subtitle_size + 4)
-    gui_label(subtitle_rect, subtitle, subtitle_size, subtitle_color, subtitle_weight)
+  pass
 
 
 
@@ -2625,6 +2740,27 @@ class AetherSettingsView(PanelManagerView):
 
   def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
     y = rect.y + self._scroll_offset
+    
+    if self._has_header:
+      title = tr(self._header_title) if self._header_title else ""
+      subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
+      
+      col_w = (width - self.COLUMN_GAP) / 2 if self._uses_two_columns(width) else width
+      
+      title_font = gui_app.font(FontWeight.SEMI_BOLD)
+      title_size = 32
+      rl.draw_text_ex(title_font, title, rl.Vector2(rect.x + 8, y), title_size, 0, AetherListColors.HEADER)
+      y += title_size + 8
+      
+      if subtitle:
+        desc_font = gui_app.font(FontWeight.NORMAL)
+        desc_size = 18
+        desc_lines = wrap_text(desc_font, subtitle, col_w - 16, desc_size, max_lines=4)
+        for line in desc_lines:
+          rl.draw_text_ex(desc_font, line, rl.Vector2(rect.x + 8, y), desc_size, 0, AetherListColors.SUBTEXT)
+          y += desc_size + 4
+        y += 12
+
     if self._tab_defs:
       y = self._draw_tabs(y, rect.x, width)
     active = self._active_sections()
@@ -2668,17 +2804,11 @@ class AetherSettingsView(PanelManagerView):
         draw_list_group_shell(right_group, style=self._panel_style)
 
         for j, row in enumerate(visible_rows):
-          self._draw_row(rl.Rectangle(rect.x, y + j * section.row_height, col_w, section.row_height), row, is_last=(j == len(visible_rows) - 1))
+          row_rect = rl.Rectangle(rect.x, y + j * section.row_height, col_w, section.row_height)
+          row.set_is_last(j == len(visible_rows) - 1)
+          row.set_parent_rect(self._scroll_rect)
+          row.render(row_rect)
         for j, row in enumerate(right_rows):
-          self._draw_row(rl.Rectangle(rect.x + col_w + self.COLUMN_GAP, y + j * right_section.row_height, col_w, right_section.row_height), row, is_last=(j == len(right_rows) - 1))
-
-        y += group_h
-        if self._has_subsequent_visible(i + 2, active):
-          y += SECTION_GAP
-        i += 2
-      else:
-        y = self._draw_section(y, rect.x, width, section, visible_rows)
-        if self._has_subsequent_visible(i + 1, active):
           y += SECTION_GAP
         i += 1
 
@@ -2909,46 +3039,31 @@ class AetherCategoryTileView(AetherSettingsView):
         )
 
   def _target_at(self, mouse_pos: MousePos) -> str | None:
-    if self._back_btn_rect and rl.check_collision_point_rec(mouse_pos, self._back_btn_rect):
-      return "static:back"
+    # Check breadcrumb hits first (they're drawn in the header)
+    crumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=8, pad_y=8)
+    if crumb_target:
+      return f"breadcrumb:{crumb_target}"
     return super()._target_at(mouse_pos)
 
   def _activate_target(self, target_id: str | None):
-    if target_id == "static:back":
-      gui_app.pop_widget()
+    if target_id and target_id.startswith("breadcrumb:"):
+      action = target_id[len("breadcrumb:"):]
+      if action == "action:panel":  # topmost panel step = pop this dialog
+        gui_app.pop_widget()
+      else:
+        handle_breadcrumb_click(action)
     else:
       super()._activate_target(target_id)
 
   def _draw_header(self, rect: rl.Rectangle):
-    btn_w = 68.0
-    btn_h = 68.0
-    self._back_btn_rect = rl.Rectangle(rect.x, rect.y + 4.0, btn_w, btn_h)
-    
-    self._interactive_rects["static:back"] = self._back_btn_rect
-    
-    hovered = rl.check_collision_point_rec(gui_app.last_mouse_event.pos, self._back_btn_rect)
-    pressed = self._pressed_target == "static:back" and hovered
-    
-    if pressed:
-      fill = rl.Color(255, 255, 255, 30)
-      border = self._panel_style.accent
-    elif hovered:
-      fill = rl.Color(255, 255, 255, 18)
-      border = self._panel_style.accent
-    else:
-      fill = rl.Color(255, 255, 255, 8)
-      border = rl.Color(255, 255, 255, 20)
-      
-    draw_soft_card(self._back_btn_rect, fill, border, radius=0.5)
-    draw_chevron_icon(self._back_btn_rect, self._panel_style.accent if (hovered or pressed) else AetherListColors.HEADER, direction="left")
-    
-    title_x = rect.x + btn_w + 24
-    title_rect = rl.Rectangle(title_x, rect.y, rect.width - btn_w - 24, rect.height)
-    
-    title = tr(self._header_title) if self._header_title else ""
-    subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-    
-    draw_settings_panel_header(title_rect, title, subtitle)
+    # Draw the same glass breadcrumb pill that appears in the main nav bar
+    pill_h = 52
+    pill_rect = rl.Rectangle(rect.x, rect.y + (rect.height - pill_h) / 2, rect.width, pill_h)
+    _draw_rounded_fill(pill_rect, rl.Color(18, 16, 24, 200), radius_px=14)
+    _draw_rounded_stroke(pill_rect, rl.Color(255, 255, 255, 22), radius_px=14)
+    # Breadcrumbs fill left portion; leave ~20px right inset
+    crumb_rect = rl.Rectangle(pill_rect.x, pill_rect.y, pill_rect.width - 20, pill_rect.height)
+    draw_breadcrumbs(crumb_rect)
 
 
 # ── AetherSubMenuTileView — category panel containing navigation HubTiles ──
@@ -3063,46 +3178,31 @@ class AetherSubMenuTileView(AetherSettingsView):
         )
 
   def _target_at(self, mouse_pos: MousePos) -> str | None:
-    if self._back_btn_rect and rl.check_collision_point_rec(mouse_pos, self._back_btn_rect):
-      return "static:back"
+    # Check breadcrumb hits first (they're drawn in the header)
+    crumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=8, pad_y=8)
+    if crumb_target:
+      return f"breadcrumb:{crumb_target}"
     return super()._target_at(mouse_pos)
 
   def _activate_target(self, target_id: str | None):
-    if target_id == "static:back":
-      gui_app.pop_widget()
+    if target_id and target_id.startswith("breadcrumb:"):
+      action = target_id[len("breadcrumb:"):]
+      if action == "action:panel":  # topmost panel step = pop this dialog
+        gui_app.pop_widget()
+      else:
+        handle_breadcrumb_click(action)
     else:
       super()._activate_target(target_id)
 
   def _draw_header(self, rect: rl.Rectangle):
-    btn_w = 68.0
-    btn_h = 68.0
-    self._back_btn_rect = rl.Rectangle(rect.x, rect.y + 4.0, btn_w, btn_h)
-    
-    self._interactive_rects["static:back"] = self._back_btn_rect
-    
-    hovered = rl.check_collision_point_rec(gui_app.last_mouse_event.pos, self._back_btn_rect)
-    pressed = self._pressed_target == "static:back" and hovered
-    
-    if pressed:
-      fill = rl.Color(255, 255, 255, 30)
-      border = self._panel_style.accent
-    elif hovered:
-      fill = rl.Color(255, 255, 255, 18)
-      border = self._panel_style.accent
-    else:
-      fill = rl.Color(255, 255, 255, 8)
-      border = rl.Color(255, 255, 255, 20)
-      
-    draw_soft_card(self._back_btn_rect, fill, border, radius=0.5)
-    draw_chevron_icon(self._back_btn_rect, self._panel_style.accent if (hovered or pressed) else AetherListColors.HEADER, direction="left")
-    
-    title_x = rect.x + btn_w + 24
-    title_rect = rl.Rectangle(title_x, rect.y, rect.width - btn_w - 24, rect.height)
-    
-    title = tr(self._header_title) if self._header_title else ""
-    subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-    
-    draw_settings_panel_header(title_rect, title, subtitle)
+    # Draw the same glass breadcrumb pill that appears in the main nav bar
+    pill_h = 52
+    pill_rect = rl.Rectangle(rect.x, rect.y + (rect.height - pill_h) / 2, rect.width, pill_h)
+    _draw_rounded_fill(pill_rect, rl.Color(18, 16, 24, 200), radius_px=14)
+    _draw_rounded_stroke(pill_rect, rl.Color(255, 255, 255, 22), radius_px=14)
+    # Breadcrumbs fill left portion; leave ~20px right inset
+    crumb_rect = rl.Rectangle(pill_rect.x, pill_rect.y, pill_rect.width - 20, pill_rect.height)
+    draw_breadcrumbs(crumb_rect)
 
 
 class AetherTile(Widget):
@@ -3285,23 +3385,7 @@ class AetherTile(Widget):
     return face, ty
 
   def _wrap_text(self, font: rl.Font, text: str, max_width: float, font_size: float, max_lines: int = 2) -> list[str]:
-    spacing = font_size * 0.15
-    words = text.split()
-    lines: list[str] = []
-    current = ""
-    for word in words:
-      candidate = f"{current} {word}".strip() if current else word
-      if measure_text_cached(font, candidate, int(font_size), spacing=spacing).x <= max_width:
-        current = candidate
-      else:
-        if current:
-          lines.append(current)
-        current = word
-        if len(lines) >= max_lines:
-          break
-    if current and len(lines) < max_lines:
-      lines.append(current)
-    return lines if lines else [text]
+    return wrap_text(font, text, max_width, font_size, max_lines)
 
   def _draw_signal_edge(self, face: rl.Rectangle, color: rl.Color, width: int = 2, alpha: int = 58):
     snapped_face = _snap_rect(face)
@@ -5243,6 +5327,10 @@ class TileGrid(Widget):
       cols = self.get_effective_column_count(width, count)
       col_w = (width - (self._gap * (cols - 1))) / cols
       h = col_w
+      if self.min_tile_height is not None:
+        h = max(self.min_tile_height, h)
+      if self.max_tile_height is not None:
+        h = min(self.max_tile_height, h)
     else:
       if self._tile_height is not None:
         h = self._tile_height
@@ -5295,6 +5383,11 @@ class TileGrid(Widget):
     if self.force_square:
       uniform_tile_w = (rect.width - (self._gap * (cols - 1))) / cols
       tile_h = uniform_tile_w
+      if self.min_tile_height is not None:
+        tile_h = max(self.min_tile_height, tile_h)
+      if self.max_tile_height is not None:
+        tile_h = min(self.max_tile_height, tile_h)
+      uniform_tile_w = tile_h
     else:
       if self._tile_height is not None:
         tile_h = self._tile_height
@@ -5313,7 +5406,8 @@ class TileGrid(Widget):
       items_in_row = min(cols, remaining)
       if self.force_square or self._uniform_width:
         row_tile_w = uniform_tile_w
-        row_x = rect.x
+        row_width = row_tile_w * items_in_row + self._gap * (items_in_row - 1)
+        row_x = rect.x + (rect.width - row_width) / 2
       else:
         row_tile_w = (rect.width - (self._gap * (items_in_row - 1))) / items_in_row
         row_x = rect.x

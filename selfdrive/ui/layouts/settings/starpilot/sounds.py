@@ -45,7 +45,7 @@ SOUNDS_PANEL_METRICS = replace(
   outer_margin_y=14,
   panel_padding_top=16,
   panel_padding_bottom=14,
-  header_height=125,
+  header_height=0,
 )
 
 
@@ -76,7 +76,7 @@ class SoundsManagerView(PanelManagerView):
     )
 
   def _init_toggles(self):
-    self._toggle_grid = TileGrid(columns=2, padding=12, min_tile_height=130.0, max_tile_height=180.0)
+    self._toggle_grid = TileGrid(columns=2, padding=12, force_square=True, min_tile_height=130.0, max_tile_height=180.0)
     self._child(self._toggle_grid)
     self._page_grid = self._toggle_grid
 
@@ -251,7 +251,7 @@ class SoundsManagerView(PanelManagerView):
     # 9 adjustors (8 volume keys + 1 cooldown key) and 2 group headers ("SYSTEM STATE" and "INFORMATIONAL")
     left_h = ((len(self._controller.VOLUME_KEYS) + 1) * default_adjustor_h)
     left_h += (2 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP))
-    left_natural_container_h = left_h + 16
+    left_natural_container_h = left_h + 16.0
 
     tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24
     right_natural_container_h = tiles_needed_h
@@ -281,22 +281,7 @@ class SoundsManagerView(PanelManagerView):
     return self._compute_two_column_height(section_overhead + max_container_h)
 
   def _draw_header(self, rect: rl.Rectangle):
-    draw_settings_panel_header(rect, tr("Sounds & Alerts"), tr("Manage system volumes and custom alert toggles."), subtitle_size=24)
-
-    btn_w = 120.0
-    btn_h = 38.0
-    btn_x = rect.x + rect.width - btn_w
-    btn_y = rect.y + (rect.height - btn_h) / 2
-    self._reset_rect = rl.Rectangle(btn_x, btn_y, btn_w, btn_h)
-
-    hovered = _point_hits(gui_app.last_mouse_event.pos, self._reset_rect, None, pad_x=6, pad_y=0)
-    pressed = self._pressed_target == "action:restore_defaults"
-    draw_action_pill(
-      self._reset_rect, tr("Reset All"),
-      rl.Color(255, 255, 255, 8 if not pressed else 14),
-      rl.Color(255, 255, 255, 18 if not pressed else 28),
-      AetherListColors.SUBTEXT if not hovered else AetherListColors.HEADER,
-    )
+    pass
 
   def _draw_scroll_content(self, rect: rl.Rectangle, content_width: float):
     y = rect.y + self._scroll_offset
@@ -310,6 +295,25 @@ class SoundsManagerView(PanelManagerView):
       rl.Rectangle(rect.x + col_width + SECTION_GAP, y, col_width, SECTION_HEADER_HEIGHT),
       tr("Alerts"), style=PANEL_STYLE
     )
+
+    # Draw Reset All button aligned with the Volume header
+    btn_w = 120.0
+    btn_h = 32.0
+    btn_x = rect.x + col_width - btn_w - 8
+    btn_y = y + (SECTION_HEADER_HEIGHT - btn_h) / 2
+    self._reset_rect = rl.Rectangle(btn_x, btn_y, btn_w, btn_h)
+    
+    self._interactive_rects["action:restore_defaults"] = self._reset_rect
+    
+    hovered = _point_hits(gui_app.last_mouse_event.pos, self._reset_rect, self._scroll_rect, pad_x=6, pad_y=0)
+    pressed = self._pressed_target == "action:restore_defaults"
+    draw_action_pill(
+      self._reset_rect, tr("Reset All"),
+      rl.Color(255, 255, 255, 8 if not pressed else 14),
+      rl.Color(255, 255, 255, 18 if not pressed else 28),
+      AetherListColors.SUBTEXT if not hovered else AetherListColors.HEADER,
+    )
+
     y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
 
     self._draw_volume_column(y, rect.x, col_width)

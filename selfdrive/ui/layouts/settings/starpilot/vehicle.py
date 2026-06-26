@@ -32,6 +32,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   _draw_rounded_fill,
   _draw_rounded_stroke,
   draw_status_badges,
+  wrap_text,
 )
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
 from openpilot.selfdrive.ui.lib.fingerprint_catalog import (
@@ -78,7 +79,7 @@ CUSTOM_METRICS = AetherListMetrics(
   panel_padding_x=16,
   panel_padding_top=16,
   panel_padding_bottom=12,
-  header_height=198,
+  header_height=0,
   section_gap=12,
   section_header_height=28,
   section_header_gap=8,
@@ -105,7 +106,7 @@ class VehicleSettingsManagerView(PanelManagerView):
     self._controller = controller
     self._shell_rect = rl.Rectangle(0, 0, 0, 0)
 
-    self._toggle_grid = TileGrid(columns=2, padding=12, min_tile_width=100, min_tile_height=130.0, max_tile_height=180.0)
+    self._toggle_grid = TileGrid(columns=2, padding=12, force_square=True, min_tile_width=100, min_tile_height=130.0, max_tile_height=180.0)
     self.register_page_grid(self._toggle_grid)
 
     self._last_make = ""
@@ -244,13 +245,7 @@ class VehicleSettingsManagerView(PanelManagerView):
       self._controller._on_select(value)
 
   def _draw_header(self, rect: rl.Rectangle):
-    draw_settings_panel_header(rect, tr("Vehicle Settings"),
-                                tr("Configure vehicle fingerprint, driving features, and steering controls."),
-                                subtitle_size=22)
-
-    summary_y = rect.y + 78 + self.HEADER_SUBTITLE_HEIGHT + self.HEADER_SUMMARY_GAP
-    summary_rect = rl.Rectangle(rect.x, summary_y, rect.width, min(self.HEADER_CARD_HEIGHT, rect.y + rect.height - summary_y))
-    self._draw_summary_card(summary_rect)
+    pass
 
   def _draw_summary_card(self, rect: rl.Rectangle):
     draw_soft_card(rect, PANEL_STYLE.surface_fill, PANEL_STYLE.surface_border)
@@ -319,6 +314,7 @@ class VehicleSettingsManagerView(PanelManagerView):
   def _measure_content_height(self, width: float) -> float:
     self._check_rebuild_grid()
     cs = starpilot_state.car_state
+    RELOCATED_HEADER_HEIGHT = 112.0
 
     # Left Column heights
     identity_rows = 2
@@ -344,14 +340,14 @@ class VehicleSettingsManagerView(PanelManagerView):
       column_w = self._column_width(width)
       tiles_content_h = self.measure_page_grid_height(self._toggle_grid, column_w - 24)
       right_natural_container_h = tiles_content_h + 24
-      left_natural_content_h = identity_h + SECTION_GAP + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP + steering_h
+      left_natural_content_h = identity_h + SECTION_GAP + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP + steering_h + RELOCATED_HEADER_HEIGHT
       
       max_container_h = max(left_natural_content_h, right_natural_container_h)
       self._vehicle_max_container_h = max_container_h
-      self._vehicle_section_gap = max(SECTION_GAP, max_container_h - (identity_h + steering_h + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP))
+      self._vehicle_section_gap = max(SECTION_GAP, (max_container_h - RELOCATED_HEADER_HEIGHT) - (identity_h + steering_h + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP))
       
       return self._compute_two_column_height(max_container_h + SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP)
-    return left_h + tiles_height
+    return left_h + tiles_height + RELOCATED_HEADER_HEIGHT
 
   def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
     self._interactive_rects.clear()
@@ -361,6 +357,16 @@ class VehicleSettingsManagerView(PanelManagerView):
   def _draw_panel_content(self, y: float, x: float, width: float):
     self._check_rebuild_grid()
     cs = starpilot_state.car_state
+
+    # Relocated Header elements drawn at the top of the left column
+    col_w = self._column_width(width) if self._uses_two_columns(width) else width
+
+    # 1. Draw Summary Card
+    summary_rect = rl.Rectangle(x, y, col_w, 100.0)
+    self._draw_summary_card(summary_rect)
+
+    RELOCATED_HEADER_HEIGHT = 112.0
+    y += RELOCATED_HEADER_HEIGHT
 
     identity_rows = [
       {"target_id": "select:CarMake", "type": "select", "title": tr("Car Make"),
@@ -408,7 +414,7 @@ class VehicleSettingsManagerView(PanelManagerView):
       # Right Column: Features
       if self._toggle_grid.tiles:
         rx = x + column_w + self.COLUMN_GAP
-        self._draw_two_column_tile_grid(self._toggle_grid, rx, y, column_w, self._vehicle_max_container_h, title=tr("Features"), style=PANEL_STYLE)
+        self._draw_two_column_tile_grid(self._toggle_grid, rx, y - RELOCATED_HEADER_HEIGHT, column_w, self._vehicle_max_container_h, title=tr("Features"), style=PANEL_STYLE)
     else:
       # Single Column Stacked Layout
       draw_section_header(rl.Rectangle(x, y, width, SECTION_HEADER_HEIGHT), tr("Vehicle Identity"), style=PANEL_STYLE)
