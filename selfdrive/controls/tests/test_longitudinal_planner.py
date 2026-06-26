@@ -9,6 +9,7 @@ import pytest
 from cereal import log
 from opendbc.car.honda.interface import CarInterface
 from opendbc.car.honda.values import CAR
+from opendbc.car.gm.values import CAR as GM_CAR, GMFlags
 import openpilot.selfdrive.controls.lib.longitudinal_planner as longitudinal_planner_module
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
@@ -144,6 +145,18 @@ def test_experimental_mlsim_uses_vehicle_min_accel_floor(model_version):
   assert planner.mlsim
   assert planner.output_a_target == pytest.approx(desired_accel, abs=1e-3)
   assert planner.output_a_target < comfort_min_accel
+
+
+def test_gm_pedal_vehicle_min_accel_uses_brand_when_car_name_is_missing():
+  CP = SimpleNamespace(
+    carName=None,
+    brand="gm",
+    enableGasInterceptorDEPRECATED=True,
+    flags=GMFlags.PEDAL_LONG.value,
+    carFingerprint=GM_CAR.CHEVROLET_BOLT_ACC_2022_2023_PEDAL,
+  )
+
+  assert get_vehicle_min_accel(CP, 32.4) == pytest.approx(-2.95)
 
 
 @pytest.mark.parametrize("model_version", ["v11", "v12", "v13", "v14", "v15"])

@@ -472,7 +472,8 @@ def should_publish_planner_fcw(crash_cnt: int, car_state, radar_state) -> bool:
 
 def get_vehicle_min_accel(CP, v_ego):
   # Planner-side physical decel capability estimate for GM pedal-long paths.
-  if getattr(CP, "carName", "") == "gm" and getattr(CP, "enableGasInterceptorDEPRECATED", False):
+  is_gm = getattr(CP, "carName", "") == "gm" or getattr(CP, "brand", "") == "gm"
+  if is_gm and getattr(CP, "enableGasInterceptorDEPRECATED", False):
     try:
       from opendbc.car.gm.values import GMFlags, CAR
       if bool(CP.flags & GMFlags.PEDAL_LONG.value):
