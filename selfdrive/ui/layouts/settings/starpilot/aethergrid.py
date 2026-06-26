@@ -2901,6 +2901,23 @@ class AetherSettingsView(PanelManagerView):
       )
 
 
+def _draw_back_button(pill_rect: rl.Rectangle, center_y: float, pressed: bool, hovered: bool) -> rl.Rectangle:
+  back_size = 38
+  back_x = pill_rect.x + 8
+  btn = rl.Rectangle(back_x, center_y - back_size / 2, back_size, back_size)
+  if pressed or hovered:
+    bg = rl.Color(255, 255, 255, 24) if pressed else rl.Color(255, 255, 255, 10)
+    rl.draw_rectangle_rounded(btn, 0.4, 8, bg)
+  chev_size = 14
+  chev_r = rl.Rectangle(back_x + (back_size - chev_size) / 2, center_y - chev_size / 2, chev_size, chev_size)
+  chev_c = rl.Color(200, 200, 210, 200) if pressed else rl.Color(160, 170, 185, 180)
+  draw_chevron_icon(chev_r, chev_c, thickness=2.0, direction="left")
+  return btn
+
+
+BACK_BTN = "__back__"
+
+
 # ── AetherCategoryTileView — dynamic nesting doll tile view ──
 
 class AetherCategoryTileView(AetherSettingsView):
@@ -3058,29 +3075,41 @@ class AetherCategoryTileView(AetherSettingsView):
         )
 
   def _target_at(self, mouse_pos: MousePos) -> str | None:
-    # Check breadcrumb hits first (they're drawn in the header)
+    if self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8):
+      return BACK_BTN
     crumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=8, pad_y=8)
     if crumb_target:
       return f"breadcrumb:{crumb_target}"
     return super()._target_at(mouse_pos)
 
   def _activate_target(self, target_id: str | None):
+    if target_id == BACK_BTN:
+      gui_app.pop_widget()
+      return
     if target_id and target_id.startswith("breadcrumb:"):
       action = target_id[len("breadcrumb:"):]
-      if action == "action:panel":  # topmost panel step = pop this dialog
+      if action == "action:panel":
         gui_app.pop_widget()
     else:
       super()._activate_target(target_id)
 
   def _draw_header(self, rect: rl.Rectangle):
-    # Draw the same glass breadcrumb pill that appears in the main nav bar
     pill_h = 52
     pill_rect = rl.Rectangle(rect.x, rect.y + (rect.height - pill_h) / 2, rect.width, pill_h)
+    center_y = pill_rect.y + pill_h / 2
+
     _draw_rounded_fill(pill_rect, rl.Color(18, 16, 24, 200), radius_px=14)
     _draw_rounded_stroke(pill_rect, rl.Color(255, 255, 255, 22), radius_px=14)
 
-    # Breadcrumbs fill left portion; leave ~20px right inset
-    crumb_rect = rl.Rectangle(pill_rect.x, pill_rect.y, pill_rect.width - 20, pill_rect.height)
+    mouse_pos = gui_app.last_mouse_event.pos
+    is_pressed = getattr(self, '_pressed_target', None) == BACK_BTN
+    is_hovered = _point_hits(mouse_pos, pill_rect, None, pad_x=0, pad_y=0) and \
+                 self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8)
+    self._back_btn_rect = _draw_back_button(pill_rect, center_y, is_pressed, is_hovered)
+
+    crumb_x = pill_rect.x + 58
+    crumb_w = pill_rect.width - (crumb_x - pill_rect.x) - 20
+    crumb_rect = rl.Rectangle(crumb_x, pill_rect.y, crumb_w, pill_rect.height)
     draw_breadcrumbs(crumb_rect)
 
 
@@ -3196,28 +3225,41 @@ class AetherSubMenuTileView(AetherSettingsView):
         )
 
   def _target_at(self, mouse_pos: MousePos) -> str | None:
-    # Check breadcrumb hits first (they're drawn in the header)
+    if self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8):
+      return BACK_BTN
     crumb_target = resolve_interactive_target(mouse_pos, BREADCRUMB_RECTS, None, pad_x=8, pad_y=8)
     if crumb_target:
       return f"breadcrumb:{crumb_target}"
     return super()._target_at(mouse_pos)
 
   def _activate_target(self, target_id: str | None):
+    if target_id == BACK_BTN:
+      gui_app.pop_widget()
+      return
     if target_id and target_id.startswith("breadcrumb:"):
       action = target_id[len("breadcrumb:"):]
-      if action == "action:panel":  # topmost panel step = pop this dialog
+      if action == "action:panel":
         gui_app.pop_widget()
     else:
       super()._activate_target(target_id)
 
   def _draw_header(self, rect: rl.Rectangle):
-    # Draw the same glass breadcrumb pill that appears in the main nav bar
     pill_h = 52
     pill_rect = rl.Rectangle(rect.x, rect.y + (rect.height - pill_h) / 2, rect.width, pill_h)
+    center_y = pill_rect.y + pill_h / 2
+
     _draw_rounded_fill(pill_rect, rl.Color(18, 16, 24, 200), radius_px=14)
     _draw_rounded_stroke(pill_rect, rl.Color(255, 255, 255, 22), radius_px=14)
-    # Breadcrumbs fill left portion; leave ~20px right inset
-    crumb_rect = rl.Rectangle(pill_rect.x, pill_rect.y, pill_rect.width - 20, pill_rect.height)
+
+    mouse_pos = gui_app.last_mouse_event.pos
+    is_pressed = getattr(self, '_pressed_target', None) == BACK_BTN
+    is_hovered = _point_hits(mouse_pos, pill_rect, None, pad_x=0, pad_y=0) and \
+                 self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8)
+    self._back_btn_rect = _draw_back_button(pill_rect, center_y, is_pressed, is_hovered)
+
+    crumb_x = pill_rect.x + 58
+    crumb_w = pill_rect.width - (crumb_x - pill_rect.x) - 20
+    crumb_rect = rl.Rectangle(crumb_x, pill_rect.y, crumb_w, pill_rect.height)
     draw_breadcrumbs(crumb_rect)
 
 
