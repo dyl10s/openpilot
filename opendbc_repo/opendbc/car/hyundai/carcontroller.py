@@ -614,8 +614,14 @@ class CarController(CarControllerBase):
 
     # steering control
     preserve_stock_lkas = bool(self.CP.flags & HyundaiFlags.CANFD_LKA_STEERING) and not self.long_active_ecu
+    steering_msg_active = apply_steer_req
+    if self.CP.carFingerprint == CAR.KIA_EV9 and self.CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING:
+      # EV9 faults if the angle-steering status drops inactive during torque limiting.
+      # Hold the angle path active while lateral is active; gain/angle are already limited above.
+      steering_msg_active = CC.latActive
+
     can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled,
-                                                           apply_steer_req, apply_torque, apply_angle,
+                                                           steering_msg_active, apply_torque, apply_angle,
                                                            CS.stock_lfa_msg,
                                                            CS.stock_lkas_msg if preserve_stock_lkas else None,
                                                            lka_icon=lka_icon))

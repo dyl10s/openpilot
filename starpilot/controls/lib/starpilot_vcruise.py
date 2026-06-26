@@ -34,7 +34,7 @@ NAV_TURN_TARGET_SPEEDS = {
 # Force-stop kinematic profile. The user tunes one signed knob (ForceStopDistanceOffset,
 # in feet); positive = stop later/longer, negative = stop sooner/shorter.
 # Smaller values pull speed down earlier on approach.
-FORCE_STOP_MODEL_APPROACH_DECEL = 0.8
+FORCE_STOP_MODEL_APPROACH_DECEL = 0.65
 FORCE_STOP_DASH_APPROACH_DECEL = 1.0
 ACTIVATION_M = 75.0       # m — CEM/model path activates when model_length < this
 MPC_HANDOFF_M = 6.0       # m — below this, command 0 and let MPC finish the stop

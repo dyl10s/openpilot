@@ -180,6 +180,7 @@ class TestGMInterface:
     assert list(car_params.longitudinalTuning.kpV) == pytest.approx([0.09, 0.075, 0.055, 0.04])
     assert list(car_params.longitudinalTuning.kiBP) == pytest.approx([0.0, 4.0, 12.0, 35.0])
     assert list(car_params.longitudinalTuning.kiV) == pytest.approx([0.03, 0.04, 0.055, 0.07])
+    assert car_params.longitudinalActuatorDelay == pytest.approx(0.7)
     assert car_params.minEnableSpeed == pytest.approx(5 * CV.KPH_TO_MS)
     assert car_params.stoppingDecelRate == pytest.approx(1.0)
     assert car_params.vEgoStopping == pytest.approx(0.35)

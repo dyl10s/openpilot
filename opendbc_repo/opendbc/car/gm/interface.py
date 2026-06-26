@@ -527,6 +527,10 @@ class CarInterface(CarInterfaceBase):
       if not ret.openpilotLongitudinalControl:
         ret.minEnableSpeed = -1.
       if candidate == CAR.CHEVROLET_BLAZER:
+        # The Blazer builds brake torque noticeably later than the rest of the GM set.
+        # A slightly larger planner delay estimate starts the request earlier and keeps
+        # stopped-lead approaches from turning into a late, harsh max-brake catch-up.
+        ret.longitudinalActuatorDelay = 0.7
         ret.longitudinalTuning.kpBP = [0.0, 4.0, 12.0, 35.0]
         ret.longitudinalTuning.kpV = [0.09, 0.075, 0.055, 0.040]
         ret.longitudinalTuning.kiBP = [0.0, 4.0, 12.0, 35.0]

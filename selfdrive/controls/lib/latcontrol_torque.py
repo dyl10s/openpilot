@@ -649,28 +649,33 @@ VOLT_PLEXY_FRICTION_SCALE_MULT_RIGHT = 1.05
 VOLT_PLEXY_FRICTION_THRESHOLD_MULT_LEFT = 1.00
 VOLT_PLEXY_FRICTION_THRESHOLD_MULT_RIGHT = 0.96
 VOLT_PLEXY_CENTER_TAPER_REDUCTION_MULT = 0.98
-PRIUS_TRANSITION_SPEED = 8.5
+PRIUS_TRANSITION_SPEED = 11.0
 PRIUS_PHASE_SCALE = 0.09
 PRIUS_FF_GAIN_LEFT = 0.08
 PRIUS_FF_GAIN_RIGHT = 0.09
 PRIUS_FF_ONSET = 0.15
 PRIUS_FF_ONSET_WIDTH = 0.08
-PRIUS_FF_CUTOFF = 1.30
-PRIUS_FF_CUTOFF_WIDTH = 0.32
+PRIUS_FF_CUTOFF = 1.45
+PRIUS_FF_CUTOFF_WIDTH = 0.36
 PRIUS_FRICTION_LAT_RISE = 0.18
 PRIUS_FRICTION_JERK_RISE = 0.22
-PRIUS_TURN_IN_BOOST_LEFT = 0.28
-PRIUS_TURN_IN_BOOST_RIGHT = 0.25
-PRIUS_UNWIND_TAPER_LEFT = 0.22
-PRIUS_UNWIND_TAPER_RIGHT = 0.34
-PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.16
-PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.16
-PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT = 0.22
-PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.32
-PRIUS_TURN_IN_FRICTION_BOOST_LEFT = 0.07
-PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.07
-PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.12
-PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.18
+PRIUS_TURN_IN_BOOST_LEFT = 0.38
+PRIUS_TURN_IN_BOOST_RIGHT = 0.34
+PRIUS_UNWIND_TAPER_LEFT = 0.28
+PRIUS_UNWIND_TAPER_RIGHT = 0.42
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_LEFT = 0.22
+PRIUS_TURN_IN_THRESHOLD_REDUCTION_RIGHT = 0.22
+PRIUS_UNWIND_THRESHOLD_INCREASE_LEFT = 0.28
+PRIUS_UNWIND_THRESHOLD_INCREASE_RIGHT = 0.38
+PRIUS_TURN_IN_FRICTION_BOOST_LEFT = 0.10
+PRIUS_TURN_IN_FRICTION_BOOST_RIGHT = 0.10
+PRIUS_UNWIND_FRICTION_REDUCTION_LEFT = 0.16
+PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT = 0.22
+PRIUS_CENTER_TAPER_MAX = 0.12
+PRIUS_CENTER_TAPER_LAT = 0.14
+PRIUS_CENTER_TAPER_LAT_WIDTH = 0.035
+PRIUS_CENTER_TAPER_SPEED = 20.0
+PRIUS_CENTER_TAPER_SPEED_WIDTH = 2.5
 
 TRAILER_LOAD_FULL_ASSIST_KG = 15000.0 * CV.LB_TO_KG
 TRAILER_LATERAL_MIN_SPEED = 15.0 * CV.MPH_TO_MS
@@ -775,6 +780,13 @@ def get_prius_friction_scale(v_ego: float, desired_lateral_accel: float, desired
   friction_scale -= (_prius_side_value(desired_lateral_accel, PRIUS_UNWIND_FRICTION_REDUCTION_LEFT, PRIUS_UNWIND_FRICTION_REDUCTION_RIGHT) *
                      transition_envelope * unwind_weight)
   return min(max(friction_scale, 0.90), 1.14)
+
+
+def get_prius_center_taper_scale(desired_lateral_accel: float, v_ego: float) -> float:
+  speed_weight = _prius_sigmoid((v_ego - PRIUS_CENTER_TAPER_SPEED) / PRIUS_CENTER_TAPER_SPEED_WIDTH)
+  center_weight = _prius_sigmoid((PRIUS_CENTER_TAPER_LAT - abs(desired_lateral_accel)) / PRIUS_CENTER_TAPER_LAT_WIDTH)
+  reduction = PRIUS_CENTER_TAPER_MAX * speed_weight * center_weight
+  return 1.0 - reduction
 
 
 def civic_bosch_modified_lateral_testing_ground_active() -> bool:
@@ -2243,6 +2255,7 @@ class LatControlTorque(LatControl):
       kia_ev6_test_active = self.is_kia_ev6 and kia_ev6_lateral_testing_ground_active()
       volt_plexy_test_active = self.is_volt_standard and volt_plexy_lateral_testing_ground_active()
       ioniq_5_center_taper = get_ioniq_5_center_taper_scale(setpoint, CS.vEgo) if ioniq_5_active else 1.0
+      prius_center_taper = get_prius_center_taper_scale(setpoint, CS.vEgo) if prius_active else 1.0
       volt_standard_center_taper = get_volt_standard_center_taper_scale(setpoint, CS.vEgo) if volt_standard_test_active else 1.0
       volt_plexy_center_taper = get_volt_plexy_center_taper_scale(setpoint, CS.vEgo) if volt_plexy_test_active else 1.0
       ioniq_ev_old_center_taper = get_ioniq_ev_old_center_taper_scale(setpoint, CS.vEgo) if ioniq_ev_old_active else 1.0
@@ -2281,9 +2294,10 @@ class LatControlTorque(LatControl):
         friction_threshold = get_palisade_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_palisade_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
       elif prius_active:
-        ff *= get_prius_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+        ff *= get_prius_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * prius_center_taper
         friction_threshold = get_prius_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
         friction_scale = get_prius_friction_scale(CS.vEgo, setpoint, desired_lateral_jerk)
+        friction_scale = 1.0 + ((friction_scale - 1.0) * prius_center_taper)
       elif ioniq_5_active:
         ff *= get_ioniq_5_ff_scale(setpoint, desired_lateral_jerk, CS.vEgo) * ioniq_5_center_taper
         friction_threshold = get_ioniq_5_friction_threshold(CS.vEgo, setpoint, desired_lateral_jerk)
@@ -2355,6 +2369,8 @@ class LatControlTorque(LatControl):
       if ioniq_6_active:
         output_torque *= get_ioniq_6_highway_output_taper_scale(setpoint, CS.vEgo)
         output_torque *= get_ioniq_6_highway_transition_output_taper_scale(setpoint, desired_lateral_jerk, CS.vEgo)
+      elif prius_active:
+        output_torque *= prius_center_taper
       elif volt_standard_test_active:
         output_torque *= volt_standard_center_taper
       elif volt_plexy_test_active:
