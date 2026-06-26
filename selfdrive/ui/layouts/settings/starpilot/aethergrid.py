@@ -2828,7 +2828,15 @@ class AetherSettingsView(PanelManagerView):
           row.set_parent_rect(self._scroll_rect)
           row.render(row_rect)
         for j, row in enumerate(right_rows):
-          y += SECTION_GAP
+          row_rect = rl.Rectangle(rect.x + col_w + self.COLUMN_GAP, y + j * right_section.row_height, col_w, right_section.row_height)
+          row.set_is_last(j == len(right_rows) - 1)
+          row.set_parent_rect(self._scroll_rect)
+          row.render(row_rect)
+        y += max(section_h, right_h) + SECTION_GAP
+        i += 1
+      else:
+        y = self._draw_section(y, rect.x, width, section, visible_rows)
+        y += SECTION_GAP
         i += 1
 
   def _draw_section(self, y: float, x: float, width: float,
