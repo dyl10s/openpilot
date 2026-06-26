@@ -373,6 +373,8 @@ NEAR_DUPLICATE_LEAD_TRANSITION_MAX_CLOSING_SPEED = 3.5
 NEAR_DUPLICATE_LEAD_TRANSITION_MIN_TTC = 8.0
 NEAR_DUPLICATE_LEAD_TRANSITION_MIN_HEADWAY_BELOW_TARGET = 0.45
 NEAR_DUPLICATE_LEAD_TRANSITION_MAX_HEADWAY_ABOVE_TARGET = 0.85
+NEAR_DUPLICATE_VISION_TRANSITION_MIN_HEADWAY_MARGIN = 0.55
+NEAR_DUPLICATE_VISION_TRANSITION_EXTRA_CLOSING_SPEED = 1.25
 LOW_SPEED_IDENTICAL_RADAR_DUPLICATE_TRANSITION_EXTRA_HEADWAY = 0.15
 NEAR_DUPLICATE_LEAD_TRANSITION_MIN_DELTA_A = 0.35
 NEAR_DUPLICATE_LEAD_TRANSITION_POSITIVE_STEP = 0.22
@@ -2020,13 +2022,6 @@ class LongitudinalPlanner:
 
     relative_speed = float(v_ego) - float(lead.vLead)
     closing_speed = max(0.0, relative_speed)
-    if closing_speed > NEAR_DUPLICATE_LEAD_TRANSITION_MAX_CLOSING_SPEED:
-      return None
-
-    ttc = float(lead.dRel) / max(closing_speed, 0.1) if closing_speed > 0.1 else float("inf")
-    if ttc < NEAR_DUPLICATE_LEAD_TRANSITION_MIN_TTC:
-      return None
-
     actual_headway = float(lead.dRel) / max(float(v_ego), 1e-3)
     if actual_headway < max(0.0, float(base_t_follow) - NEAR_DUPLICATE_LEAD_TRANSITION_MIN_HEADWAY_BELOW_TARGET):
       return None
@@ -2034,6 +2029,20 @@ class LongitudinalPlanner:
     if low_speed_extension_active and identical_radar_duplicates:
       max_headway_above_target += LOW_SPEED_IDENTICAL_RADAR_DUPLICATE_TRANSITION_EXTRA_HEADWAY
     if actual_headway > float(base_t_follow) + max_headway_above_target:
+      return None
+
+    max_closing_speed = NEAR_DUPLICATE_LEAD_TRANSITION_MAX_CLOSING_SPEED
+    if (
+      not identical_radar_duplicates and
+      not lead_radar and
+      actual_headway >= float(base_t_follow) + NEAR_DUPLICATE_VISION_TRANSITION_MIN_HEADWAY_MARGIN
+    ):
+      max_closing_speed += NEAR_DUPLICATE_VISION_TRANSITION_EXTRA_CLOSING_SPEED
+    if closing_speed > max_closing_speed:
+      return None
+
+    ttc = float(lead.dRel) / max(closing_speed, 0.1) if closing_speed > 0.1 else float("inf")
+    if ttc < NEAR_DUPLICATE_LEAD_TRANSITION_MIN_TTC:
       return None
 
     target_delta = float(output_a_target) - float(prev_output_a_target)
