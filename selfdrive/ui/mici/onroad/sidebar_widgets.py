@@ -304,8 +304,6 @@ class MiciSidebarWidgets(Widget):
 
     for points in (road_curve_points(-18), road_curve_points(14)):
       _draw_bezier(*points, 3, WHITE)
-      rl.draw_circle(int(points[0][0]), int(points[0][1]), 2, WHITE)
-      rl.draw_circle(int(points[3][0]), int(points[3][1]), 2, WHITE)
     _draw_dashed_bezier(*road_curve_points(-2), 4, color)
 
   def _draw_turn_icon(self, rect: rl.Rectangle, color: rl.Color) -> None:
@@ -340,7 +338,7 @@ class MiciSidebarWidgets(Widget):
     radius = min(rect.width, rect.height) * 0.34
     text = self._speed_text()
 
-    rl.draw_circle(int(cx), int(cy), radius, WHITE)
+    rl.draw_circle(int(cx), int(cy), radius - 2.5, WHITE)
     rl.draw_ring(_v(cx, cy), radius - 5, radius, 0, 360, 48, color)
 
     font_size = 19 if len(text) <= 2 else 16
