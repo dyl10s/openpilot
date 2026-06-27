@@ -366,7 +366,7 @@ static bool gm_tx_hook(const CANPacket_t *msg) {
   if (msg->addr == 0x315U) {
     int brake = ((msg->data[0] & 0xFU) << 8) + msg->data[1];
     brake = (0x1000 - brake) & 0xFFF;
-    bool stock_auto_hold_brake_allowed = gm_volt_auto_hold && !vehicle_moving && !gas_pressed_prev;
+    bool stock_auto_hold_brake_allowed = gm_volt_auto_hold && acc_main_on && !vehicle_moving && !gas_pressed_prev;
     bool stock_one_pedal_brake_allowed = gm_volt_one_pedal && acc_main_on && !gas_pressed_prev && !brake_pressed;
     bool violation = false;
     violation |= !(get_longitudinal_allowed() || stock_auto_hold_brake_allowed || stock_one_pedal_brake_allowed) && (brake != 0);

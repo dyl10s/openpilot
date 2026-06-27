@@ -633,18 +633,27 @@ class TestGmVoltAutoHoldCameraSafety(TestGmCameraSafetyBase):
     values = {"FrictionBrakeCmd": -brake}
     return self.packer_chassis.make_can_msg_safety("EBCMFrictionBrakeCmd", 0, values)
 
-  def test_standstill_brake_allowed_without_controls(self):
+  def test_standstill_brake_allowed_without_controls_when_main_on(self):
     self._rx(self._speed_msg(0))
+    self._rx(self._toggle_aol(True))
     self.safety.set_controls_allowed(False)
     self.assertTrue(self._tx(self._send_brake_msg(100)))
 
+  def test_standstill_brake_blocked_without_main_on(self):
+    self._rx(self._speed_msg(0))
+    self._rx(self._toggle_aol(False))
+    self.safety.set_controls_allowed(False)
+    self.assertFalse(self._tx(self._send_brake_msg(100)))
+
   def test_moving_brake_blocked_without_controls(self):
     self._rx(self._speed_msg(self.STANDSTILL_THRESHOLD + 1))
+    self._rx(self._toggle_aol(True))
     self.safety.set_controls_allowed(False)
     self.assertFalse(self._tx(self._send_brake_msg(100)))
 
   def test_gas_blocks_standstill_brake_without_controls(self):
     self._rx(self._speed_msg(0))
+    self._rx(self._toggle_aol(True))
     self._rx(self._user_gas_msg(True))
     self.safety.set_controls_allowed(False)
     self.assertFalse(self._tx(self._send_brake_msg(100)))
@@ -700,13 +709,21 @@ class TestGmVoltAutoHoldSdgmSafety(TestGmSafetyBase):
     values = {"FrictionBrakeCmd": -brake}
     return self.packer_chassis.make_can_msg_safety("EBCMFrictionBrakeCmd", 2, values)
 
-  def test_standstill_brake_allowed_without_controls(self):
+  def test_standstill_brake_allowed_without_controls_when_main_on(self):
     self._rx(self._speed_msg(0))
+    self._rx(self._toggle_aol(True))
     self.safety.set_controls_allowed(False)
     self.assertTrue(self._tx(self._send_brake_msg(100)))
 
+  def test_standstill_brake_blocked_without_main_on(self):
+    self._rx(self._speed_msg(0))
+    self._rx(self._toggle_aol(False))
+    self.safety.set_controls_allowed(False)
+    self.assertFalse(self._tx(self._send_brake_msg(100)))
+
   def test_moving_brake_blocked_without_controls(self):
     self._rx(self._speed_msg(self.STANDSTILL_THRESHOLD + 1))
+    self._rx(self._toggle_aol(True))
     self.safety.set_controls_allowed(False)
     self.assertFalse(self._tx(self._send_brake_msg(100)))
 

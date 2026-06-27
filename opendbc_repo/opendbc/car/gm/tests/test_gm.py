@@ -8,7 +8,7 @@ from opendbc.can import CANPacker, CANParser
 from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.gm import gmcan
-from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_buttons
+from opendbc.car.gm.carstate import CarState as GMCarState, get_hard_cruise_buttons, update_auto_hold_drive_timers
 from opendbc.car.gm.carcontroller import (
   VisualAlert,
   get_acc_dashboard_fcw_alert,
@@ -93,6 +93,23 @@ class TestGMInterface:
   def test_missing_hard_cruise_signal_defaults_to_init(self):
     assert get_hard_cruise_buttons({"ACCButtons": CruiseButtons.RES_ACCEL}) == CruiseButtons.INIT
     assert get_hard_cruise_buttons({"ACCButtonsHard": CruiseButtons.DECEL_SET}) == CruiseButtons.DECEL_SET
+
+  def test_volt_auto_hold_drive_timer_requires_motion_before_startup_arming(self):
+    auto_hold_time, one_pedal_time = update_auto_hold_drive_timers(True, False, 0.0, 0.0)
+
+    assert auto_hold_time == 0.0
+    assert one_pedal_time == 0.0
+
+  def test_volt_auto_hold_drive_timer_accumulates_only_while_moving(self):
+    auto_hold_time, one_pedal_time = update_auto_hold_drive_timers(True, True, 0.0, 0.0)
+
+    assert auto_hold_time == pytest.approx(DT_CTRL)
+    assert one_pedal_time == pytest.approx(DT_CTRL)
+
+    auto_hold_time, one_pedal_time = update_auto_hold_drive_timers(True, False, auto_hold_time, one_pedal_time)
+
+    assert auto_hold_time == pytest.approx(DT_CTRL)
+    assert one_pedal_time == pytest.approx(DT_CTRL)
 
   @parameterized.expand(VOLT_CARS)
   def test_volt_min_steer_speed_is_7_mph(self, car_model):
