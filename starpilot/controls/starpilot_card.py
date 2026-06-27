@@ -114,18 +114,20 @@ class StarPilotCard:
   def update(self, carState, starpilotCarState, sm, starpilot_toggles):
     self.switchback_mode_enabled = self.params_memory.get_bool("SwitchbackModeEnabled")
     button_event_types = [self._button_type_raw(be) for be in carState.buttonEvents]
+    sonata_hybrid_cruise_ready = self.hyundai_lkas_aol_requires_engagement and carState.cruiseState.available
     hyundai_lkas_aol_can_toggle = (
       not self.hyundai_lkas_aol_requires_engagement or
       self.hyundai_aol_ready or
       sm["selfdriveState"].active or
-      carState.cruiseState.enabled
+      carState.cruiseState.enabled or
+      sonata_hybrid_cruise_ready
     )
 
     if self.hyundai_aol_needs_engagement:
       if carState.gearShifter in NON_DRIVING_GEARS:
         self.hyundai_aol_ready = False
         self.always_on_lateral_allowed = False
-      elif sm["selfdriveState"].active or carState.cruiseState.enabled:
+      elif sm["selfdriveState"].active or carState.cruiseState.enabled or sonata_hybrid_cruise_ready:
         self.hyundai_aol_ready = True
 
     if self.CP.brand == "hyundai" or starpilot_toggles.lkas_allowed_for_aol:

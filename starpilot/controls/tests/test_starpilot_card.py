@@ -181,8 +181,8 @@ def test_sonata_hybrid_lkas_button_can_toggle_aol_after_engagement(monkeypatch, 
   sm = make_sm()
   toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
 
-  engaged_state = make_car_state(available=True, enabled=True)
-  card.update(engaged_state, starpilot_car_state, sm, toggles)
+  cruise_main_state = make_car_state(available=True, enabled=False)
+  card.update(cruise_main_state, starpilot_car_state, sm, toggles)
 
   lkas_state = make_car_state(available=False, enabled=False, button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
   ret = card.update(lkas_state, starpilot_car_state, sm, toggles)

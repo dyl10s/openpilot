@@ -327,9 +327,18 @@ def get_bolt_acc_pedal_friction_brake(apply_brake, full_brake_accel, v_ego, para
   full_brake_accel = min(full_brake_accel, -0.1)
   legacy_full_scale = max(-params.ACCEL_MIN, 0.1)
   corrected_scale = legacy_full_scale / max(-full_brake_accel, 0.1)
-  speed_gain = float(np.interp(v_ego, [0.0, 10.0, 25.0], [1.0, 1.15, 1.3]))
+  speed_gain = float(np.interp(v_ego, [0.0, 8.0, 15.0, 25.0], [1.0, 1.08, 1.2, 1.35]))
+  onset_gain = float(np.interp(
+    apply_brake,
+    [0.0, 5.0, 20.0, 60.0, 120.0, 240.0, params.MAX_BRAKE],
+    [0.0, 1.8, 1.65, 1.4, 1.22, 1.08, 1.0],
+  ))
 
-  return int(round(np.clip(apply_brake * corrected_scale * speed_gain, 0, params.MAX_BRAKE)))
+  shaped_brake = apply_brake * corrected_scale * speed_gain * onset_gain
+  minimum_brake = float(np.interp(v_ego, [0.0, 6.0, 8.0, 12.0, 18.0, 25.0], [0.0, 0.0, 4.0, 10.0, 20.0, 28.0]))
+  shaped_brake = max(shaped_brake, minimum_brake)
+
+  return int(round(np.clip(shaped_brake, 0, params.MAX_BRAKE)))
 
 
 def shape_bolt_acc_pedal_low_speed_friction(apply_brake: int, v_ego: float, stopping: bool, active: bool):
@@ -381,6 +390,16 @@ def get_bolt_acc_pedal_friction_command_state(apply_brake: int, cruise_main_on: 
 
   should_send = cruise_main_on or release_frames > 0
   return command_brake, release_frames, should_send
+
+
+def get_interceptor_sng_gas_cmd(CP, interceptor_gas_cmd: float, accel: float, params, maneuver_mode: bool) -> float:
+  if maneuver_mode:
+    return max(interceptor_gas_cmd, float(np.interp(accel, [0.0, 1.0, 2.0], [params.SNG_INTERCEPTOR_GAS, 0.11, 0.16])))
+
+  if supports_bolt_acc_pedal_friction_experiment(CP):
+    return max(interceptor_gas_cmd, params.SNG_INTERCEPTOR_GAS)
+
+  return params.SNG_INTERCEPTOR_GAS
 
 
 def should_use_fixed_stopping_brake(CP, near_stop: bool, stopping: bool, resume: bool) -> bool:
@@ -971,9 +990,9 @@ class CarController(CarControllerBase):
           self.apply_gas > self.params.INACTIVE_REGEN and
           use_interceptor_sng_launch(self.CP, CS, maneuver_sng_launch)
         ):
-          interceptor_gas_cmd = self.params.SNG_INTERCEPTOR_GAS
-          if maneuver_sng_launch:
-            interceptor_gas_cmd = max(interceptor_gas_cmd, float(np.interp(actuators.accel, [0.0, 1.0, 2.0], [self.params.SNG_INTERCEPTOR_GAS, 0.11, 0.16])))
+          interceptor_gas_cmd = get_interceptor_sng_gas_cmd(
+            self.CP, interceptor_gas_cmd, actuators.accel, self.params, maneuver_sng_launch,
+          )
           self.apply_brake = 0
           self.apply_gas = self.params.INACTIVE_REGEN
 
