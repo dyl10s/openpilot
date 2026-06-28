@@ -32,6 +32,8 @@ Commands:
   cabana       Build and run cabana from the isolated host cache.
   plotjuggler  Run PlotJuggler helper from the isolated host cache.
   juggle       Alias for plotjuggler.
+  python       Run Python from the isolated host cache with repo paths configured.
+  pytest       Run pytest from the isolated host cache after building host extensions.
   sync         Refresh the isolated host cache only.
   shell        Open a shell inside the isolated host cache.
   help         Show this help text.
@@ -214,6 +216,25 @@ purge_host_python_artifacts() {
     "${WORK_DIR}/msgq_repo/msgq/visionipc/visionipc_pyx.cpp"
 }
 
+purge_host_foreign_platform_artifacts() {
+  rm -rf "${WORK_DIR}/.host_runtime"
+  rm -rf "${WORK_DIR}"/.tmpcapnp*
+  rm -rf "${WORK_DIR}/starpilot/system/the_pond"
+
+  case "$(uname -s)" in
+    Darwin)
+      find "${WORK_DIR}" \
+        \( -path "${WORK_DIR}/.venv" -o -path "${WORK_DIR}/.git" -o -path "${WORK_DIR}/.host_runtime" \) -prune -o \
+        -type f \( -name '*.cpython-*-linux-gnu.so' -o -name '*.cpython-*-linux-musl.so' \) -delete
+      ;;
+    Linux)
+      find "${WORK_DIR}" \
+        \( -path "${WORK_DIR}/.venv" -o -path "${WORK_DIR}/.git" -o -path "${WORK_DIR}/.host_runtime" \) -prune -o \
+        -type f -name '*.cpython-*-darwin.so' -delete
+      ;;
+  esac
+}
+
 purge_host_desktop_ui_artifacts() {
   rm -f \
     "${WORK_DIR}/selfdrive/ui/libqt_widgets.a" \
@@ -251,6 +272,17 @@ ensure_host_python_tools() {
   )
 }
 
+ensure_host_python_extensions() {
+  local jobs
+  jobs="$(default_jobs)"
+
+  run_host_scons "${jobs}" \
+    common/params_pyx.so \
+    common/transformations/transformations.so \
+    msgq_repo/msgq/ipc_pyx.so \
+    msgq_repo/msgq/visionipc/visionipc_pyx.so
+}
+
 sync_host_generated_headers() {
   if ! command -v capnpc >/dev/null 2>&1; then
     return
@@ -272,6 +304,7 @@ sync_worktree() {
   ensure_venv
 
   mkdir -p "${HOST_ROOT}"
+  rm -rf "${WORK_DIR}/starpilot/system/the_pond"
 
   local excludes=(
     ".git/"
@@ -280,9 +313,13 @@ sync_worktree() {
     ".cache/"
     ".comma_sysroot/"
     ".host_runtime/"
+    ".tmpcapnp*/"
     "__pycache__/"
     "*.pyc"
     "*.pyo"
+    "*.cpython-*-linux-gnu.so"
+    "*.cpython-*-linux-musl.so"
+    "*.cpython-*-darwin.so"
     "*.o"
     "*.os"
     ".sconsign.dblite"
@@ -338,6 +375,7 @@ sync_worktree() {
     rm -rf "${SP_SCONS_CACHE_DIR:-${HOST_ROOT}/scons_cache}"
   fi
   purge_host_desktop_ui_artifacts
+  purge_host_foreign_platform_artifacts
   rm -f "${WORK_DIR}/third_party/libjson11.a" "${WORK_DIR}/third_party/libkaitai.a"
   sync_host_generated_headers
   ensure_host_python_tools
@@ -402,6 +440,16 @@ run_python_tool() {
     export_workdir_pythonpath
     source .venv/bin/activate
     exec "${WORK_DIR}/.venv/bin/python3" "${WORK_DIR}/${script_path}" "$@"
+  )
+}
+
+run_host_python() {
+  (
+    cd "${WORK_DIR}"
+    setup_build_env
+    export_workdir_pythonpath
+    source .venv/bin/activate
+    exec "${WORK_DIR}/.venv/bin/python3" "$@"
   )
 }
 
@@ -508,6 +556,18 @@ launch_plotjuggler() {
   run_python_tool "tools/plotjuggler/juggle.py" "$@"
 }
 
+launch_python() {
+  sync_worktree
+  ensure_host_python_extensions
+  run_host_python "$@"
+}
+
+launch_pytest() {
+  sync_worktree
+  ensure_host_python_extensions
+  run_host_python -m pytest "$@"
+}
+
 open_shell() {
   sync_worktree
   (
@@ -530,7 +590,7 @@ main() {
     help|-h|--help)
       usage
       ;;
-    c3|c4|raybig|onroad|replay|shell)
+    c3|c4|raybig|onroad|replay|shell|python|pytest)
       set_host_bucket "shared"
       acquire_host_lock "${command} $*"
       ;;
@@ -588,6 +648,12 @@ main() {
       ;;
     shell)
       open_shell
+      ;;
+    python)
+      launch_python "$@"
+      ;;
+    pytest)
+      launch_pytest "$@"
       ;;
   esac
 }
