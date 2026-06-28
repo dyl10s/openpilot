@@ -776,7 +776,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
           self._page_scissor_push(clip_rect)
           if self._page_anim_prev_tiles:
-            old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap, tile_height=grid._tile_height)
+            old_grid = TileGrid(columns=grid.get_column_count(), padding=grid.gap, tile_height=grid._tile_height, force_square=grid.force_square, min_tile_height=grid.min_tile_height, max_tile_height=grid.max_tile_height, min_tile_width=grid._min_tile_width)
             old_grid.tiles.extend(self._page_anim_prev_tiles)
             old_grid.set_parent_rect(self._scroll_rect)
             old_grid.render(rl.Rectangle(grid_rect.x + prev_offset, grid_rect.y, grid_rect.width, grid_rect.height))
