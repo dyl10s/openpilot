@@ -66,6 +66,9 @@ REDNECK_BUTTON_COPIES_TIME_METRIC = [REDNECK_BUTTON_COPIES_TIME, 40]
 ANGLE_SAFETY_BASELINE_MODEL = str(CAR.KIA_SPORTAGE_HEV_2026)
 DEFAULT_ANGLE_SMOOTHING_VEGO_BP = [5.0, 10.0, 20.0]
 DEFAULT_ANGLE_SMOOTHING_ALPHA_V = [0.2, 0.1, 0.0]
+EV9_HIGH_ANGLE_GAIN_BP = [70.0, 120.0, 220.0, 320.0]
+EV9_HIGH_ANGLE_GAIN_CAP_V = [0.85, 0.55, 0.30, 0.16]
+EV9_HIGH_ANGLE_GAIN_MIN = 0.004
 
 
 def egmp_dynamic_longitudinal_tuning(CP) -> bool:
@@ -243,6 +246,14 @@ def compute_torque_reduction_gain(steering_torque, v_ego, lat_active, last_gain)
   return round(gain / 0.004) * 0.004
 
 
+def apply_ev9_high_angle_gain_cap(CP, gain: float, steering_angle_deg: float, lat_active: bool) -> float:
+  if CP.carFingerprint != CAR.KIA_EV9 or not CP.flags & HyundaiFlags.CANFD_ANGLE_STEERING or not lat_active:
+    return gain
+
+  cap = float(np.interp(abs(steering_angle_deg), EV9_HIGH_ANGLE_GAIN_BP, EV9_HIGH_ANGLE_GAIN_CAP_V))
+  return max(EV9_HIGH_ANGLE_GAIN_MIN, min(gain, cap))
+
+
 def process_hud_alert(enabled, fingerprint, hud_control):
   sys_warning = (hud_control.visualAlert in (VisualAlert.steerRequired, VisualAlert.ldw))
 
@@ -399,6 +410,7 @@ class CarController(CarControllerBase):
                                                   CS.out.steeringAngleDeg, CC.latActive, self.params, self.BASELINE_VM)
 
       apply_torque = compute_torque_reduction_gain(CS.out.steeringTorque, v_ego_raw, CC.latActive, self.apply_torque_last)
+      apply_torque = apply_ev9_high_angle_gain_cap(self.CP, apply_torque, CS.out.steeringAngleDeg, CC.latActive)
       apply_steer_req = CC.latActive and apply_torque != 0.0
       torque_fault = False
 

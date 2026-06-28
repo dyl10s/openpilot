@@ -11,7 +11,7 @@ from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalT
                                              update_ioniq_6_longitudinal_tuning, \
                                              update_genesis_g90_longitudinal_tuning, egmp_dynamic_longitudinal_tuning, \
                                              should_reset_ev6_gt_line_longitudinal_tuning, reset_ev6_gt_line_longitudinal_tuning, \
-                                             get_angle_smoothing_alpha
+                                             get_angle_smoothing_alpha, apply_ev9_high_angle_gain_cap
 from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
@@ -287,6 +287,17 @@ class TestHyundaiFingerprint:
     assert get_angle_smoothing_alpha(ev9_cp, 13.8) == pytest.approx(get_angle_smoothing_alpha(other_cp, 13.8))
     assert get_angle_smoothing_alpha(ev9_cp, 20.0) == pytest.approx(get_angle_smoothing_alpha(other_cp, 20.0))
     assert get_angle_smoothing_alpha(other_cp, 20.0) == pytest.approx(0.0)
+
+  def test_ev9_high_angle_gain_cap_is_ev9_only_and_nonzero(self):
+    ev9_cp = SimpleNamespace(carFingerprint=CAR.KIA_EV9, flags=int(HyundaiFlags.CANFD_ANGLE_STEERING))
+    sportage_cp = SimpleNamespace(carFingerprint=CAR.KIA_SPORTAGE_HEV_2026, flags=int(HyundaiFlags.CANFD_ANGLE_STEERING))
+
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 60.0, True) == pytest.approx(0.70)
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 120.0, True) == pytest.approx(0.55)
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 320.0, True) == pytest.approx(0.16)
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.0, 320.0, True) > 0.0
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 320.0, False) == pytest.approx(0.70)
+    assert apply_ev9_high_angle_gain_cap(sportage_cp, 0.70, 320.0, True) == pytest.approx(0.70)
 
   def test_ccnc_hda2_lka_layout_does_not_set_ccnc_safety_param(self):
     fingerprint = gen_empty_fingerprint()
