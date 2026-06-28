@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, replace
 import math
+import random
 import time
 import pyray as rl
 from collections.abc import Callable
@@ -27,7 +28,13 @@ MIN_TILE_WIDTH = 300
 _HUD_BG_ON = rl.Color(12, 10, 18, 230)
 _HUD_BORDER_OFF = rl.Color(28, 27, 34, 255)
 _HUD_TEXT_DIM = rl.Color(220, 220, 230, 220)
-_HUD_LED_BASE = rl.Color(36, 35, 44, 255)
+# Constellation accent node colors (replaces top dash LED)
+_CONST_PRIMARY = rl.Color(235, 240, 255, 255)
+_CONST_SECONDARY = rl.Color(180, 195, 220, 255)
+_CONST_TERTIARY = rl.Color(145, 155, 175, 255)
+
+_NODE_NUM_MIN = 3
+_NODE_NUM_MAX = 5
 
 
 class SPACING:
@@ -3618,6 +3625,80 @@ class AetherTile(Widget):
 
     return layout
 
+  def _constellation_seed(self) -> str:
+    title = getattr(self, 'title', None)
+    resolved = str(_resolve_value(title, '')) if title is not None else ''
+    pos = getattr(self, '_rect', None)
+    if pos is not None:
+      return f"{resolved}:{int(pos.x)}:{int(pos.y)}" if resolved else f"{self.__class__.__name__}:{int(pos.x)}:{int(pos.y)}"
+    return resolved or self.__class__.__name__
+
+  def _generate_and_cache_constellation(self):
+    if hasattr(self, '_constellation_data'):
+      return
+    rng = random.Random(self._constellation_seed())
+    num = _NODE_NUM_MIN + rng.randint(0, _NODE_NUM_MAX - _NODE_NUM_MIN)
+    regions = [
+      (0.18, 0.30, 0.18, 0.30),  # top-left corner
+      (0.70, 0.82, 0.18, 0.30),  # top-right corner
+      (0.18, 0.30, 0.70, 0.82),  # bottom-left corner
+      (0.70, 0.82, 0.70, 0.82),  # bottom-right corner
+      (0.38, 0.62, 0.18, 0.28),  # top-center edge
+      (0.38, 0.62, 0.72, 0.82),  # bottom-center edge
+      (0.18, 0.28, 0.38, 0.62),  # left-center edge
+      (0.72, 0.82, 0.38, 0.62),  # right-center edge
+    ]
+    ax_min, ax_max, ay_min, ay_max = regions[rng.randint(0, 7)]
+    ax = ax_min + rng.random() * (ax_max - ax_min)
+    ay = ay_min + rng.random() * (ay_max - ay_min)
+    nodes = []
+    for _ in range(num):
+      for _ in range(20):
+        a = rng.random() * 2.0 * math.pi
+        r = 0.05 + rng.random() * 0.11
+        x = max(0.04, min(0.96, ax + r * math.cos(a)))
+        y = max(0.04, min(0.96, ay + r * math.sin(a)))
+        if all(math.sqrt((x - n['x'])**2 + (y - n['y'])**2) >= 0.07 for n in nodes):
+          nodes.append({'x': x, 'y': y})
+          break
+      else:
+        nodes.append({'x': x, 'y': y})
+    nodes.sort(key=lambda n: -(abs(n['x'] - 0.5) + abs(n['y'] - 0.5)))
+    for i, n in enumerate(nodes):
+      n['w'] = 0 if i == 0 else 1 if i == 1 else 2
+    vecs = [(0, j) for j in range(1, num)]
+    self._constellation_data = (nodes, vecs)
+
+  def _draw_constellation(self, face: rl.Rectangle, accent: rl.Color, glow: float):
+    self._generate_and_cache_constellation()
+    nodes, vecs = self._constellation_data
+    rx, ry, rw, rh = int(face.x), int(face.y), int(face.width), int(face.height)
+
+    va = int(10 + glow * 25)
+    if va > 2:
+      vc = rl.Color(accent.r, accent.g, accent.b, min(255, va))
+      for i, j in vecs:
+        x1 = int(rx + nodes[i]['x'] * rw)
+        y1 = int(ry + nodes[i]['y'] * rh)
+        x2 = int(rx + nodes[j]['x'] * rw)
+        y2 = int(ry + nodes[j]['y'] * rh)
+        rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), 1.0, vc)
+
+    for nd in nodes:
+      nx = int(rx + nd['x'] * rw)
+      ny = int(ry + nd['y'] * rh)
+      if nd['w'] == 0:
+        core_r, diff_r, col = 3.0, 12.0, _CONST_PRIMARY
+      elif nd['w'] == 1:
+        core_r, diff_r, col = 2.0, 8.0, _CONST_SECONDARY
+      else:
+        core_r, diff_r, col = 1.2, 0.0, _CONST_TERTIARY
+      da = int(5 + glow * 20)
+      if diff_r > 0 and da > 2:
+        rl.draw_circle(nx, ny, int(diff_r), rl.Color(col.r, col.g, col.b, min(255, da)))
+      ca = int(130 + glow * 125)
+      rl.draw_circle(nx, ny, int(core_r), rl.Color(col.r, col.g, col.b, min(255, ca)))
+
   def _render_hud_background(self, rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
     sq = getattr(self, '_squish', 1.0)
     snapped = _snap_rect(rect)
@@ -3645,16 +3726,7 @@ class AetherTile(Widget):
       255)
     _draw_rounded_stroke(face, bc, radius_px=100)
 
-    led_w, led_h = 32, 2
-    led_x = rx + (rw - led_w) // 2
-    led_y = ry + 12
-    led_base = _HUD_LED_BASE
-    led_col = rl.Color(
-      max(0, min(255, int(led_base.r + (accent.r - led_base.r) * glow))),
-      max(0, min(255, int(led_base.g + (accent.g - led_base.g) * glow))),
-      max(0, min(255, int(led_base.b + (accent.b - led_base.b) * glow))),
-      255)
-    rl.draw_rectangle(led_x, led_y, led_w, led_h, led_col)
+    self._draw_constellation(face, accent, glow)
 
     return face, accent
 
