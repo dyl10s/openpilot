@@ -161,7 +161,7 @@ def resolve_model_files(input_root: Path, model_key: str) -> dict[str, Path]:
   if model_key in staged:
     return staged[model_key]
   root_files = staged.get("_root")
-  if root_files and set(staged) == {"_root"}:
+  if root_files:
     return root_files
   return {
     component: path
