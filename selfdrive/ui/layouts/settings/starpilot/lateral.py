@@ -78,6 +78,10 @@ def _sync_parent(params, parent_key, child_keys):
 class SteeringManagerView(PanelManagerView):
   METRICS = CUSTOM_METRICS
 
+  @property
+  def vertical_scrolling_disabled(self) -> bool:
+    return True
+
   def __init__(self, controller: "StarPilotLateralLayout"):
     super().__init__()
     self._controller = controller
