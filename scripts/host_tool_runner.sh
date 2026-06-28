@@ -225,12 +225,12 @@ purge_host_foreign_platform_artifacts() {
     Darwin)
       find "${WORK_DIR}" \
         \( -path "${WORK_DIR}/.venv" -o -path "${WORK_DIR}/.git" -o -path "${WORK_DIR}/.host_runtime" \) -prune -o \
-        -type f \( -name '*.cpython-*-linux-gnu.so' -o -name '*.cpython-*-linux-musl.so' \) -delete
+        -type f \( -name '*.cpython-*-linux-gnu.so' -o -name '*.cpython-*-linux-musl.so' \) -exec rm -f {} +
       ;;
     Linux)
       find "${WORK_DIR}" \
         \( -path "${WORK_DIR}/.venv" -o -path "${WORK_DIR}/.git" -o -path "${WORK_DIR}/.host_runtime" \) -prune -o \
-        -type f -name '*.cpython-*-darwin.so' -delete
+        -type f -name '*.cpython-*-darwin.so' -exec rm -f {} +
       ;;
   esac
 }
@@ -350,12 +350,15 @@ sync_worktree() {
     "selfdrive/modeld/models/commonmodel_pyx.so"
     "selfdrive/pandad/libcan_list_to_can_capnp.a"
     "selfdrive/pandad/pandad_api_impl.so"
+    "selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/"
     "selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so"
     "selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/libacados_ocp_solver_lat.so"
     "selfdrive/controls/lib/lateral_mpc_lib/c_generated_code/libacados_ocp_solver_lat.dylib"
+    "selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/"
     "selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/acados_ocp_solver_pyx.so"
     "selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/libacados_ocp_solver_long.so"
     "selfdrive/controls/lib/longitudinal_mpc_lib/c_generated_code/libacados_ocp_solver_long.dylib"
+    "starpilot/tinygrad_modeld/"
     "third_party/libjson11.a"
     "third_party/libkaitai.a"
   )
