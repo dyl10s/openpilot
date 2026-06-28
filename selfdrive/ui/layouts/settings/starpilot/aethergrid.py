@@ -973,7 +973,7 @@ class BreadcrumbController:
     from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import StarPilotPanelType
     layout = getattr(main_panel.StarPilotLayout, "active_instance", None)
 
-    path = [("HOME", "action:home")]
+    path = [("Home", "action:home")]
     if not layout:
         return path
 
@@ -983,7 +983,7 @@ class BreadcrumbController:
     is_folder = False
     if layout._current_category_idx is not None:
       cat = layout.CATEGORIES[layout._current_category_idx]
-      cat_title = cat["title"].upper()
+      cat_title = cat["title"]
       is_folder = "buttons" in cat
       path.append((cat_title, "action:category"))
 
@@ -991,12 +991,12 @@ class BreadcrumbController:
       panel_info = layout._panels[layout._current_panel]
       if panel_info.name:
         if is_folder or layout._current_category_idx is None:
-          panel_title = panel_info.name.upper()
+          panel_title = panel_info.name
           path.append((panel_title, "action:panel"))
 
     for i, widget in enumerate(pushed_widgets):
       if hasattr(widget, '_header_title') and widget._header_title:
-        path.append((widget._header_title.upper(), f"action:nav_stack:{i+1}"))
+        path.append((widget._header_title, f"action:nav_stack:{i+1}"))
 
     return path
 
