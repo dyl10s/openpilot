@@ -3832,7 +3832,7 @@ class HubTile(AetherTile):
     gap = SPACING.line_gap
 
     title_size = max(20, int(round(24 * text_scale)))
-    desc_to_render = status_text if status_text else fallback_desc
+    desc_to_render = status_text
     desc_size = max(17, int(round(18 * text_scale))) if desc_to_render else 0
 
     icon_h = 0.0
