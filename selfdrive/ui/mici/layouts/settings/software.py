@@ -6,6 +6,7 @@ from enum import IntEnum
 import pyray as rl
 
 from openpilot.common.time_helpers import system_time_valid
+from openpilot.selfdrive.ui.lib.starpilot_version import STARPILOT_DISPLAY_VERSION
 from openpilot.selfdrive.ui.mici.layouts.settings.device import EngagedConfirmationButton
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigParamControl
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigConfirmationDialog, BigDialog
@@ -71,11 +72,11 @@ class SoftwareInfoLayoutMici(Widget):
   def _update_state(self):
     desc = _split_description(ui_state.params.get("UpdaterCurrentDescription") or "")
     if desc is not None:
-      version, branch, commit, date = desc
-      self._version_text_label.set_text(f"{version} ({date})")
+      _, branch, commit, date = desc
+      self._version_text_label.set_text(f"{STARPILOT_DISPLAY_VERSION} ({date})")
       self._branch_text_label.set_text(f"{branch} ({commit})")
     else:
-      self._version_text_label.set_text(ui_state.params.get("Version") or "N/A")
+      self._version_text_label.set_text(STARPILOT_DISPLAY_VERSION if ui_state.params.get("Version") else "N/A")
       self._branch_text_label.set_text(ui_state.params.get("GitBranch") or "N/A")
 
   def _render(self, _):
@@ -201,7 +202,7 @@ class InstallUpdateButton(BigButton):
     super()._update_state()
 
     desc = _split_description(ui_state.params.get("UpdaterNewDescription") or "")
-    value = f"{desc[0]} ({desc[1]})" if desc is not None else ""
+    value = f"{STARPILOT_DISPLAY_VERSION} ({desc[1]})" if desc is not None else ""
     if self.get_value() != value:
       self.set_value(value)
 
