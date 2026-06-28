@@ -666,8 +666,7 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   PAGE_ANIM_DURATION = 0.28
   PAGE_SNAP_DURATION = 0.20
 
-  PAGE_DOT_RADIUS = 6.0
-  PAGE_DOT_GAP = 20.0
+
 
   @property
   def _has_pagination(self) -> bool:
@@ -791,7 +790,20 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
           grid.render(rl.Rectangle(grid_rect.x + cur_offset, grid_rect.y, grid_rect.width, grid_rect.height))
           self._page_scissor_pop()
 
-    self._draw_page_dots(rect)
+    self._draw_page_indicator(rect)
+
+    if self._has_pagination:
+      glow_w = 60.0
+      if self._current_page > 0:
+        rl.draw_rectangle_gradient_h(
+          int(rect.x), int(rect.y), int(glow_w), int(rect.height),
+          _with_alpha(self.PANEL_STYLE.accent, 10), rl.Color(0, 0, 0, 0),
+        )
+      if self._current_page < self._page_count - 1:
+        rl.draw_rectangle_gradient_h(
+          int(rect.x + rect.width - glow_w), int(rect.y), int(glow_w), int(rect.height),
+          rl.Color(0, 0, 0, 0), _with_alpha(self.PANEL_STYLE.accent, 10),
+        )
 
   # ── mouse handling ─────────────────────────────────────────
 
@@ -850,22 +862,57 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
   # ── page indicator ─────────────────────────────────────────
 
-  def _draw_page_dots(self, rect: rl.Rectangle) -> None:
+  def _get_page_indicator_progress(self) -> float:
+    if not self._has_pagination:
+      return 0.0
+    page_w = self._scroll_rect.width
+
+    if self._page_drag_active:
+      return max(0.0, min(self._page_count - 1, self._current_page + self._page_drag_offset / page_w))
+
+    if self._page_animating:
+      elapsed = time.monotonic() - self._page_anim_start
+      duration = self.PAGE_ANIM_DURATION if self._page_anim_committed else self.PAGE_SNAP_DURATION
+      if elapsed >= duration:
+        return float(self._current_page)
+      t = elapsed / duration
+      t = 1.0 - (1.0 - t) ** 3
+      if self._page_anim_committed:
+        direction = 1 if self._page_anim_from < 0 else -1
+        return self._current_page + direction * (t - 1)
+      else:
+        offset = self._page_anim_from * (1.0 - t)
+        return max(0.0, min(self._page_count - 1, self._current_page + offset / page_w))
+
+    return float(self._current_page)
+
+  def _draw_page_indicator(self, rect: rl.Rectangle) -> None:
     if not self._has_pagination:
       return
     n = min(self._page_count, 8)
-    total_w = n * self.PAGE_DOT_RADIUS * 2 + max(0, n - 1) * self.PAGE_DOT_GAP
-    start_x = rect.x + (rect.width - total_w) / 2
-    dot_y = rect.y + rect.height - 12
-    for i in range(n):
-      cx = start_x + i * (self.PAGE_DOT_RADIUS * 2 + self.PAGE_DOT_GAP) + self.PAGE_DOT_RADIUS
-      fill = self.PANEL_STYLE.accent if i == self._current_page else _with_alpha(AetherListColors.MUTED, 100)
-      rl.draw_circle(int(cx), int(dot_y), self.PAGE_DOT_RADIUS, fill)
+    seg_w = 28.0
+    track_h = 10.0
+    track_w = seg_w * n
+    start_x = rect.x + (rect.width - track_w) / 2
+    track_y = rect.y + rect.height - 16
+
+    label = f"{self._current_page + 1} / {self._page_count}"
+    lf = gui_app.font(FontWeight.MEDIUM)
+    ls = 16.0
+    lw = measure_text_cached(lf, label, int(ls)).x
+    rl.draw_text_ex(lf, label, rl.Vector2(int(rect.x + (rect.width - lw) / 2), int(track_y - ls - 6)), int(ls), 0, _with_alpha(AetherListColors.MUTED, 200))
+
+    track_col = _with_alpha(AetherListColors.MUTED, 60)
+    rl.draw_rectangle_rounded(rl.Rectangle(start_x, track_y, track_w, track_h), 0.5, 8, track_col)
+
+    progress = self._get_page_indicator_progress()
+    active_x = start_x + progress * seg_w
+    active_x = max(start_x, min(active_x, start_x + track_w - seg_w))
+    rl.draw_rectangle_rounded(rl.Rectangle(active_x, track_y, seg_w, track_h), 0.5, 8, self.PANEL_STYLE.accent)
+
     if self._page_count > 8:
-      more_x = start_x + n * (self.PAGE_DOT_RADIUS * 2 + self.PAGE_DOT_GAP)
-      rl.draw_text_ex(
-        gui_app.font(FontWeight.MEDIUM), "···",
-        rl.Vector2(more_x, dot_y - 8), 16, 0, AetherListColors.MUTED)
+      more_x = int(start_x + track_w + 10)
+      rl.draw_text_ex(lf, "···", rl.Vector2(more_x, int(track_y - 2)), 14, 0, AetherListColors.MUTED)
 
   # ── lifecycle ──────────────────────────────────────────────
 
@@ -5546,6 +5593,8 @@ class TileGrid(Widget):
         if self.max_tile_height is not None:
           tile_h = min(self.max_tile_height, tile_h)
       uniform_tile_w = (rect.width - (self._gap * (cols - 1))) / cols if self._uniform_width else 0
+    content_height = rows * tile_h + max(0, rows - 1) * self._gap
+    y_offset = max(0, (rect.height - content_height) / 2)
     tile_idx = 0
     for r in range(rows):
       remaining = count - tile_idx
@@ -5564,7 +5613,7 @@ class TileGrid(Widget):
         parent_rect = getattr(self, "_parent_rect", None)
         if parent_rect is not None and hasattr(tile, "set_parent_rect"):
           tile.set_parent_rect(parent_rect)
-        tile.render(_snap_rect(rl.Rectangle(row_x + c * (row_tile_w + self._gap), rect.y + r * (tile_h + self._gap), row_tile_w, tile_h)))
+        tile.render(_snap_rect(rl.Rectangle(row_x + c * (row_tile_w + self._gap), rect.y + y_offset + r * (tile_h + self._gap), row_tile_w, tile_h)))
         tile_idx += 1
 
 
