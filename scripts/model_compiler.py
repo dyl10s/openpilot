@@ -465,6 +465,8 @@ def main() -> int:
 
   input_format = select_input_format(args.input_format, files)
   version = infer_model_version(model_key, args.version)
+  if not version and input_format == "supercombo":
+    version = "v15"
   version_label = version or "unspecified behavior"
   print(f"Compiling {model_key} ({input_format}, {version_label}) from {args.input_dir} -> {args.output_dir}")
   output = compile_driving(model_key, files, input_format, version, args.output_dir)
