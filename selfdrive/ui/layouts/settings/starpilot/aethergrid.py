@@ -1099,9 +1099,9 @@ class BreadcrumbController:
           rl.draw_rectangle_rounded_lines_ex(cap_rect, 1.0, 16, 1.0, outline)
 
           font_dots = gui_app.font(FontWeight.BOLD)
-          dots_w = measure_text_cached(font_dots, "...", 18).x
+          dots_ts = measure_text_cached(font_dots, "...", 18)
           rl.draw_text_ex(font_dots, "...",
-            rl.Vector2(cap_rect.x + (cap_rect.width - dots_w) / 2, center_y - 10),
+            rl.Vector2(cap_rect.x + (cap_rect.width - dots_ts.x) / 2, center_y - dots_ts.y / 2),
             18, 0, dots_c)
         current_x += capsule_w + GAP
 
@@ -1129,8 +1129,8 @@ class BreadcrumbController:
           c_hover   = rl.Color(past_hover.r, past_hover.g, past_hover.b, item_alpha)
           c_pressed = rl.Color(past_pressed.r, past_pressed.g, past_pressed.b, item_alpha)
 
-        text_w = measure_text_cached(font, text, font_size).x
-        hit_rect = rl.Rectangle(current_x - 6, center_y - 20, text_w + 12, 40)
+        ts = measure_text_cached(font, text, font_size)
+        hit_rect = rl.Rectangle(current_x - 6, center_y - 20, ts.x + 12, 40)
         hovered  = _point_hits(mouse_pos, hit_rect, None, pad_x=0, pad_y=0)
         self._rects[action] = hit_rect
 
@@ -1139,9 +1139,9 @@ class BreadcrumbController:
         if hovered and not is_last:
           rl.draw_rectangle_rounded(hit_rect, 0.4, 8, rl.Color(255, 255, 255, int(12 * item_alpha / 255)))
 
-        text_y = center_y - font_size / 2
+        text_y = center_y - ts.y / 2
         rl.draw_text_ex(font, text, rl.Vector2(current_x, text_y), font_size, 0, color)
-        current_x += text_w + GAP
+        current_x += ts.x + GAP
 
       if i < len(display_path) - 1:
         chev_rect = rl.Rectangle(current_x, center_y - CHEVRON_SIZE / 2, CHEVRON_W, CHEVRON_SIZE)
