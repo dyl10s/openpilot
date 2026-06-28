@@ -193,6 +193,14 @@ class MiciSidebarWidgets(Widget):
       pass
     return False
 
+  def _curve_speed_controller_active(self) -> bool:
+    try:
+      if ui_state.sm.recv_frame["starpilotPlan"] >= ui_state.started_frame:
+        return bool(ui_state.sm["starpilotPlan"].cscControllingSpeed)
+    except Exception:
+      pass
+    return False
+
   def _cem_reason(self) -> tuple[str, rl.Color]:
     if self._demo:
       status = ui_state.params_memory.get_int("CEStatus", default=CEStatus["OFF"])
@@ -200,6 +208,11 @@ class MiciSidebarWidgets(Widget):
       if status_reason is not None:
         return status_reason
       return self._fallback_demo_reason()
+
+    if self._model_stop_active():
+      return "stop", TRAFFIC_RED
+    if self._curve_speed_controller_active():
+      return "curve", CEM_BLUE
 
     conditional_experimental = ui_state.params.get_bool("ConditionalExperimental")
     conditional_chill = ui_state.params.get_bool("ConditionalChill") and not conditional_experimental
@@ -219,8 +232,6 @@ class MiciSidebarWidgets(Widget):
     status_reason = self._ce_status_reason(status)
     if status_reason is not None:
       return status_reason
-    if self._model_stop_active():
-      return "stop", TRAFFIC_RED
     return "chill", WHITE
 
   def _fallback_demo_reason(self) -> tuple[str, rl.Color]:
