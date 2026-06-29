@@ -496,7 +496,6 @@ class SteeringManagerView(PanelManagerView):
 # ═══════════════════════════════════════════════════════════════
 
 class StarPilotLateralLayout(_SettingsPage):
-  SLIDER_COLOR = "#5B9BD5"
 
   def __init__(self):
     super().__init__()
