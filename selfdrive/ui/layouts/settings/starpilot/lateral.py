@@ -121,7 +121,7 @@ class SteeringManagerView(AetherSettingsView):
   def __init__(self, controller, sections, **kwargs):
     super().__init__(controller, sections, **kwargs)
     self._controller = controller
-    self._hub_grid = TileGrid(columns=2, padding=12)
+    self._hub_grid = TileGrid(columns=3, padding=12)
     self._hub_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
     self._child(self._hub_grid)
     self._init_hub()
