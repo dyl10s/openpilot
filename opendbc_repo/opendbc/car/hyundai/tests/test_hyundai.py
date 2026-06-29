@@ -1441,6 +1441,64 @@ class TestHyundaiFingerprint:
     assert parser.vl["LKAS_ALT"]["STEER_MODE"] == 2
     assert parser.vl["LKAS_ALT"]["NEW_SIGNAL_2"] == 3
 
+  def test_ev9_inactive_angle_status_clears_stock_warning_bits(self):
+    CP = CarParams.new_message()
+    CP.carFingerprint = CAR.KIA_EV9
+    CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
+                   HyundaiFlags.CANFD_LKA_STEERING | HyundaiFlags.CANFD_LKA_STEERING_ALT)
+    CP.openpilotLongitudinalControl = False
+
+    controller = CarController(DBC[CP.carFingerprint], CP)
+    can_bus = CanBus(CP)
+    parser = CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_ALT", 0)], can_bus.ACAN)
+    cc = SimpleNamespace(enabled=False, latActive=False, actuators=SimpleNamespace(longControlState=LongCtrlState.off),
+                         leftBlinker=False, rightBlinker=False, hudControl=SimpleNamespace())
+    lfa_block_msg = {f"BYTE{i}": 0 for i in range(3, 32) if i != 7}
+    lfa_block_msg["COUNTER"] = 0
+    stock_lkas = {
+      "CHECKSUM": 1234,
+      "COUNTER": 42,
+      "LKA_MODE": 0,
+      "LKA_AVAILABLE": 0,
+      "LKA_WARNING": 0,
+      "LKA_ICON": 0,
+      "FCA_SYSWARN": 1,
+      "TORQUE_REQUEST": 0,
+      "STEER_REQ": 0,
+      "LFA_BUTTON": 0,
+      "LKA_ASSIST": 1,
+      "STEER_MODE": 5,
+      "NEW_SIGNAL_2": 0,
+      "LKAS_ANGLE_ACTIVE": 1,
+      "HAS_LANE_SAFETY": 0,
+      "ADAS_StrAnglReqVal": 10.5,
+      "ADAS_ACIAnglTqRedcGainVal": 0.0,
+      "DAMP_FACTOR": 0,
+    }
+    cs = SimpleNamespace(stock_lfa_msg=None, stock_lkas_msg=stock_lkas, lfa_block_msg=lfa_block_msg,
+                         out=SimpleNamespace(steeringAngleDeg=10.5))
+
+    msgs = controller.create_canfd_msgs(0, False, 0.0, 10.5, 0.0, 0.0, False, cc.hudControl, cs, cc,
+                                        get_test_toggles(), lka_icon=1, lfa_icon=1)
+    lkas_msgs = [msg for msg in msgs if msg[0] == 0x110]
+    assert len(lkas_msgs) == 1
+
+    parser.update([(1, lkas_msgs)])
+
+    assert parser.can_valid
+    assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == 1
+    assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.0)
+    assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(10.5)
+    assert parser.vl["LKAS_ALT"]["LKA_MODE"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_AVAILABLE"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_WARNING"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_ICON"] == 1
+    assert parser.vl["LKAS_ALT"]["FCA_SYSWARN"] == 0
+    assert parser.vl["LKAS_ALT"]["LFA_BUTTON"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_ASSIST"] == 0
+    assert parser.vl["LKAS_ALT"]["DAMP_FACTOR"] == pytest.approx(100.0)
+    assert parser.vl["LKAS_ALT"]["HAS_LANE_SAFETY"] == 0
+
   def test_ev9_inactive_angle_steering_still_suppresses_stock_lfa(self):
     CP = CarParams.new_message()
     CP.carFingerprint = CAR.KIA_EV9
@@ -1871,7 +1929,7 @@ class TestHyundaiFingerprint:
     assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(-31.5)
     assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.44)
 
-  def test_ev9_angle_lkas_alt_preserves_stock_status_when_inactive(self):
+  def test_ev9_angle_lkas_alt_clears_stock_status_when_inactive(self):
     CP = CarParams.new_message()
     CP.carFingerprint = CAR.KIA_EV9
     CP.flags = int(HyundaiFlags.CANFD | HyundaiFlags.EV | HyundaiFlags.CANFD_ANGLE_STEERING |
@@ -1910,18 +1968,18 @@ class TestHyundaiFingerprint:
     parser.update([(1, lkas_msgs)])
 
     assert parser.can_valid
-    assert parser.vl["LKAS_ALT"]["LKA_MODE"] == 2
-    assert parser.vl["LKAS_ALT"]["LKA_AVAILABLE"] == 3
-    assert parser.vl["LKAS_ALT"]["LKA_WARNING"] == 1
+    assert parser.vl["LKAS_ALT"]["LKA_MODE"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_AVAILABLE"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_WARNING"] == 0
     assert parser.vl["LKAS_ALT"]["LKA_ICON"] == 1
-    assert parser.vl["LKAS_ALT"]["FCA_SYSWARN"] == 1
+    assert parser.vl["LKAS_ALT"]["FCA_SYSWARN"] == 0
     assert parser.vl["LKAS_ALT"]["TORQUE_REQUEST"] == 0
     assert parser.vl["LKAS_ALT"]["STEER_REQ"] == 0
-    assert parser.vl["LKAS_ALT"]["LFA_BUTTON"] == 1
-    assert parser.vl["LKAS_ALT"]["LKA_ASSIST"] == 1
-    assert parser.vl["LKAS_ALT"]["DAMP_FACTOR"] == 0
+    assert parser.vl["LKAS_ALT"]["LFA_BUTTON"] == 0
+    assert parser.vl["LKAS_ALT"]["LKA_ASSIST"] == 0
+    assert parser.vl["LKAS_ALT"]["DAMP_FACTOR"] == pytest.approx(100.0)
     assert parser.vl["LKAS_ALT"]["LKAS_ANGLE_ACTIVE"] == 1
-    assert parser.vl["LKAS_ALT"]["HAS_LANE_SAFETY"] == 1
+    assert parser.vl["LKAS_ALT"]["HAS_LANE_SAFETY"] == 0
     assert parser.vl["LKAS_ALT"]["ADAS_StrAnglReqVal"] == pytest.approx(-31.5)
     assert parser.vl["LKAS_ALT"]["ADAS_ACIAnglTqRedcGainVal"] == pytest.approx(0.0)
 
