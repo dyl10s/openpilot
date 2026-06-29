@@ -1047,6 +1047,11 @@ class BreadcrumbController:
       target_idx = int(target.split(":")[-1])
       while len(gui_app._nav_stack) > target_idx + 1:
         gui_app.pop_widget()
+    elif target.startswith("action:panel_stack:"):
+      target_idx = int(target.split(":")[-1])
+      while len(layout._panel_stack) > target_idx + 1:
+        layout._panel_stack.pop()
+      layout._commit_navigation()
 
   @staticmethod
   def build_path() -> list[tuple[str, str]]:
@@ -1078,6 +1083,14 @@ class BreadcrumbController:
     for i, widget in enumerate(pushed_widgets):
       if hasattr(widget, '_header_title') and widget._header_title:
         path.append((widget._header_title, f"action:nav_stack:{i+1}"))
+
+    for i, (panel_type, sub_panel_name) in enumerate(layout._panel_stack):
+      panel = layout._panels[panel_type].instance
+      if not panel or not hasattr(panel, '_sub_panels') or sub_panel_name not in panel._sub_panels:
+        continue
+      sub = panel._sub_panels[sub_panel_name]
+      label = sub._header_title if hasattr(sub, '_header_title') and sub._header_title else sub_panel_name
+      path.append((label, f"action:panel_stack:{i}"))
 
     return path
 

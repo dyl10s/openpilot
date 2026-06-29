@@ -4,21 +4,25 @@ import pyray as rl
 
 from openpilot.system.hardware import HARDWARE
 from openpilot.selfdrive.ui.lib.starpilot_state import starpilot_state
-from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 
 from openpilot.selfdrive.ui.layouts.settings.starpilot.panel import _SettingsPage
 from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
+  AetherAdjustorRow,
   AetherListMetrics,
-  AetherSettingsView,
   AetherSliderDialog,
   DEFAULT_PANEL_STYLE,
-  HubTile,
-  SettingRow,
-  SettingSection,
+  PanelManagerView,
   TileGrid,
+  draw_list_group_shell,
+  draw_section_header,
+  draw_settings_list_row,
+  SECTION_GAP,
+  SECTION_HEADER_HEIGHT,
+  SECTION_HEADER_GAP,
 )
 
 
@@ -47,8 +51,8 @@ CUSTOM_METRICS = AetherListMetrics(
   utility_row_height=88,
 )
 
-ROW_HEIGHT = CUSTOM_METRICS.row_height
 PANEL_STYLE = DEFAULT_PANEL_STYLE
+ALT_ROW_HEIGHT = 88.0
 
 _LATERAL_TUNE_KEYS = ["TurnDesires", "NNFF", "NNFFLite", "ForceTorqueController"]
 _ADVANCED_LATERAL_KEYS = ["ForceAutoTune", "ForceAutoTuneOff"]
@@ -63,89 +67,253 @@ def _sync_parent(params, parent_key, child_keys):
       params.put_bool(parent_key, False)
 
 
-class SteeringManagerView(AetherSettingsView):
-  """Hub view with 3 category tiles leading to sub-panels."""
+# ═══════════════════════════════════════════════════════════════
+# SteeringSubPanelView — two-column sub-panel
+# ═══════════════════════════════════════════════════════════════
+
+class SteeringSubPanelView(PanelManagerView):
+  """Two-column sub-panel: left = AetherAdjustorRows (values),
+     right = TileGrid of ToggleTile (toggles).
+     Dynamic visibility via _rebuild_content()."""
+
+  METRICS = CUSTOM_METRICS
 
   @property
   def vertical_scrolling_disabled(self) -> bool:
     return True
 
-  def __init__(self, controller, sections, **kwargs):
-    super().__init__(controller, sections, **kwargs)
+  def __init__(self, controller, header_title, header_subtitle,
+               adjustor_defs, toggle_defs, include_alt_row=False):
+    super().__init__()
     self._controller = controller
-    self._hub_grid = TileGrid(columns=3, padding=12)
-    self._hub_grid.set_touch_valid_callback(lambda: self._scroll_panel.is_touch_valid())
-    self._child(self._hub_grid)
-    self._init_hub()
+    self._header_title = header_title
+    self._header_subtitle = header_subtitle
+    self._adjustor_defs = adjustor_defs
+    self._toggle_defs = toggle_defs
+    self._include_alt_row = include_alt_row
+    self._adjustor_rows: dict[str, AetherAdjustorRow] = {}
+    self._left_container_h = 0.0
+    self._tiles_container_h = 0.0
+
+    self._toggle_grid = TileGrid(
+      columns=2, padding=12, force_square=True,
+      min_tile_height=130.0, max_tile_height=280.0,
+    )
+    self.register_page_grid(self._toggle_grid)
+
+    self._rebuild_content()
+
+  def _render(self, rect: rl.Rectangle):
+    self._rebuild_adjustors()
+    super()._render(rect)
+
+  def _rebuild_content(self):
+    self._rebuild_adjustors()
+    self._rebuild_toggle_pages()
+
+  def _rebuild_adjustors(self):
+    old_rows = self._adjustor_rows
+    self._adjustor_rows = {}
+
+    for defn in self._adjustor_defs:
+      if defn.get("visible") is not None and not defn["visible"]():
+        continue
+      key = defn["key"]
+      if key in old_rows:
+        self._adjustor_rows[key] = old_rows[key]
+      else:
+        self._adjustor_rows[key] = AetherAdjustorRow(
+          tr(defn["title"]),
+          tr(defn.get("subtitle", "")),
+          defn["min_val"], defn["max_val"], defn["step"],
+          get_value=lambda k=key: self._controller._params.get_float(k),
+          on_change=lambda _v: None,
+          on_commit=None,
+          unit=defn.get("unit", ""),
+          labels=defn.get("labels"),
+          presets=defn.get("presets", []),
+          is_active=lambda: False,
+          set_active=lambda active, k=key: self._show_slider_for(k) if active else None,
+          style=PANEL_STYLE,
+          color=PANEL_STYLE.accent,
+        )
+
+  def _rebuild_toggle_pages(self):
+    visible = [
+      d for d in self._toggle_defs
+      if d.get("visible") is None or d["visible"]()
+    ]
+    wrapped = []
+    for d in visible:
+      entry = dict(d)
+      original_set = entry.get("set")
+      if original_set:
+        def make_wrapped(orig):
+          def fn(state):
+            orig(state)
+            self._rebuild_content()
+          return fn
+        entry["set"] = make_wrapped(original_set)
+      wrapped.append(entry)
+    pages = [wrapped[i:i+4] for i in range(0, len(wrapped), 4)]
+    old_page = self._current_page
+    self._toggle_pages = pages
+    self._page_count = max(1, len(pages))
+    self._current_page = min(old_page, self._page_count - 1)
+    self._on_page_changed()
+
+  def _show_slider_for(self, key: str):
+    self._controller._on_select(key)
 
   def show_event(self):
     super().show_event()
     starpilot_state.update(force=True)
+    self._rebuild_content()
 
-  def _init_hub(self):
-    hub_data = [
-      {
-        "key": "steering_behavior",
-        "title": tr("Steering Behavior"),
-        "desc": tr("Configure when steering engages, pauses, and resumes."),
-        "icon": "steering",
-        "color": "#8B5CF6",
-      },
-      {
-        "key": "lane_changes",
-        "title": tr("Lane Changes"),
-        "desc": tr("Configure lane change behavior, speed thresholds, and timing."),
-        "icon": "navigate",
-        "color": "#8B5CF6",
-      },
-      {
-        "key": "tuning",
-        "title": tr("Advanced Lateral Tuning"),
-        "desc": tr("Fine-tune steering response, feedforward, and auto-tuning."),
-        "icon": "system",
-        "color": "#8B5CF6",
-      },
-    ]
+  # ── layout / rendering ──
 
-    self._hub_grid.clear()
-    for d in hub_data:
-      self._hub_grid.add_tile(HubTile(
-        title=d["title"],
-        desc=d["desc"],
-        icon_key=d["icon"],
-        on_click=lambda k=d["key"]: self._controller._navigate_to(k),
-        bg_color=d["color"],
-      ))
+  def _draw_header(self, rect):
+    pass
 
-  def _render(self, rect: rl.Rectangle):
-    self.set_rect(rect)
-    self._interactive_rects.clear()
+  def _measure_content_height(self, content_width: float) -> float:
+    col_width = (content_width - SECTION_GAP) / 2
 
-    margin_x = 18.0
-    margin_y = 24.0
+    for row in self._adjustor_rows.values():
+      row.custom_row_height = None
 
-    grid_x = rect.x + margin_x
-    grid_y = rect.y + margin_y
-    grid_w = rect.width - margin_x * 2
-    grid_h = rect.y + rect.height - grid_y - margin_y
+    header_h = self._header_height()
+    left_natural = sum(row.measure_height(col_width) for row in self._adjustor_rows.values())
+    left_natural += 16.0
 
-    self._scroll_rect = rl.Rectangle(grid_x, grid_y, grid_w, grid_h)
-    self._content_height = grid_h
+    tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24
+    max_natural_h = max(left_natural, tiles_needed_h)
+    section_overhead = SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
 
-    self._scroll_panel.set_enabled(self.is_visible)
-    self._scroll_offset = self._scroll_panel.update(
-      self._scroll_rect, self._scroll_rect.height
+    alt_consumption = (ALT_ROW_HEIGHT + 12.0) if self._include_alt_row else 0.0
+
+    if self._scroll_rect:
+      available_h = self._scroll_rect.height - header_h - section_overhead - 6.0 - alt_consumption
+    else:
+      available_h = max_natural_h
+
+    max_container_h = max(0.0, available_h)
+
+    left_available = max_container_h - 16.0
+    if self._adjustor_rows and left_available > 0:
+      row_h = max(60.0, left_available / len(self._adjustor_rows))
+      for row in self._adjustor_rows.values():
+        row.custom_row_height = row_h
+
+    self._left_container_h = max_container_h
+    self._tiles_container_h = max_container_h
+
+    return self._compute_two_column_height(header_h + section_overhead + max_container_h + alt_consumption)
+
+  def _header_height(self) -> float:
+    h = 0.0
+    if self._header_title:
+      h += 30 + 6
+      if self._header_subtitle:
+        h += 22 + 4
+    return h
+
+  def _draw_scroll_content(self, rect: rl.Rectangle, content_width: float):
+    y = rect.y + self._scroll_offset
+
+    # Draw panel title + subtitle
+    if self._header_title:
+      rl.draw_text_ex(
+        gui_app.font(FontWeight.SEMI_BOLD), self._header_title,
+        rl.Vector2(rect.x + 8, y), 30, 0, PANEL_STYLE.title_color,
+      )
+      y += 30 + 6
+      if self._header_subtitle:
+        rl.draw_text_ex(
+          gui_app.font(FontWeight.NORMAL), self._header_subtitle,
+          rl.Vector2(rect.x + 8, y), 22, 0, PANEL_STYLE.subtitle_color,
+        )
+        y += 22 + 4
+    else:
+      y += 8
+
+    col_width = (content_width - SECTION_GAP) / 2
+
+    draw_section_header(
+      rl.Rectangle(rect.x, y, col_width, SECTION_HEADER_HEIGHT),
+      tr("Values"), style=PANEL_STYLE,
+    )
+    draw_section_header(
+      rl.Rectangle(rect.x + col_width + SECTION_GAP, y, col_width, SECTION_HEADER_HEIGHT),
+      tr("Toggles"), style=PANEL_STYLE,
+    )
+    y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
+
+    self._draw_adjustor_column(y, rect.x, col_width)
+    self._draw_two_column_tile_grid(
+      self._toggle_grid,
+      rect.x + col_width + SECTION_GAP, y, col_width,
+      self._tiles_container_h, title=None, style=PANEL_STYLE,
     )
 
-    if self.vertical_scrolling_disabled:
-      self._scroll_offset = 0.0
+    if self._include_alt_row:
+      alt_y = y + self._tiles_container_h + 12.0
+      alt_rect = rl.Rectangle(rect.x, alt_y, content_width, ALT_ROW_HEIGHT)
+      alt_state = self._controller._params.get_bool("AdvancedLateralTune")
+      alt_value = tr("ON") if alt_state else tr("OFF")
+      hovered, pressed = self._interactive_state("static:alt_row", alt_rect)
+      draw_settings_list_row(
+        alt_rect,
+        title=tr("Advanced Lateral Tuning"),
+        value=alt_value,
+        enabled=True,
+        hovered=hovered,
+        pressed=pressed,
+        is_last=False,
+        show_chevron=True,
+        title_size=30,
+        subtitle_size=20,
+        value_size=24,
+        style=PANEL_STYLE,
+      )
 
-    self._draw_scroll_content(self._scroll_rect, self._scroll_rect.width)
+  def _draw_adjustor_column(self, y: float, x: float, width: float):
+    draw_list_group_shell(
+      rl.Rectangle(x, y, width, self._left_container_h),
+      style=PANEL_STYLE,
+    )
+    current_y = y + 8
+    for key, adjustor in self._adjustor_rows.items():
+      row_h = adjustor.measure_height(width)
+      row_rect = rl.Rectangle(x, current_y, width, row_h)
+      adjustor.set_parent_rect(self._scroll_rect)
+      adjustor.render(row_rect)
+      current_y += row_h
 
-  def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
-    y = rect.y + self._scroll_offset
-    self._hub_grid.set_parent_rect(self._scroll_rect)
-    self._hub_grid.render(rl.Rectangle(rect.x, y, width, rect.height))
+  # ── mouse forwarding ──
+
+  def _handle_mouse_press(self, mouse_pos):
+    super()._handle_mouse_press(mouse_pos)
+    for adjustor in self._adjustor_rows.values():
+      adjustor._handle_mouse_press(mouse_pos)
+    self._toggle_grid._handle_mouse_press(mouse_pos)
+
+  def _handle_mouse_release(self, mouse_pos):
+    for adjustor in self._adjustor_rows.values():
+      adjustor._handle_mouse_release(mouse_pos)
+    self._toggle_grid._handle_mouse_release(mouse_pos)
+    super()._handle_mouse_release(mouse_pos)
+
+  def _handle_mouse_event(self, mouse_event):
+    super()._handle_mouse_event(mouse_event)
+    for adjustor in self._adjustor_rows.values():
+      adjustor._handle_mouse_event(mouse_event)
+    self._toggle_grid._handle_mouse_event(mouse_event)
+
+  def _activate_target(self, target_id: str | None):
+    if target_id == "static:alt_row":
+      self._controller._navigate_to("tuning")
+      return
+    super()._activate_target(target_id)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -156,15 +324,9 @@ class StarPilotLateralLayout(_SettingsPage):
 
   def __init__(self):
     super().__init__()
-    self._build_sub_panels()
-    self._manager_view = SteeringManagerView(
-      self, [],
-      header_title=tr("Steering"),
-      header_subtitle=tr("Configure steering behavior, lane changes, and tuning parameters."),
-      panel_style=PANEL_STYLE,
-    )
+    self._build_panels()
 
-  def _build_sub_panels(self):
+  def _build_panels(self):
     p = self._params
     cs = starpilot_state.car_state
 
@@ -183,185 +345,245 @@ class StarPilotLateralLayout(_SettingsPage):
     def pos_on():
       return p.get_bool("PauseLateralOnSignal")
 
-    def _show(key):
-      return lambda: self._on_select(key)
-
     # ── Steering Behavior ──
-    self._steering_behavior_rows = [
-      SettingRow("AlwaysOnLateral", "toggle", tr("Always On Lateral"),
-                 subtitle=tr("Steering stays active when ACC is off."),
-                 get_state=lambda: p.get_bool("AlwaysOnLateral"),
-                 set_state=lambda s: _confirm_reboot_toggle(p, "AlwaysOnLateral", s) if s else p.put_bool("AlwaysOnLateral", False)),
-      SettingRow("PauseAOLOnBrake", "value", tr("Pause AOL On Brake"),
-                 subtitle=tr("Pause AOL below this speed while brake is pressed."),
-                 get_value=lambda: f"{p.get_int('PauseAOLOnBrake')} mph",
-                 on_click=_show("PauseAOLOnBrake"),
-                 visible=aol_on),
-      SettingRow("PauseLateralOnSignal", "toggle", tr("Turn Signal Only"),
-                 subtitle=tr("Only pause steering when turn signal is active."),
-                 get_state=lambda: p.get_bool("PauseLateralOnSignal"),
-                 set_state=lambda s: p.put_bool("PauseLateralOnSignal", s)),
-      SettingRow("PauseLateralSpeed", "value", tr("Pause Lateral Below"),
-                 subtitle=tr("Pause steering below the set speed."),
-                 get_value=lambda: f"{p.get_int('PauseLateralSpeed')} mph",
-                 on_click=_show("PauseLateralSpeed")),
-      SettingRow("LateralResumeDelay", "value", tr("Resume Delay"),
-                 subtitle=tr("Delay before lateral resumes after signal off. 0 = Off."),
-                 get_value=lambda: tr("Off") if p.get_float("LateralResumeDelay") == 0 else f"{p.get_float('LateralResumeDelay'):.1f}s",
-                 on_click=_show("LateralResumeDelay"),
-                 visible=pos_on),
-      SettingRow("NavDesiresAllowed", "toggle", tr("Use Route Desires"),
-                 subtitle=tr("Allow navigation to request lane keep and turns."),
-                 get_state=lambda: p.get_bool("NavDesiresAllowed"),
-                 set_state=lambda s: p.put_bool("NavDesiresAllowed", s)),
+
+    sb_adjustors = [
+      {
+        "key": "PauseAOLOnBrake",
+        "title": tr("Pause AOL On Brake"),
+        "subtitle": tr("Pause AOL below this speed while brake is pressed."),
+        "min_val": 0, "max_val": 100, "step": 1,
+        "unit": " mph",
+        "visible": aol_on,
+      },
+      {
+        "key": "PauseLateralSpeed",
+        "title": tr("Pause Lateral Below"),
+        "subtitle": tr("Pause steering below the set speed."),
+        "min_val": 0, "max_val": 100, "step": 1,
+        "unit": " mph",
+      },
+      {
+        "key": "LateralResumeDelay",
+        "title": tr("Resume Delay"),
+        "subtitle": tr("Delay before lateral resumes after signal off. 0 = Off."),
+        "min_val": 0.0, "max_val": 5.0, "step": 0.1,
+        "unit": "s",
+        "labels": {0.0: tr("Off")},
+        "visible": pos_on,
+      },
+    ]
+
+    sb_toggles = [
+      {
+        "title": tr("Always On Lateral"),
+        "subtitle": tr("Steering stays active when ACC is off."),
+        "get": lambda: p.get_bool("AlwaysOnLateral"),
+        "set": lambda s: _confirm_reboot_toggle(p, "AlwaysOnLateral", s) if s else p.put_bool("AlwaysOnLateral", False),
+      },
+      {
+        "title": tr("Turn Signal Only"),
+        "subtitle": tr("Only pause steering when turn signal is active."),
+        "get": lambda: p.get_bool("PauseLateralOnSignal"),
+        "set": lambda s: p.put_bool("PauseLateralOnSignal", s),
+      },
+      {
+        "title": tr("Use Route Desires"),
+        "subtitle": tr("Allow navigation to request lane keep and turns."),
+        "get": lambda: p.get_bool("NavDesiresAllowed"),
+        "set": lambda s: p.put_bool("NavDesiresAllowed", s),
+      },
     ]
 
     # ── Lane Changes ──
-    self._lane_change_rows = [
-      SettingRow("LaneChanges", "toggle", tr("Lane Changes"),
-                 subtitle=tr("Allow openpilot to change lanes."),
-                 get_state=lambda: p.get_bool("LaneChanges"),
-                 set_state=lambda s: p.put_bool("LaneChanges", s)),
-      SettingRow("NudgelessLaneChange", "toggle", tr("Auto Lane Changes"),
-                 subtitle=tr("Signal triggers automatic lane change."),
-                 get_state=lambda: p.get_bool("NudgelessLaneChange"),
-                 set_state=lambda s: p.put_bool("NudgelessLaneChange", s),
-                 visible=lc_on),
-      SettingRow("OneLaneChange", "toggle", tr("One Per Signal"),
-                 subtitle=tr("One lane change per signal activation."),
-                 get_state=lambda: p.get_bool("OneLaneChange"),
-                 set_state=lambda s: p.put_bool("OneLaneChange", s),
-                 visible=nlc_on),
-      SettingRow("MinimumLaneChangeSpeed", "value", tr("Min Lane Change Speed"),
-                 subtitle=tr("Lowest speed at which openpilot will change lanes."),
-                 get_value=lambda: f"{p.get_int('MinimumLaneChangeSpeed')} mph",
-                 on_click=_show("MinimumLaneChangeSpeed"),
-                 visible=lc_on),
-      SettingRow("LaneChangeTime", "value", tr("Lane Change Delay"),
-                 subtitle=tr("Delay before the start of an automatic lane change. 0 = Instant."),
-                 get_value=lambda: tr("Instant") if p.get_float("LaneChangeTime") == 0 else f"{p.get_float('LaneChangeTime'):.1f}s",
-                 on_click=_show("LaneChangeTime"),
-                 visible=nlc_on),
-      SettingRow("LaneDetectionWidth", "value", tr("Min Lane Width"),
-                 subtitle=tr("Prevent lane changes into narrower lanes."),
-                 get_value=lambda: f"{p.get_float('LaneDetectionWidth'):.1f} ft",
-                 on_click=_show("LaneDetectionWidth"),
-                 visible=nlc_on),
-      SettingRow("LaneChangeSmoothing", "value", tr("Lane Change Smoothing"),
-                 subtitle=tr("Smoothness of lane change commit. 10 = Stock, 1 = Smoothest."),
-                 get_value=lambda: tr("Stock") if p.get_int("LaneChangeSmoothing") == 10 else f"{p.get_int('LaneChangeSmoothing')}",
-                 on_click=_show("LaneChangeSmoothing"),
-                 visible=lc_on),
+
+    lc_adjustors = [
+      {
+        "key": "MinimumLaneChangeSpeed",
+        "title": tr("Min Lane Change Speed"),
+        "subtitle": tr("Lowest speed at which openpilot will change lanes."),
+        "min_val": 0, "max_val": 100, "step": 1,
+        "unit": " mph",
+        "visible": lc_on,
+      },
+      {
+        "key": "LaneChangeTime",
+        "title": tr("Lane Change Delay"),
+        "subtitle": tr("Delay before the start of an automatic lane change. 0 = Instant."),
+        "min_val": 0.0, "max_val": 5.0, "step": 0.1,
+        "unit": "s",
+        "labels": {0.0: tr("Instant")},
+        "visible": nlc_on,
+      },
+      {
+        "key": "LaneDetectionWidth",
+        "title": tr("Min Lane Width"),
+        "subtitle": tr("Prevent lane changes into narrower lanes."),
+        "min_val": 0.0, "max_val": 15.0, "step": 0.1,
+        "unit": " ft",
+        "visible": nlc_on,
+      },
+      {
+        "key": "LaneChangeSmoothing",
+        "title": tr("Lane Change Smoothing"),
+        "subtitle": tr("Smoothness of lane change commit. 10 = Stock, 1 = Smoothest."),
+        "min_val": 1, "max_val": 10, "step": 1,
+        "labels": {10.0: tr("Stock")},
+        "visible": lc_on,
+      },
     ]
 
-    # ── Advanced Lateral Tuning ──
-    self._tuning_rows = [
-      SettingRow("AdvancedLateralTune", "toggle", tr("Advanced Lateral Tuning"),
-                 subtitle=tr("Fine-tune steering response and auto-tuning."),
-                 get_state=lambda: p.get_bool("AdvancedLateralTune"),
-                 set_state=lambda s: p.put_bool("AdvancedLateralTune", s)),
-      SettingRow("NNFF", "toggle", tr("NNFF"),
-                 subtitle=tr("Neural net feedforward steering controller."),
-                 get_state=lambda: p.get_bool("NNFF"),
-                 set_state=lambda s: (p.put_bool("NNFF", s),
-                                      s and p.put_bool("NNFFLite", False),
-                                      _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
-                 enabled=lambda: cs.hasNNFFLog and not cs.isAngleCar,
-                 disabled_label=tr("Not Available"),
-                 visible=alt_on),
-      SettingRow("NNFFLite", "toggle", tr("NNFF Lite"),
-                 subtitle=tr("Lightweight NNFF when full model is off."),
-                 get_state=lambda: p.get_bool("NNFFLite"),
-                 set_state=lambda s: (p.put_bool("NNFFLite", s),
-                                      _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
-                 enabled=lambda: not cs.isAngleCar,
-                 disabled_label=tr("Not Available"),
-                 visible=alt_on),
-      SettingRow("ForceTorqueController", "toggle", tr("Force Torque Ctrl"),
-                 subtitle=tr("Torque-based steering for smoother lane keeping."),
-                 get_state=lambda: p.get_bool("ForceTorqueController"),
-                 set_state=lambda s: (p.put_bool("ForceTorqueController", s),
-                                      _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
-                 enabled=lambda: not cs.isTorqueCar and not cs.isAngleCar,
-                 disabled_label=tr("Not Available"),
-                 visible=alt_on),
-      SettingRow("TurnDesires", "toggle", tr("Force Turn Desires"),
-                 subtitle=tr("Follow turn intent below min lane change speed."),
-                 get_state=lambda: p.get_bool("TurnDesires"),
-                 set_state=lambda s: (p.put_bool("TurnDesires", s),
-                                      _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
-                 visible=alt_on),
-      SettingRow("ForceAutoTune", "toggle", tr("Force Auto-Tune On"),
-                 subtitle=tr("Force-enable live auto-tuning for friction and lateral accel."),
-                 get_state=lambda: p.get_bool("ForceAutoTune"),
-                 set_state=lambda s: (p.put_bool("ForceAutoTune", s),
-                                      s and p.put_bool("ForceAutoTuneOff", False),
-                                      _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
-                 enabled=lambda: not cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
-                 disabled_label=tr("Not Available"),
-                 visible=alt_on),
-      SettingRow("ForceAutoTuneOff", "toggle", tr("Force Auto-Tune Off"),
-                 subtitle=tr("Force-disable auto-tuning and use your set values."),
-                 get_state=lambda: p.get_bool("ForceAutoTuneOff"),
-                 set_state=lambda s: (p.put_bool("ForceAutoTuneOff", s),
-                                      s and p.put_bool("ForceAutoTune", False),
-                                      _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
-                 enabled=lambda: cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
-                 disabled_label=tr("Not Available"),
-                 visible=alt_on),
-      SettingRow("SteerDelay", "value", tr("Actuator Delay"),
-                 subtitle=tr("Time between steering command and vehicle response."),
-                 get_value=lambda: f"{p.get_float('SteerDelay'):.2f}s",
-                 on_click=_show("SteerDelay"),
-                 visible=lambda: alt_on() and cs.steerActuatorDelay != 0),
-      SettingRow("SteerFriction", "value", tr("Friction"),
-                 subtitle=tr("Compensates for steering friction around center."),
-                 get_value=lambda: f"{p.get_float('SteerFriction'):.3f}",
-                 on_click=_show("SteerFriction"),
-                 visible=lambda: alt_on() and cs.friction != 0),
-      SettingRow("SteerKP", "value", tr("Kp Factor"),
-                 subtitle=tr("How strongly openpilot corrects lateral position."),
-                 get_value=lambda: f"{p.get_float('SteerKP'):.2f}",
-                 on_click=_show("SteerKP"),
-                 visible=lambda: alt_on() and cs.steerKp != 0),
-      SettingRow("SteerLatAccel", "value", tr("Lateral Acceleration"),
-                 subtitle=tr("Maps steering torque to turning response."),
-                 get_value=lambda: f"{p.get_float('SteerLatAccel'):.2f}",
-                 on_click=_show("SteerLatAccel"),
-                 visible=lambda: alt_on() and cs.latAccelFactor != 0),
-      SettingRow("SteerRatio", "value", tr("Steer Ratio"),
-                 subtitle=tr("Relationship between steering wheel and road-wheel angle."),
-                 get_value=lambda: f"{p.get_float('SteerRatio'):.2f}",
-                 on_click=_show("SteerRatio"),
-                 visible=lambda: alt_on() and cs.steerRatio != 0),
+    lc_toggles = [
+      {
+        "title": tr("Lane Changes"),
+        "subtitle": tr("Allow openpilot to change lanes."),
+        "get": lambda: p.get_bool("LaneChanges"),
+        "set": lambda s: p.put_bool("LaneChanges", s),
+      },
+      {
+        "title": tr("Auto Lane Changes"),
+        "subtitle": tr("Signal triggers automatic lane change."),
+        "get": lambda: p.get_bool("NudgelessLaneChange"),
+        "set": lambda s: p.put_bool("NudgelessLaneChange", s),
+        "visible": lc_on,
+      },
+      {
+        "title": tr("One Per Signal"),
+        "subtitle": tr("One lane change per signal activation."),
+        "get": lambda: p.get_bool("OneLaneChange"),
+        "set": lambda s: p.put_bool("OneLaneChange", s),
+        "visible": nlc_on,
+      },
     ]
 
-    # ── Build sub-panels ──
-    self._sub_panels["steering_behavior"] = AetherSettingsView(
+    # Combined main panel: Steering Behavior + Lane Changes + ALT drill-down
+    merged_adjustors = sb_adjustors + lc_adjustors
+    merged_toggles = sb_toggles + lc_toggles
+
+    self._manager_view = SteeringSubPanelView(
       self,
-      [SettingSection(tr("Steering Behavior"), self._steering_behavior_rows, row_height=ROW_HEIGHT)],
-      header_title=tr("Steering Behavior"),
-      header_subtitle=tr("Configure when steering engages, pauses, and resumes."),
-      panel_style=PANEL_STYLE,
-      metrics=CUSTOM_METRICS,
+      tr("Steering"),
+      tr("Configure steering behavior and lane changes."),
+      merged_adjustors, merged_toggles,
+      include_alt_row=True,
     )
 
-    self._sub_panels["lane_changes"] = AetherSettingsView(
-      self,
-      [SettingSection(tr("Lane Changes"), self._lane_change_rows, row_height=ROW_HEIGHT)],
-      header_title=tr("Lane Changes"),
-      header_subtitle=tr("Configure lane change behavior, speed thresholds, and timing."),
-      panel_style=PANEL_STYLE,
-      metrics=CUSTOM_METRICS,
-    )
+    # ── Advanced Lateral Tuning (sub-panel, accessed via ALT row) ──
 
-    self._sub_panels["tuning"] = AetherSettingsView(
+    tuning_adjustors = [
+      {
+        "key": "SteerDelay",
+        "title": tr("Actuator Delay"),
+        "subtitle": tr("Time between steering command and vehicle response."),
+        "min_val": 0.01, "max_val": 1.0, "step": 0.01,
+        "unit": "s",
+        "visible": lambda: alt_on() and cs.steerActuatorDelay != 0,
+      },
+      {
+        "key": "SteerFriction",
+        "title": tr("Friction"),
+        "subtitle": tr("Compensates for steering friction around center."),
+        "min_val": 0.0, "max_val": max(1.0, cs.friction * 1.5), "step": 0.01,
+        "visible": lambda: alt_on() and cs.friction != 0,
+      },
+      {
+        "key": "SteerKP",
+        "title": tr("Kp Factor"),
+        "subtitle": tr("How strongly openpilot corrects lateral position."),
+        "min_val": max(0.01, cs.steerKp) * 0.5, "max_val": max(0.01, cs.steerKp) * 1.5, "step": 0.01,
+        "visible": lambda: alt_on() and cs.steerKp != 0,
+      },
+      {
+        "key": "SteerLatAccel",
+        "title": tr("Lateral Acceleration"),
+        "subtitle": tr("Maps steering torque to turning response."),
+        "min_val": max(0.01, cs.latAccelFactor) * 0.5, "max_val": max(0.01, cs.latAccelFactor) * 1.5, "step": 0.01,
+        "visible": lambda: alt_on() and cs.latAccelFactor != 0,
+      },
+      {
+        "key": "SteerRatio",
+        "title": tr("Steer Ratio"),
+        "subtitle": tr("Relationship between steering wheel and road-wheel angle."),
+        "min_val": max(0.01, cs.steerRatio) * 0.5, "max_val": max(0.01, cs.steerRatio) * 1.5, "step": 0.01,
+        "visible": lambda: alt_on() and cs.steerRatio != 0,
+      },
+    ]
+
+    tuning_toggles = [
+      {
+        "title": tr("Advanced Lateral Tuning"),
+        "subtitle": tr("Fine-tune steering response and auto-tuning."),
+        "get": lambda: p.get_bool("AdvancedLateralTune"),
+        "set": lambda s: p.put_bool("AdvancedLateralTune", s),
+      },
+      {
+        "title": tr("NNFF"),
+        "subtitle": tr("Neural net feedforward steering controller."),
+        "get": lambda: p.get_bool("NNFF"),
+        "set": lambda s: (p.put_bool("NNFF", s),
+                          s and p.put_bool("NNFFLite", False),
+                          _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
+        "is_enabled": lambda: cs.hasNNFFLog and not cs.isAngleCar,
+        "disabled_label": tr("Not Available"),
+        "visible": alt_on,
+      },
+      {
+        "title": tr("NNFF Lite"),
+        "subtitle": tr("Lightweight NNFF when full model is off."),
+        "get": lambda: p.get_bool("NNFFLite"),
+        "set": lambda s: (p.put_bool("NNFFLite", s),
+                          _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
+        "is_enabled": lambda: not cs.isAngleCar,
+        "disabled_label": tr("Not Available"),
+        "visible": alt_on,
+      },
+      {
+        "title": tr("Force Torque Ctrl"),
+        "subtitle": tr("Torque-based steering for smoother lane keeping."),
+        "get": lambda: p.get_bool("ForceTorqueController"),
+        "set": lambda s: (p.put_bool("ForceTorqueController", s),
+                          _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
+        "is_enabled": lambda: not cs.isTorqueCar and not cs.isAngleCar,
+        "disabled_label": tr("Not Available"),
+        "visible": alt_on,
+      },
+      {
+        "title": tr("Force Turn Desires"),
+        "subtitle": tr("Follow turn intent below min lane change speed."),
+        "get": lambda: p.get_bool("TurnDesires"),
+        "set": lambda s: (p.put_bool("TurnDesires", s),
+                          _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
+        "visible": alt_on,
+      },
+      {
+        "title": tr("Force Auto-Tune On"),
+        "subtitle": tr("Force-enable live auto-tuning for friction and lateral accel."),
+        "get": lambda: p.get_bool("ForceAutoTune"),
+        "set": lambda s: (p.put_bool("ForceAutoTune", s),
+                          s and p.put_bool("ForceAutoTuneOff", False),
+                          _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
+        "is_enabled": lambda: not cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
+        "disabled_label": tr("Not Available"),
+        "visible": alt_on,
+      },
+      {
+        "title": tr("Force Auto-Tune Off"),
+        "subtitle": tr("Force-disable auto-tuning and use your set values."),
+        "get": lambda: p.get_bool("ForceAutoTuneOff"),
+        "set": lambda s: (p.put_bool("ForceAutoTuneOff", s),
+                          s and p.put_bool("ForceAutoTune", False),
+                          _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
+        "is_enabled": lambda: cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
+        "disabled_label": tr("Not Available"),
+        "visible": alt_on,
+      },
+    ]
+
+    self._sub_panels["tuning"] = SteeringSubPanelView(
       self,
-      [SettingSection(tr("Advanced Lateral Tuning"), self._tuning_rows, row_height=ROW_HEIGHT)],
-      header_title=tr("Advanced Lateral Tuning"),
-      header_subtitle=tr("Fine-tune steering response, feedforward controllers, and auto-tuning."),
-      panel_style=PANEL_STYLE,
-      metrics=CUSTOM_METRICS,
+      tr("Advanced Lateral Tuning"),
+      tr("Fine-tune steering response, feedforward controllers, and auto-tuning."),
+      tuning_adjustors, tuning_toggles,
     )
 
     self._wire_sub_panels()
