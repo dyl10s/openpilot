@@ -14,16 +14,11 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   AetherListMetrics,
   AetherSettingsView,
   AetherSliderDialog,
-  BACK_BTN,
   DEFAULT_PANEL_STYLE,
   HubTile,
   SettingRow,
   SettingSection,
   TileGrid,
-  _draw_back_button,
-  _draw_rounded_fill,
-  _draw_rounded_stroke,
-  _point_hits,
 )
 
 
@@ -66,49 +61,6 @@ def _sync_parent(params, parent_key, child_keys):
   else:
     if params.get_bool(parent_key):
       params.put_bool(parent_key, False)
-
-
-class _BackButtonSettingsView(AetherSettingsView):
-  """AetherSettingsView with a back button pill drawn in the scroll content header."""
-
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, **kwargs)
-    self._back_btn_rect = None
-    self._has_header = False
-
-  def _target_at(self, mouse_pos):
-    if self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8):
-      return BACK_BTN
-    return super()._target_at(mouse_pos)
-
-  def _activate_target(self, target_id):
-    if target_id == BACK_BTN:
-      self._controller._go_back()
-    else:
-      super()._activate_target(target_id)
-
-  def _draw_scroll_content(self, rect, width):
-    pill_h = 52
-    y = rect.y + self._scroll_offset
-    pill_rect = rl.Rectangle(rect.x, y, rect.width, pill_h)
-    center_y = pill_rect.y + pill_h / 2
-
-    _draw_rounded_fill(pill_rect, rl.Color(18, 16, 24, 200), radius_px=14)
-    _draw_rounded_stroke(pill_rect, rl.Color(255, 255, 255, 22), radius_px=14)
-
-    mouse_pos = gui_app.last_mouse_event.pos
-    is_pressed = getattr(self, '_pressed_target', None) == BACK_BTN
-    is_hovered = _point_hits(mouse_pos, pill_rect, None, pad_x=0, pad_y=0) and \
-                 self._back_btn_rect and _point_hits(mouse_pos, self._back_btn_rect, None, pad_x=8, pad_y=8)
-    self._back_btn_rect = _draw_back_button(pill_rect, center_y, is_pressed, is_hovered)
-
-    crumb_x = pill_rect.x + 58
-    crumb_w = pill_rect.width - (crumb_x - pill_rect.x) - 20
-    crumb_rect = rl.Rectangle(crumb_x, pill_rect.y, crumb_w, pill_h)
-    self._breadcrumbs.draw(crumb_rect)
-
-    self._scroll_offset += pill_h + 12
-    super()._draw_scroll_content(rect, width)
 
 
 class SteeringManagerView(AetherSettingsView):
@@ -385,7 +337,7 @@ class StarPilotLateralLayout(_SettingsPage):
     ]
 
     # ── Build sub-panels ──
-    self._sub_panels["steering_behavior"] = _BackButtonSettingsView(
+    self._sub_panels["steering_behavior"] = AetherSettingsView(
       self,
       [SettingSection(tr("Steering Behavior"), self._steering_behavior_rows, row_height=ROW_HEIGHT)],
       header_title=tr("Steering Behavior"),
@@ -394,7 +346,7 @@ class StarPilotLateralLayout(_SettingsPage):
       metrics=CUSTOM_METRICS,
     )
 
-    self._sub_panels["lane_changes"] = _BackButtonSettingsView(
+    self._sub_panels["lane_changes"] = AetherSettingsView(
       self,
       [SettingSection(tr("Lane Changes"), self._lane_change_rows, row_height=ROW_HEIGHT)],
       header_title=tr("Lane Changes"),
@@ -403,7 +355,7 @@ class StarPilotLateralLayout(_SettingsPage):
       metrics=CUSTOM_METRICS,
     )
 
-    self._sub_panels["tuning"] = _BackButtonSettingsView(
+    self._sub_panels["tuning"] = AetherSettingsView(
       self,
       [SettingSection(tr("Advanced Lateral Tuning"), self._tuning_rows, row_height=ROW_HEIGHT)],
       header_title=tr("Advanced Lateral Tuning"),

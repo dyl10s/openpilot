@@ -44,15 +44,17 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   draw_group_header,
   draw_tab_bar,
   AetherSliderDialog,
-  _mix_colors,
-  _with_alpha,
-  _snap_rect,
-  _draw_rounded_fill,
-  _draw_rounded_stroke,
-  _point_hits,
-  _draw_text_fit_common,
+  mix_colors,
+  snap_rect,
+  draw_rounded_fill,
+  draw_rounded_stroke,
+  point_hits,
+  draw_text_fit_common,
   wrap_text,
-
+  SECTION_GAP,
+  SECTION_HEADER_HEIGHT,
+  SECTION_HEADER_GAP,
+  ROW_HEIGHT,
 )
 from openpilot.starpilot.common.connect_server import prepare_konik_server_switch
 
@@ -92,10 +94,6 @@ REPORT_CATEGORIES = [
 ]
 
 
-SECTION_GAP = AETHER_LIST_METRICS.section_gap
-SECTION_HEADER_HEIGHT = AETHER_LIST_METRICS.section_header_height
-SECTION_HEADER_GAP = AETHER_LIST_METRICS.section_header_gap
-ROW_HEIGHT = AETHER_LIST_METRICS.row_height
 FADE_HEIGHT = AETHER_LIST_METRICS.fade_height
 PANEL_STYLE = DEFAULT_PANEL_STYLE
 
@@ -414,17 +412,17 @@ class SystemSettingsManagerView(PanelManagerView):
   def _interactive_state(self, target_id: str, rect: rl.Rectangle, *, pad_y: float = 0) -> tuple[bool, bool]:
     self._interactive_rects[target_id] = rect
     parent_rect = None if target_id.startswith("static:") else self._scroll_rect
-    hovered = _point_hits(gui_app.last_mouse_event.pos, rect, parent_rect, pad_x=6, pad_y=pad_y)
+    hovered = point_hits(gui_app.last_mouse_event.pos, rect, parent_rect, pad_x=6, pad_y=pad_y)
     return hovered, self._pressed_target == target_id
 
   def _target_at(self, mouse_pos) -> str | None:
     for target_id, rect in self._interactive_rects.items():
       if target_id.startswith("static:"):
-        if _point_hits(mouse_pos, rect, None, pad_x=6, pad_y=0):
+        if point_hits(mouse_pos, rect, None, pad_x=6, pad_y=0):
           return target_id
     for target_id, rect in self._interactive_rects.items():
       if not target_id.startswith("static:"):
-        if _point_hits(mouse_pos, rect, self._scroll_rect, pad_x=6, pad_y=0):
+        if point_hits(mouse_pos, rect, self._scroll_rect, pad_x=6, pad_y=0):
           return target_id
     return None
 
@@ -686,9 +684,9 @@ class AetherBackupsCareDialog(Widget):
     btn_pad = 12.0
     col_w = (content_w - btn_pad * 2 - COL_GAP) / 2
 
-    d_rect = _snap_rect(rl.Rectangle(dx, dy, dialog_w, dialog_h))
-    _draw_rounded_fill(d_rect, rl.Color(10, 12, 16, 255), radius_px=24)
-    _draw_rounded_stroke(d_rect, rl.Color(255, 255, 255, 16), radius_px=24)
+    d_rect = snap_rect(rl.Rectangle(dx, dy, dialog_w, dialog_h))
+    draw_rounded_fill(d_rect, rl.Color(10, 12, 16, 255), radius_px=24)
+    draw_rounded_stroke(d_rect, rl.Color(255, 255, 255, 16), radius_px=24)
     rl.draw_rectangle_rec(rl.Rectangle(d_rect.x, d_rect.y, d_rect.width, 4), self._color)
 
     title_text = tr("Maintenance")
@@ -696,7 +694,7 @@ class AetherBackupsCareDialog(Widget):
     ts = measure_text_cached(self._font_title, title_text, title_size)
     rl.draw_text_ex(self._font_title, title_text, rl.Vector2(round(dx + (dialog_w - ts.x) / 2), round(dy + (84 - title_size) / 2)), title_size, 0, rl.WHITE)
 
-    status_rect = _snap_rect(rl.Rectangle(dx + MARGIN, dy + 84, content_w, 90))
+    status_rect = snap_rect(rl.Rectangle(dx + MARGIN, dy + 84, content_w, 90))
     draw_list_group_shell(status_rect, style=PANEL_STYLE)
 
     gui_label(rl.Rectangle(status_rect.x + 16, status_rect.y + 8, status_rect.width - 32, 18),
@@ -720,12 +718,12 @@ class AetherBackupsCareDialog(Widget):
     btn_fill = rl.Color(22, 24, 32, 255)
     btn_border = rl.Color(255, 255, 255, 40)
     btn_fill_hover = rl.Color(30, 32, 42, 255)
-    btn_fill_pressed = _mix_colors(self._color, rl.Color(0, 0, 0, 255), 0.15)
+    btn_fill_pressed = mix_colors(self._color, rl.Color(0, 0, 0, 255), 0.15)
     btn_radius = 14.0
 
     btn_group_y = dy + 192
     btn_group_h = 4 * 68 + 3 * 14 + btn_pad * 2
-    btn_group_rect = _snap_rect(rl.Rectangle(dx + MARGIN, btn_group_y, content_w, btn_group_h))
+    btn_group_rect = snap_rect(rl.Rectangle(dx + MARGIN, btn_group_y, content_w, btn_group_h))
     draw_list_group_shell(btn_group_rect, style=PANEL_STYLE)
 
     self._button_rects.clear()
@@ -735,7 +733,7 @@ class AetherBackupsCareDialog(Widget):
       col = i // 4
       bx = btn_group_rect.x + btn_pad + col * (col_w + COL_GAP)
       by = btn_group_rect.y + btn_pad + row * (68 + 14)
-      btn_rect = _snap_rect(rl.Rectangle(bx, by, col_w, 68))
+      btn_rect = snap_rect(rl.Rectangle(bx, by, col_w, 68))
       self._button_rects[btn_id] = btn_rect
 
       hovered = rl.check_collision_point_rec(mouse_pos, btn_rect)
@@ -764,11 +762,11 @@ class AetherBackupsCareDialog(Widget):
           border = btn_border
         text_color = AetherListColors.HEADER
 
-      _draw_rounded_fill(btn_rect, fill, radius_px=btn_radius)
-      _draw_rounded_stroke(btn_rect, border, thickness=2, radius_px=btn_radius)
+      draw_rounded_fill(btn_rect, fill, radius_px=btn_radius)
+      draw_rounded_stroke(btn_rect, border, thickness=2, radius_px=btn_radius)
 
       font_size = 20
-      _draw_text_fit_common(
+      draw_text_fit_common(
         self._font_btn,
         btn["text"],
         rl.Vector2(btn_rect.x + 12, btn_rect.y + (btn_rect.height - font_size) / 2),
@@ -780,13 +778,13 @@ class AetherBackupsCareDialog(Widget):
 
     cx = dx + (dialog_w - 320) / 2
     cy = d_rect.y + d_rect.height - 36 - 72
-    self._close_rect = _snap_rect(rl.Rectangle(cx, cy, 320, 72))
+    self._close_rect = snap_rect(rl.Rectangle(cx, cy, 320, 72))
 
     close_hovered = rl.check_collision_point_rec(mouse_pos, self._close_rect)
     close_pressed = self._pressed_btn_id == "close"
 
     if close_pressed:
-      close_fill = _mix_colors(self._color, rl.Color(0, 0, 0, 255), 0.2)
+      close_fill = mix_colors(self._color, rl.Color(0, 0, 0, 255), 0.2)
       close_border = self._color
     elif close_hovered:
       close_fill = self._color
