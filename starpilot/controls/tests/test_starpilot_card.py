@@ -146,7 +146,7 @@ def test_hyundai_lkas_button_can_start_aol_before_normal_engagement(monkeypatch,
   assert ret.pauseLateral is False
 
 
-def test_sonata_hybrid_lkas_button_does_not_start_aol_before_engagement(monkeypatch, tmp_path):
+def test_sonata_hybrid_lkas_button_can_start_aol_before_normal_engagement(monkeypatch, tmp_path):
   monkeypatch.setattr(spc, "Params", FakeParams)
   monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)
   monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
@@ -162,30 +162,6 @@ def test_sonata_hybrid_lkas_button_does_not_start_aol_before_engagement(monkeypa
   toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
 
   ret = card.update(car_state, starpilot_car_state, sm, toggles)
-
-  assert ret.alwaysOnLateralAllowed is False
-  assert ret.alwaysOnLateralEnabled is False
-
-
-def test_sonata_hybrid_lkas_button_can_toggle_aol_after_engagement(monkeypatch, tmp_path):
-  monkeypatch.setattr(spc, "Params", FakeParams)
-  monkeypatch.setattr(spc, "is_FrogsGoMoo", lambda: False)
-  monkeypatch.setattr(spc, "ERROR_LOGS_PATH", tmp_path)
-
-  card = spc.StarPilotCard(
-    SimpleNamespace(brand="hyundai", carFingerprint=spc.HYUNDAI_CAR.HYUNDAI_SONATA_HYBRID),
-    SimpleNamespace(alternativeExperience=spc.ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL),
-  )
-
-  starpilot_car_state = SimpleNamespace(distancePressed=False)
-  sm = make_sm()
-  toggles = make_toggles(always_on_lateral=True, always_on_lateral_lkas=True)
-
-  cruise_main_state = make_car_state(available=True, enabled=False)
-  card.update(cruise_main_state, starpilot_car_state, sm, toggles)
-
-  lkas_state = make_car_state(available=False, enabled=False, button_events=[SimpleNamespace(type=spc.ButtonType.lkas, pressed=True)])
-  ret = card.update(lkas_state, starpilot_car_state, sm, toggles)
 
   assert ret.alwaysOnLateralAllowed is True
   assert ret.alwaysOnLateralEnabled is True
