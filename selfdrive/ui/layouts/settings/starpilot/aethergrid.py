@@ -2840,6 +2840,8 @@ class AetherSettingsView(PanelManagerView):
     row = self._find_row(target_id)
     if row is None:
       return
+    if row.enabled is not None and not row.enabled():
+      return
     if row.navigate_to:
       self._controller._navigate_to(row.navigate_to)
     elif row.on_click:
