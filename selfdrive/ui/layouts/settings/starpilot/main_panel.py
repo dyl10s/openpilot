@@ -258,7 +258,7 @@ class StarPilotLayout(Widget):
       aethergrid._draw_rounded_fill(gr, rl.Color(139, 92, 246, max(0, min(255, a))), radius_px=100)
 
     # 0b. Dark fill — strict parity with HubTile _HUD_BG_ON
-    aethergrid._draw_rounded_fill(glass_rect, rl.Color(12, 10, 18, 230), radius_px=100)
+    aethergrid._draw_rounded_fill(glass_rect, rl.Color(12, 10, 18, 255), radius_px=100)
 
     # 0c. Full bright purple border — strict parity
     aethergrid._draw_rounded_stroke(glass_rect, rl.Color(139, 92, 246, 255), radius_px=100)

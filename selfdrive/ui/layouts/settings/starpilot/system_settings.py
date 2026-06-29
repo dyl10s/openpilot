@@ -52,6 +52,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   _point_hits,
   _draw_text_fit_common,
   wrap_text,
+
 )
 from openpilot.starpilot.common.connect_server import prepare_konik_server_switch
 
@@ -318,8 +319,8 @@ class SystemSettingsManagerView(PanelManagerView):
         [tr("Auto"), tr("Onroad"), tr("Offroad")],
         self._get_drive_mode_index,
         self._on_drive_mode_change,
-        statuses=[tr("Default"), tr("Force on"), tr("Force off")],
         style=PANEL_STYLE,
+        suppress_background=True,
       )
     )
 
@@ -434,13 +435,60 @@ class SystemSettingsManagerView(PanelManagerView):
       gui_app.push_widget(AetherBackupsCareDialog(self._controller))
 
   def _on_frame_created(self, frame) -> None:
-    self._drive_mode_control.set_parent_rect(self._scroll_rect)
+    pass
+
+  @property
+  def bottombar_height(self) -> float:
+    return 160.0
+
+  def _draw_bottombar(self, bottombar_rect: rl.Rectangle) -> None:
+    draw_list_group_shell(bottombar_rect, style=self.PANEL_STYLE)
+    self._drive_mode_control.render(bottombar_rect)
+
+  def _draw_static_elements(self, scroll_rect: rl.Rectangle, content_width: float) -> None:
+    if not self._uses_two_columns(content_width):
+      return
+
+    column_w = self._column_width(content_width)
+    right_x = scroll_rect.x + column_w + self.COLUMN_GAP
+
+    btn_size = 32.0
+    btn_rect = rl.Rectangle(
+      right_x + column_w - 12 - 44 - btn_size,
+      scroll_rect.y + self._system_max_container_h - 12 - 10 - btn_size,
+      btn_size, btn_size,
+    )
+
+    hovered, pressed = self._interactive_state("static:first_aid", btn_rect, pad_y=6)
+
+    if pressed:
+      fill = rl.Color(139, 92, 246, 8)
+      border = rl.Color(139, 92, 246, 28)
+    elif hovered:
+      fill = rl.Color(255, 255, 255, 4)
+      border = rl.Color(255, 255, 255, 10)
+    else:
+      fill = rl.Color(255, 255, 255, 0)
+      border = rl.Color(255, 255, 255, 0)
+
+    draw_soft_card(btn_rect, fill, border)
+
+    s = btn_size / 60.0
+    icon_x = btn_rect.x + (btn_rect.width - 60.0 * s) / 2.0
+    icon_y = btn_rect.y + (btn_rect.height - 60.0 * s) / 2.0
+
+    if pressed:
+      icon_color = rl.Color(139, 92, 246, 190)
+    elif hovered:
+      icon_color = rl.Color(160, 170, 185, 170)
+    else:
+      icon_color = rl.Color(160, 170, 185, 80)
+    draw_custom_icon("first_aid", icon_x, icon_y, s, icon_color)
 
   def _draw_header(self, rect: rl.Rectangle):
     pass
 
   def _measure_content_height(self, width: float) -> float:
-    RELOCATED_HEADER_HEIGHT = 80.0
     display_h = self._section_block_height(self._slider_section_height(self._display_slider_keys, width))
     power_h = self._section_block_height(self._slider_section_height(self._power_slider_keys, width))
 
@@ -456,7 +504,7 @@ class SystemSettingsManagerView(PanelManagerView):
       power_container_h = self._slider_section_height(self._power_slider_keys, column_w)
 
       left_overhead = 8.0 + 2 * (GROUP_HEADER_HEIGHT + GROUP_HEADER_GAP) + SECTION_GAP
-      left_natural_content_h = left_overhead + display_container_h + power_container_h + RELOCATED_HEADER_HEIGHT
+      left_natural_content_h = left_overhead + display_container_h + power_container_h
       
       tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, column_w - 24)
       right_natural_container_h = tiles_content_h + 24
@@ -473,7 +521,7 @@ class SystemSettingsManagerView(PanelManagerView):
 
       # Scale adjustors if needed
       if max_container_h < max_natural_h:
-        scale_f = (max_container_h - left_overhead - RELOCATED_HEADER_HEIGHT) / (left_natural_content_h - left_overhead - RELOCATED_HEADER_HEIGHT)
+        scale_f = max_container_h / left_natural_content_h
         row_h = max(60.0, 94.0 * scale_f)
         for key in self._display_slider_keys + self._power_slider_keys:
           self._adjustor_rows[key].custom_row_height = row_h
@@ -487,7 +535,7 @@ class SystemSettingsManagerView(PanelManagerView):
         self._adjustor_rows[key].custom_row_height = None
       self._connectivity_tile_grid._tile_height = None
       tiles_content_h = self.measure_page_grid_height(self._connectivity_tile_grid, width - 24)
-      return self._stacked_section_height([display_h, power_h, tiles_content_h + 24]) + RELOCATED_HEADER_HEIGHT
+      return self._stacked_section_height([display_h, power_h, tiles_content_h + 24])
 
   def _slider_section_height(self, keys: list[str], width: float) -> float:
     total = 0.0
@@ -501,47 +549,10 @@ class SystemSettingsManagerView(PanelManagerView):
     self._draw_basics_tab(y, rect.x, width)
 
   def _draw_basics_tab(self, y: float, x: float, width: float):
-    # Relocated Header elements drawn at the top
-    col_w = self._column_width(width) if self._uses_two_columns(width) else width
-    
-    # 1. Draw First Aid Button
-    btn_w, btn_h = 68.0, 68.0
-    btn_x = x + col_w - btn_w - 8
-    btn_y = y
-    btn_rect = rl.Rectangle(btn_x, btn_y, btn_w, btn_h)
-
-    hovered, pressed = self._interactive_state("static:first_aid", btn_rect)
-
-    if pressed:
-      fill = rl.Color(255, 255, 255, 30)
-      border = PANEL_STYLE.accent
-    elif hovered:
-      fill = rl.Color(255, 255, 255, 18)
-      border = PANEL_STYLE.accent
-    else:
-      fill = rl.Color(255, 255, 255, 8)
-      border = rl.Color(255, 255, 255, 20)
-
-    draw_soft_card(btn_rect, fill, border)
-
-    s = 48.0 / 60.0
-    icon_x = btn_x + (btn_w - 60.0 * s) / 2.0
-    icon_y = btn_y + (btn_h - 60.0 * s) / 2.0
-    icon_color = PANEL_STYLE.accent if (hovered or pressed) else AetherListColors.HEADER
-    draw_custom_icon("first_aid", icon_x, icon_y, s, icon_color)
-
-    # 2. Draw Drive Mode Control (AetherSegmentedControl)
-    control_rect = rl.Rectangle(x, y, col_w - btn_w - 12.0, btn_h)
-    self._drive_mode_control.render(control_rect)
-
-    RELOCATED_HEADER_HEIGHT = 80.0
-    y += RELOCATED_HEADER_HEIGHT
-
     if self._uses_two_columns(width):
       column_w = self._column_width(width)
-      adj_container_h = self._system_max_container_h - RELOCATED_HEADER_HEIGHT
+      adj_container_h = self._system_max_container_h
 
-      # Draw unified shell for the adjustors
       draw_list_group_shell(rl.Rectangle(x, y, column_w, adj_container_h), style=PANEL_STYLE)
       
       current_y = y + 8
@@ -555,7 +566,7 @@ class SystemSettingsManagerView(PanelManagerView):
       for index, key in enumerate(self._power_slider_keys):
         current_y = self._draw_slider_row(rl.Rectangle(x, current_y, column_w, 0), key, is_last=index == len(self._power_slider_keys) - 1)
 
-      self._draw_two_column_tile_grid(self._connectivity_tile_grid, x + column_w + self.COLUMN_GAP, y - RELOCATED_HEADER_HEIGHT, column_w, self._system_max_container_h)
+      self._draw_two_column_tile_grid(self._connectivity_tile_grid, x + column_w + self.COLUMN_GAP, y, column_w, self._system_max_container_h)
       return
 
     y = self._draw_slider_section(y, x, width, tr("Display"), self._display_slider_keys)

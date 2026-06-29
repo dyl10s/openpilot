@@ -410,6 +410,87 @@ def init_list_panel(rect: rl.Rectangle, style: PanelStyle | None = None, metrics
   return frame, scroll_rect, content_width
 
 
+def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
+  snapped = _snap_rect(rect)
+  rx, ry, rw, rh = int(snapped.x), int(snapped.y), int(snapped.width), int(snapped.height)
+  face = rl.Rectangle(rx, ry, rw, rh)
+
+  off_border = _HUD_BORDER_OFF
+
+  for i in range(4, 0, -1):
+    off = i * 2.5 * glow
+    gr = rl.Rectangle(rx - off, ry - off, rw + off * 2, rh + off * 2)
+    a = int(25 * (1.0 - i / 5) * glow)
+    _draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=100)
+
+  _draw_rounded_fill(face, _HUD_BG_ON, radius_px=100)
+
+  bc = rl.Color(
+    max(0, min(255, int(off_border.r + (accent.r - off_border.r) * glow))),
+    max(0, min(255, int(off_border.g + (accent.g - off_border.g) * glow))),
+    max(0, min(255, int(off_border.b + (accent.b - off_border.b) * glow))),
+    255)
+  _draw_rounded_stroke(face, bc, radius_px=100)
+
+  return face, accent
+
+
+def draw_constellation(face: rl.Rectangle, accent: rl.Color, glow: float, seed: str):
+  rng = random.Random(seed)
+  num = _NODE_NUM_MIN + rng.randint(0, _NODE_NUM_MAX - _NODE_NUM_MIN)
+  regions = [
+    (0.18, 0.30, 0.18, 0.30), (0.70, 0.82, 0.18, 0.30),
+    (0.18, 0.30, 0.70, 0.82), (0.70, 0.82, 0.70, 0.82),
+    (0.38, 0.62, 0.18, 0.28), (0.38, 0.62, 0.72, 0.82),
+    (0.18, 0.28, 0.38, 0.62), (0.72, 0.82, 0.38, 0.62),
+  ]
+  ax_min, ax_max, ay_min, ay_max = regions[rng.randint(0, 7)]
+  ax = ax_min + rng.random() * (ax_max - ax_min)
+  ay = ay_min + rng.random() * (ay_max - ay_min)
+  nodes = []
+  for _ in range(num):
+    for _ in range(20):
+      a = rng.random() * 2.0 * math.pi
+      r = 0.05 + rng.random() * 0.11
+      x = max(0.04, min(0.96, ax + r * math.cos(a)))
+      y = max(0.04, min(0.96, ay + r * math.sin(a)))
+      if all(math.sqrt((x - n['x'])**2 + (y - n['y'])**2) >= 0.07 for n in nodes):
+        nodes.append({'x': x, 'y': y})
+        break
+    else:
+      nodes.append({'x': x, 'y': y})
+  nodes.sort(key=lambda n: -(abs(n['x'] - 0.5) + abs(n['y'] - 0.5)))
+  for i, n in enumerate(nodes):
+    n['w'] = 0 if i == 0 else 1 if i == 1 else 2
+  vecs = [(0, j) for j in range(1, num)]
+
+  rx, ry, rw, rh = int(face.x), int(face.y), int(face.width), int(face.height)
+  va = int(10 + glow * 25)
+  if va > 2:
+    vc = rl.Color(accent.r, accent.g, accent.b, min(255, va))
+    for i, j in vecs:
+      x1 = int(rx + nodes[i]['x'] * rw)
+      y1 = int(ry + nodes[i]['y'] * rh)
+      x2 = int(rx + nodes[j]['x'] * rw)
+      y2 = int(ry + nodes[j]['y'] * rh)
+      rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), 1.0, vc)
+
+  for nd in nodes:
+    nx = int(rx + nd['x'] * rw)
+    ny = int(ry + nd['y'] * rh)
+    if nd['w'] == 0:
+      core_r, diff_r, col = 3.0, 12.0, _CONST_PRIMARY
+    elif nd['w'] == 1:
+      core_r, diff_r, col = 2.0, 8.0, _CONST_SECONDARY
+    else:
+      core_r, diff_r, col = 1.2, 0.0, _CONST_TERTIARY
+    da = int(5 + glow * 20)
+    if diff_r > 0 and da > 2:
+      rl.draw_circle(nx, ny, int(diff_r), rl.Color(col.r, col.g, col.b, min(255, da)))
+    ca = int(130 + glow * 125)
+    rl.draw_circle(nx, ny, int(core_r), rl.Color(col.r, col.g, col.b, min(255, ca)))
+
+
 def draw_interactive_rect(target_id: str, rect: rl.Rectangle, interactive_rects: dict[str, rl.Rectangle],
                            pressed_target: str | None, scroll_rect: rl.Rectangle | None = None,
                            pad_x: float = 6, pad_y: float = 0) -> tuple[bool, bool]:
@@ -556,6 +637,16 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   def _draw_scroll_content(self, scroll_rect: rl.Rectangle, content_width: float) -> None:
     """Override to render visible content rows inside the scissor region."""
 
+  def _draw_static_elements(self, scroll_rect: rl.Rectangle, content_width: float) -> None:
+    """Override to render fixed-position elements above the scroll area (outside scissor)."""
+
+  def _draw_bottombar(self, bottombar_rect: rl.Rectangle) -> None:
+    """Override to render a fixed bottom bar below the scroll area."""
+
+  @property
+  def bottombar_height(self) -> float:
+    return 0.0
+
   @property
   def vertical_scrolling_disabled(self) -> bool:
     return False
@@ -571,6 +662,10 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     self._on_frame_created(frame)
 
     self._draw_header(frame.header)
+
+    btm_h = self.bottombar_height
+    if btm_h > 0:
+      scroll_rect.height = max(0.0, scroll_rect.height - btm_h)
 
     self._content_height = self._measure_content_height(content_width)
     self._scroll_panel.set_enabled(self.is_visible)
@@ -590,12 +685,19 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     self._draw_scroll_content(scroll_rect, content_width)
     rl.end_scissor_mode()
 
+    self._draw_static_elements(scroll_rect, content_width)
+
     if self._content_height > scroll_rect.height and not scroll_disabled:
       self._scrollbar.render(scroll_rect, self._content_height, self._scroll_offset)
 
     if not scroll_disabled:
       draw_list_scroll_fades(scroll_rect, self._content_height, self._scroll_offset,
                              AetherListColors.PANEL_BG)
+
+    if btm_h > 0:
+      btm_rect = rl.Rectangle(scroll_rect.x, scroll_rect.y + scroll_rect.height,
+                              content_width, btm_h)
+      self._draw_bottombar(btm_rect)
 
   # ── shared layout helpers ─────────────────────────────────
 
@@ -3753,28 +3855,8 @@ class AetherTile(Widget):
     sh = snapped.height * sq
     ox = snapped.x + (snapped.width - sw) / 2
     oy = snapped.y + (snapped.height - sh) / 2
-    rx, ry, rw, rh = int(ox), int(oy), int(sw), int(sh)
-    face = rl.Rectangle(rx, ry, rw, rh)
-
-    off_border = _HUD_BORDER_OFF
-
-    for i in range(4, 0, -1):
-      off = i * 2.5 * glow
-      gr = rl.Rectangle(rx - off, ry - off, rw + off * 2, rh + off * 2)
-      a = int(25 * (1.0 - i / 5) * glow)
-      _draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=100)
-
-    _draw_rounded_fill(face, _HUD_BG_ON, radius_px=100)
-
-    bc = rl.Color(
-      max(0, min(255, int(off_border.r + (accent.r - off_border.r) * glow))),
-      max(0, min(255, int(off_border.g + (accent.g - off_border.g) * glow))),
-      max(0, min(255, int(off_border.b + (accent.b - off_border.b) * glow))),
-      255)
-    _draw_rounded_stroke(face, bc, radius_px=100)
-
+    face, accent = draw_hud_background(rl.Rectangle(ox, oy, sw, sh), accent, glow)
     self._draw_constellation(face, accent, glow)
-
     return face, accent
 
   def _render(self, rect: rl.Rectangle):
@@ -5282,6 +5364,7 @@ class AetherSegmentedControl(Widget):
     statuses: list[str | Callable[[], str] | None] | None = None,
     compact: bool = False,
     style: PanelStyle | None = None,
+    suppress_background: bool = False,
   ):
     super().__init__()
     self._options = options
@@ -5292,6 +5375,7 @@ class AetherSegmentedControl(Widget):
       self._statuses += [""] * (len(self._options) - len(self._statuses))
     self._compact = compact
     self._style = style
+    self._suppress_background = suppress_background
     self._font = gui_app.font(FontWeight.BOLD)
     self._font_status = gui_app.font(FontWeight.NORMAL)
     self._pressed_index = -1
@@ -5364,7 +5448,8 @@ class AetherSegmentedControl(Widget):
     for i in range(len(self._option_offsets)):
       self._option_offsets[i] += (self._option_targets[i] - self._option_offsets[i]) * (1 - math.exp(-dt / PLATE_TAU))
 
-    draw_soft_card(rect, rl.Color(255, 255, 255, 4), rl.Color(255, 255, 255, 14))
+    if not self._suppress_background:
+      draw_soft_card(rect, rl.Color(255, 255, 255, 4), rl.Color(255, 255, 255, 14))
 
     inner_pad = 4 if self._compact else 5
     gap = 4 if self._compact else 6
