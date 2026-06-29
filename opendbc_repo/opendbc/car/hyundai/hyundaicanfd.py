@@ -145,6 +145,15 @@ def create_steering_messages(packer, CP, CAN, enabled, lat_active, apply_torque,
           "DAMP_FACTOR": 100,
           "HAS_LANE_SAFETY": 0,
         })
+      elif lkas_base_values:
+        for signal in ("LKA_MODE", "LKA_AVAILABLE", "LKA_WARNING", "LKA_ICON", "FCA_SYSWARN",
+                       "LFA_BUTTON", "LKA_ASSIST", "DAMP_FACTOR", "HAS_LANE_SAFETY"):
+          if signal in lkas_base_values:
+            lkas_values[signal] = lkas_base_values[signal]
+        lkas_values.update({
+          "TORQUE_REQUEST": 0,
+          "STEER_REQ": 0,
+        })
       else:
         lkas_values.update({
           "LKA_MODE": 0,
