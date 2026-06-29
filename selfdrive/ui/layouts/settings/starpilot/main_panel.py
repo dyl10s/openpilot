@@ -102,8 +102,7 @@ class StarPilotLayout(Widget):
   def navigate_back(self):
     if self._panel_stack:
       self._panel_stack.pop()
-      self._update_sub_panel_visibility()
-      self._update_depth()
+      self._commit_navigation()
     elif self._current_panel != StarPilotPanelType.MAIN:
       if self._current_category_idx is not None:
         cat_info = self.CATEGORIES[self._current_category_idx]
@@ -116,9 +115,7 @@ class StarPilotLayout(Widget):
         self._set_current_panel(StarPilotPanelType.MAIN)
     elif self._current_category_idx is not None:
       self._current_category_idx = None
-      self._rebuild_grid()
-      if self._depth_callback:
-        self._depth_callback(0)
+      self._set_current_panel(StarPilotPanelType.MAIN)
 
   def _update_depth(self):
     depth = 0
@@ -137,14 +134,17 @@ class StarPilotLayout(Widget):
     if self._depth_callback:
       self._depth_callback(depth)
 
+  def _commit_navigation(self):
+    self._update_sub_panel_visibility()
+    self._update_depth()
+
   def _push_sub_panel(self, sub_panel_name: str):
     if sub_panel_name:
       self._panel_stack.append((self._current_panel, sub_panel_name))
     else:
       while self._panel_stack and self._panel_stack[-1][0] == self._current_panel:
         self._panel_stack.pop()
-    self._update_sub_panel_visibility()
-    self._update_depth()
+    self._commit_navigation()
 
   def _update_sub_panel_visibility(self):
     panel = self._panels[self._current_panel].instance
@@ -227,14 +227,21 @@ class StarPilotLayout(Widget):
   def _set_current_panel(self, panel_type: StarPilotPanelType):
     if panel_type != self._current_panel:
       if self._current_panel != StarPilotPanelType.MAIN:
-        self._panels[self._current_panel].instance.hide_event()
+        old = self._panels[self._current_panel].instance
+        old.hide_event()
+        if hasattr(old, 'set_current_sub_panel'):
+          old.set_current_sub_panel("")
       self._current_panel = panel_type
+      self._panel_stack.clear()
       if panel_type != StarPilotPanelType.MAIN:
         self._panels[panel_type].instance.show_event()
       else:
         self._rebuild_grid()
+    elif panel_type == StarPilotPanelType.MAIN:
+      self._rebuild_grid()
+      self._panel_stack.clear()
 
-    self._update_depth()
+    self._commit_navigation()
 
   def _render(self, rect: rl.Rectangle):
     TOP_BAR_HEIGHT = 80

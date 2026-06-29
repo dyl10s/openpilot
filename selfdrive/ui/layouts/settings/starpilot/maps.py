@@ -1136,6 +1136,7 @@ class StarPilotMapsLayout(StarPilotPanel):
     self._browser_card.render(rl.Rectangle(rect.x, y, width, browser_height))
 
   def _render(self, rect: rl.Rectangle):
+    self._update_state()
     self.set_rect(rect)
     frame, scroll_rect, content_width = init_list_panel(rect, PANEL_STYLE, MAPS_METRICS)
 

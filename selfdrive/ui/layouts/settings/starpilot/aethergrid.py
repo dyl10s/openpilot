@@ -1025,6 +1025,7 @@ class BreadcrumbController:
       while len(gui_app._nav_stack) > 1:
         gui_app.pop_widget()
       layout._panel_stack.clear()
+      layout._update_sub_panel_visibility()
       layout._current_category_idx = None
       layout._set_current_panel(StarPilotPanelType.MAIN)
     elif target == "action:category":
@@ -1036,12 +1037,12 @@ class BreadcrumbController:
       if "buttons" in cat:
         layout._set_current_panel(StarPilotPanelType.MAIN)
       else:
-        layout._update_sub_panel_visibility()
+        layout._commit_navigation()
     elif target == "action:panel":
       while len(gui_app._nav_stack) > 1:
         gui_app.pop_widget()
       layout._panel_stack.clear()
-      layout._update_sub_panel_visibility()
+      layout._commit_navigation()
     elif target.startswith("action:nav_stack:"):
       target_idx = int(target.split(":")[-1])
       while len(gui_app._nav_stack) > target_idx + 1:
