@@ -36,6 +36,11 @@ _CONST_TERTIARY = rl.Color(145, 155, 175, 255)
 _NODE_NUM_MIN = 3
 _NODE_NUM_MAX = 5
 
+# Custom vector icon layout constants (scribble.py coordinate system)
+CUSTOM_ICON_BASE_SIZE = 100.0
+CUSTOM_ICON_SCALE_MULT = 1.25
+CUSTOM_ICON_CANVAS_SIZE = 60.0
+
 
 class SPACING:
   xs: int = 4
@@ -76,6 +81,28 @@ def _get_rgba(color) -> tuple[int, int, int, int]:
 def with_alpha(color, alpha: int) -> rl.Color:
   r, g, b, a = _get_rgba(color)
   return rl.Color(r, g, b, max(0, min(a, int(alpha))))
+
+
+def clamp_and_snap(value: float, min_val: float, max_val: float, step: float) -> float:
+    if step <= 0:
+        return max(min_val, min(max_val, value))
+    snapped = round((value - min_val) / step) * step + min_val
+    return max(min_val, min(max_val, snapped))
+
+
+def value_fraction(value: float, min_val: float, max_val: float) -> float:
+    val_range = max_val - min_val
+    if val_range == 0:
+        return 0.0
+    return max(0.0, min(1.0, (value - min_val) / val_range))
+
+
+def update_val_from_mouse(mouse_pos: MousePos, track_rect: rl.Rectangle, min_val: float, max_val: float, step: float) -> float:
+    if track_rect.width <= 0:
+        return min_val
+    rel_x = max(0.0, min(1.0, (mouse_pos.x - track_rect.x) / track_rect.width))
+    val = min_val + rel_x * (max_val - min_val)
+    return clamp_and_snap(val, min_val, max_val, step)
 
 
 def mix_colors(base, accent, weight: float, alpha: int | None = None) -> rl.Color:
@@ -674,11 +701,11 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
   def _make_toggle_tile(self, d: dict) -> ToggleTile:
     return ToggleTile(
       title=d["title"],
-      get_state=d.get("get_state", d.get("get")),
-      set_state=d.get("set_state", d.get("set")),
+      get_state=d["get_state"],
+      set_state=d["set_state"],
       bg_color=self.PANEL_STYLE.accent,
-      desc=d.get("subtitle", d.get("desc", "")),
-      is_enabled=d.get("is_enabled", d.get("enabled")),
+      desc=d.get("subtitle", ""),
+      is_enabled=d.get("is_enabled"),
       disabled_label=d.get("disabled_label", ""),
     )
 
@@ -686,11 +713,11 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
     return AetherMultiSelectTile(
       title=d["title"],
       options=d["options"],
-      get_values=d.get("get_values", d.get("get")),
-      set_values=d.get("set_values", d.get("set")),
+      get_values=d["get_values"],
+      set_values=d["set_values"],
       bg_color=self.PANEL_STYLE.accent,
-      desc=d.get("subtitle", d.get("desc", "")),
-      is_enabled=d.get("is_enabled", d.get("enabled")),
+      desc=d.get("subtitle", ""),
+      is_enabled=d.get("is_enabled"),
     )
 
   # ── pagination ─────────────────────────────────────────────
@@ -1924,10 +1951,7 @@ class AetherInlineRangeControl(Widget):
     self.reset_interaction()
 
   def _clamp_and_snap(self, value: float) -> float:
-    if self.step <= 0:
-      return max(self.min_val, min(self.max_val, value))
-    snapped = round((value - self.min_val) / self.step) * self.step + self.min_val
-    return max(self.min_val, min(self.max_val, snapped))
+    return clamp_and_snap(value, self.min_val, self.max_val, self.step)
 
   def _step_value(self, direction: int) -> bool:
     new_val = self._clamp_and_snap(self.current_val + direction * self.step)
@@ -1939,19 +1963,12 @@ class AetherInlineRangeControl(Widget):
     return True
 
   def _value_fraction(self, value: float) -> float:
-    value_range = self.max_val - self.min_val
-    if value_range == 0:
-      return 0.0
-    return max(0.0, min(1.0, (value - self.min_val) / value_range))
+    return value_fraction(value, self.min_val, self.max_val)
 
   def _update_val_from_mouse(self, mouse_pos: MousePos) -> None:
-    if self._track_rect.width <= 0:
-      return
-    rel_x = max(0.0, min(1.0, (mouse_pos.x - self._track_rect.x) / self._track_rect.width))
-    value = self.min_val + rel_x * (self.max_val - self.min_val)
-    snapped = self._clamp_and_snap(value)
-    if snapped != self.current_val:
-      self.current_val = snapped
+    new_val = update_val_from_mouse(mouse_pos, self._track_rect, self.min_val, self.max_val, self.step)
+    if new_val != self.current_val:
+      self.current_val = new_val
       self._on_change(self.current_val)
 
   def _commit_if_needed(self) -> None:
@@ -3260,6 +3277,7 @@ class AetherTile(Widget):
     self._plate_offset: float = 0.0
     self._plate_target: float = 0.0
     self._is_pressed: bool = False
+    self._squish: float = 1.0
 
   def _surface_rect(self, rect: rl.Rectangle) -> rl.Rectangle:
     return _inset_rect(snap_rect(rect), TILE_INSET)
@@ -3283,6 +3301,7 @@ class AetherTile(Widget):
     if rl.check_collision_point_rec(mouse_pos, self._hit_rect):
       self._is_pressed = True
       self._plate_target = 1.0
+      self._squish = 0.95
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if not self.enabled:
@@ -3306,6 +3325,14 @@ class AetherTile(Widget):
     if self._plate_offset == self._plate_target:
       return
     self._plate_offset += (self._plate_target - self._plate_offset) * (1 - math.exp(-dt / PLATE_TAU))
+
+  def _update_squish(self):
+    dt = rl.get_frame_time()
+    if self._squish < 1.0:
+      self._squish += (1.0 - self._squish) * 15.0 * dt
+
+  def _update_state(self):
+    self._update_squish()
 
   def _render_layers(self, rect: rl.Rectangle, radius: float = TILE_RADIUS, segments: int = TILE_SEGMENTS):
     self._animate_plate(rl.get_frame_time())
@@ -3496,12 +3523,6 @@ class AetherTile(Widget):
     desc_size: int = 18,
     custom_icon_key: str | None = None,
   ):
-    # Parameters for custom vector icons: base 100x100 layout footprint,
-    # 25% scale increase, and 60x60 canvas size defined in scribble.py coordinates.
-    custom_icon_base_size = 100.0
-    custom_icon_scale_mult = 1.25
-    custom_icon_canvas_size = 60.0
-
     content_pad = SPACING.tile_content
     max_w = face.width - (content_pad * 2)
     scale = max(0.82, min(1.12, min(face.width / 360.0, face.height / 205.0)))
@@ -3512,7 +3533,7 @@ class AetherTile(Widget):
     has_icon = (icon is not None) or (custom_icon_key is not None)
     icon_scale = min(0.80, max(0.56, scale * 0.72)) if has_icon else 0.0
     if custom_icon_key:
-      icon_height = custom_icon_base_size * custom_icon_scale_mult * icon_scale
+      icon_height = CUSTOM_ICON_BASE_SIZE * CUSTOM_ICON_SCALE_MULT * icon_scale
     elif icon:
       icon_height = icon.height * icon_scale
     else:
@@ -3529,9 +3550,9 @@ class AetherTile(Widget):
     )
 
     if custom_icon_key:
-      icon_width = custom_icon_base_size * custom_icon_scale_mult * icon_scale
+      icon_width = CUSTOM_ICON_BASE_SIZE * CUSTOM_ICON_SCALE_MULT * icon_scale
       icon_x = face.x + (face.width - icon_width) / 2
-      s = icon_scale * (custom_icon_base_size / custom_icon_canvas_size) * custom_icon_scale_mult
+      s = icon_scale * (CUSTOM_ICON_BASE_SIZE / CUSTOM_ICON_CANVAS_SIZE) * CUSTOM_ICON_SCALE_MULT
       self._draw_custom_icon(custom_icon_key, icon_x, layout["top"], s, mix_colors(rl.Color(255, 255, 255, 255), self.surface_color, 0.08))
     elif icon:
       icon_width = icon.width * icon_scale
@@ -3655,7 +3676,7 @@ class AetherTile(Widget):
       rl.draw_circle(nx, ny, int(core_r), rl.Color(col.r, col.g, col.b, min(255, ca)))
 
   def _render_hud_background(self, rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
-    sq = getattr(self, '_squish', 1.0)
+    sq = self._squish
     snapped = snap_rect(rect)
     sw = snapped.width * sq
     sh = snapped.height * sq
@@ -3690,20 +3711,6 @@ class HubTile(AetherTile):
     self._icon = None
     self._font_title = gui_app.font(FontWeight.BOLD)
     self._font_desc = gui_app.font(FontWeight.MEDIUM)
-    self._squish: float = 1.0
-
-  def _update_state(self):
-    dt = rl.get_frame_time()
-    if self._squish < 1.0:
-      self._squish += (1.0 - self._squish) * 15.0 * dt
-
-  def _handle_mouse_press(self, mouse_pos: MousePos):
-    if not self.enabled:
-      return
-    if rl.check_collision_point_rec(mouse_pos, self._hit_rect):
-      self._is_pressed = True
-      self._plate_target = 1.0
-      self._squish = 0.95
 
   def _render(self, rect: rl.Rectangle):
     self._animate_plate(rl.get_frame_time())
@@ -3725,23 +3732,17 @@ class HubTile(AetherTile):
 
     icon_h = 0.0
     if self.custom_icon_key:
-      icon_base_size = 100.0
-      icon_scale_mult = 1.25
-      icon_canvas_size = 60.0
       icon_scale = min(0.80, max(0.56, text_scale * 0.72))
-      icon_h = icon_base_size * icon_scale_mult * icon_scale
+      icon_h = CUSTOM_ICON_BASE_SIZE * CUSTOM_ICON_SCALE_MULT * icon_scale
 
     total_h = icon_h + (gap if icon_h > 0 else 0) + title_size + (gap if desc_to_render else 0) + desc_size
     content_top = ry + max(0, (rh - total_h) / 2)
 
     if self.custom_icon_key:
-      icon_base_size = 100.0
-      icon_scale_mult = 1.25
-      icon_canvas_size = 60.0
       icon_scale = min(0.80, max(0.56, text_scale * 0.72))
-      icon_width = icon_base_size * icon_scale_mult * icon_scale
+      icon_width = CUSTOM_ICON_BASE_SIZE * CUSTOM_ICON_SCALE_MULT * icon_scale
       icon_x = rx + (rw - icon_width) / 2
-      s = icon_scale * (icon_base_size / icon_canvas_size) * icon_scale_mult
+      s = icon_scale * (CUSTOM_ICON_BASE_SIZE / CUSTOM_ICON_CANVAS_SIZE) * CUSTOM_ICON_SCALE_MULT
       self._draw_custom_icon(self.custom_icon_key, icon_x, content_top, s, mix_colors(rl.Color(255, 255, 255, 255), accent, 0.08))
       content_top += icon_h + gap
 
@@ -3799,22 +3800,12 @@ class ToggleTile(AetherTile):
     self._disabled_label = disabled_label
     self._show_led = show_led
     self._glow: float = 1.0 if (self.get_state() and (is_enabled or True)) else 0.0
-    self._squish: float = 1.0
 
   def _update_state(self):
+    super()._update_state()
     dt = rl.get_frame_time()
     target = 1.0 if self.get_state() and self.enabled else 0.0
     self._glow += (target - self._glow) * 10.0 * dt
-    if self._squish < 1.0:
-      self._squish += (1.0 - self._squish) * 15.0 * dt
-
-  def _handle_mouse_press(self, mouse_pos: MousePos):
-    if not self.enabled:
-      return
-    if rl.check_collision_point_rec(mouse_pos, self._hit_rect):
-      self._is_pressed = True
-      self._plate_target = 1.0
-      self._squish = 0.95
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if self._is_pressed:
@@ -3983,20 +3974,6 @@ class ValueTile(AetherTile):
     self._font_desc = gui_app.font(FontWeight.MEDIUM)
     self._active_color = self.surface_color
     self._disabled_color = rl.Color(120, 120, 120, 255)
-    self._squish: float = 1.0
-
-  def _update_state(self):
-    dt = rl.get_frame_time()
-    if self._squish < 1.0:
-      self._squish += (1.0 - self._squish) * 15.0 * dt
-
-  def _handle_mouse_press(self, mouse_pos: MousePos):
-    if not self.enabled:
-      return
-    if rl.check_collision_point_rec(mouse_pos, self._hit_rect):
-      self._is_pressed = True
-      self._plate_target = 1.0
-      self._squish = 0.95
 
   def _render(self, rect: rl.Rectangle):
     enabled = self.enabled
@@ -4103,12 +4080,6 @@ class SliderTile(AetherTile):
         self._press_start_x = 0.0
         self._press_start_time: float | None = None
         self._long_press_triggered = False
-        self._squish: float = 1.0
-
-    def _update_state(self):
-        dt = rl.get_frame_time()
-        if self._squish < 1.0:
-            self._squish += (1.0 - self._squish) * 15.0 * dt
 
     def _handle_mouse_press(self, mouse_pos: MousePos):
         if rl.check_collision_point_rec(mouse_pos, self._hit_rect) and self.enabled:
@@ -4308,10 +4279,7 @@ class AetherSlider(Widget):
       self.on_commit(self.current_val)
 
   def _clamp_and_snap(self, val: float) -> float:
-    if self.step <= 0:
-      return max(self.min_val, min(self.max_val, val))
-    snapped = round((val - self.min_val) / self.step) * self.step + self.min_val
-    return max(self.min_val, min(self.max_val, snapped))
+    return clamp_and_snap(val, self.min_val, self.max_val, self.step)
 
   def _button_width(self, rect: rl.Rectangle) -> int:
     return min(SLIDER_BUTTON_SIZE, max(44, int(rect.width * 0.14)))
@@ -4463,11 +4431,8 @@ class AetherSlider(Widget):
     button_w = self._button_width(self._rect)
     track_x = self._rect.x + button_w
     track_w = self._rect.width - 2 * button_w
-    if track_w <= 0:
-      return
-    rel_x = max(0.0, min(1.0, (mouse_pos.x - track_x) / track_w))
-    val = self.min_val + rel_x * (self.max_val - self.min_val)
-    snapped = self._clamp_and_snap(val)
+    track_rect = rl.Rectangle(track_x, self._rect.y, track_w, self._rect.height)
+    snapped = update_val_from_mouse(mouse_pos, track_rect, self.min_val, self.max_val, self.step)
     if snapped != self.current_val:
       self.current_val = snapped
       self.on_change(self.current_val)
@@ -4520,23 +4485,14 @@ class AetherSliderDialog(Widget):
     self._thumb_rect = rl.Rectangle(0, 0, 0, 0)
 
   def _value_fraction(self, value: float) -> float:
-    val_range = self.max_val - self.min_val
-    if val_range == 0:
-      return 0.0
-    return max(0.0, min(1.0, (value - self.min_val) / val_range))
+    return value_fraction(value, self.min_val, self.max_val)
 
   def _clamp_and_snap(self, val: float) -> float:
-    if self.step <= 0:
-      return max(self.min_val, min(self.max_val, val))
-    snapped = round((val - self.min_val) / self.step) * self.step + self.min_val
-    return max(self.min_val, min(self.max_val, snapped))
+    return clamp_and_snap(val, self.min_val, self.max_val, self.step)
 
   def _update_val_from_mouse(self, mouse_pos: MousePos) -> None:
-    if self._track_rect.width <= 0:
-      return
-    rel_x = max(0.0, min(1.0, (mouse_pos.x - self._track_rect.x) / self._track_rect.width))
-    val = self.min_val + rel_x * (self.max_val - self.min_val)
-    self._current_val = self._clamp_and_snap(val)
+    new_val = update_val_from_mouse(mouse_pos, self._track_rect, self.min_val, self.max_val, self.step)
+    self._current_val = new_val
 
   def formatted_value(self) -> str:
     return format_adjustor_value(self._current_val, step=self.step, unit=self._unit, labels=self._labels)
@@ -5035,20 +4991,6 @@ class AetherMultiSelectTile(AetherTile):
     self._font_desc = gui_app.font(FontWeight.MEDIUM)
     self._active_color = self.surface_color
     self._disabled_color = rl.Color(120, 120, 120, 255)
-    self._squish: float = 1.0
-
-  def _update_state(self):
-    dt = rl.get_frame_time()
-    if self._squish < 1.0:
-      self._squish += (1.0 - self._squish) * 15.0 * dt
-
-  def _handle_mouse_press(self, mouse_pos: MousePos):
-    if not self.enabled:
-      return
-    if rl.check_collision_point_rec(mouse_pos, self._hit_rect):
-      self._is_pressed = True
-      self._plate_target = 1.0
-      self._squish = 0.95
 
   def _handle_mouse_release(self, mouse_pos: MousePos):
     if self._is_pressed:

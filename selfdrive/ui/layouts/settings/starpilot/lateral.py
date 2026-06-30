@@ -190,14 +190,14 @@ class SteeringSubPanelView(PanelManagerView):
     wrapped = []
     for d in visible:
       entry = dict(d)
-      original_set = entry.get("set")
+      original_set = entry.get("set_state")
       if original_set:
         def make_wrapped(orig):
           def fn(state):
             orig(state)
             self._rebuild_content()
           return fn
-        entry["set"] = make_wrapped(original_set)
+        entry["set_state"] = make_wrapped(original_set)
       wrapped.append(entry)
     pages = [wrapped[i:i+4] for i in range(0, len(wrapped), 4)]
 
@@ -477,20 +477,20 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Always On Lateral"),
         "subtitle": tr("Steering stays active when ACC is off."),
-        "get": lambda: p.get_bool("AlwaysOnLateral"),
-        "set": lambda s: _confirm_reboot_toggle(p, "AlwaysOnLateral", s) if s else p.put_bool("AlwaysOnLateral", False),
+        "get_state": lambda: p.get_bool("AlwaysOnLateral"),
+        "set_state": lambda s: _confirm_reboot_toggle(p, "AlwaysOnLateral", s) if s else p.put_bool("AlwaysOnLateral", False),
       },
       {
         "title": tr("Turn Signal Only"),
         "subtitle": tr("Only pause steering when turn signal is active."),
-        "get": lambda: p.get_bool("PauseLateralOnSignal"),
-        "set": lambda s: p.put_bool("PauseLateralOnSignal", s),
+        "get_state": lambda: p.get_bool("PauseLateralOnSignal"),
+        "set_state": lambda s: p.put_bool("PauseLateralOnSignal", s),
       },
       {
         "title": tr("Use Route Desires"),
         "subtitle": tr("Allow navigation to request lane keep and turns."),
-        "get": lambda: p.get_bool("NavDesiresAllowed"),
-        "set": lambda s: p.put_bool("NavDesiresAllowed", s),
+        "get_state": lambda: p.get_bool("NavDesiresAllowed"),
+        "set_state": lambda s: p.put_bool("NavDesiresAllowed", s),
       },
     ]
 
@@ -536,21 +536,21 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Lane Changes"),
         "subtitle": tr("Allow openpilot to change lanes."),
-        "get": lambda: p.get_bool("LaneChanges"),
-        "set": lambda s: p.put_bool("LaneChanges", s),
+        "get_state": lambda: p.get_bool("LaneChanges"),
+        "set_state": lambda s: p.put_bool("LaneChanges", s),
       },
       {
         "title": tr("Auto Lane Changes"),
         "subtitle": tr("Signal triggers automatic lane change."),
-        "get": lambda: p.get_bool("NudgelessLaneChange"),
-        "set": lambda s: p.put_bool("NudgelessLaneChange", s),
+        "get_state": lambda: p.get_bool("NudgelessLaneChange"),
+        "set_state": lambda s: p.put_bool("NudgelessLaneChange", s),
         "visible": lc_on,
       },
       {
         "title": tr("One Per Signal"),
         "subtitle": tr("One lane change per signal activation."),
-        "get": lambda: p.get_bool("OneLaneChange"),
-        "set": lambda s: p.put_bool("OneLaneChange", s),
+        "get_state": lambda: p.get_bool("OneLaneChange"),
+        "set_state": lambda s: p.put_bool("OneLaneChange", s),
         "visible": nlc_on,
       },
     ]
@@ -606,8 +606,8 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Advanced Lateral Tuning"),
         "subtitle": tr("Fine-tune steering response and auto-tuning."),
-        "get": lambda: p.get_bool("AdvancedLateralTune"),
-        "set": _on_advanced_toggle,
+        "get_state": lambda: p.get_bool("AdvancedLateralTune"),
+        "set_state": _on_advanced_toggle,
       },
       # Standard toggles
       *sb_toggles,
@@ -616,8 +616,8 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("NNFF"),
         "subtitle": tr("Neural net feedforward steering controller."),
-        "get": lambda: p.get_bool("NNFF"),
-        "set": lambda s: (p.put_bool("NNFF", s),
+        "get_state": lambda: p.get_bool("NNFF"),
+        "set_state": lambda s: (p.put_bool("NNFF", s),
                           s and p.put_bool("NNFFLite", False),
                           _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
         "is_enabled": lambda: cs.hasNNFFLog and not cs.isAngleCar,
@@ -627,8 +627,8 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("NNFF Lite"),
         "subtitle": tr("Lightweight NNFF when full model is off."),
-        "get": lambda: p.get_bool("NNFFLite"),
-        "set": lambda s: (p.put_bool("NNFFLite", s),
+        "get_state": lambda: p.get_bool("NNFFLite"),
+        "set_state": lambda s: (p.put_bool("NNFFLite", s),
                           _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
         "is_enabled": lambda: not cs.isAngleCar,
         "disabled_label": tr("Not Available"),
@@ -637,8 +637,8 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Force Torque Ctrl"),
         "subtitle": tr("Torque-based steering for smoother lane keeping."),
-        "get": lambda: p.get_bool("ForceTorqueController"),
-        "set": lambda s: (p.put_bool("ForceTorqueController", s),
+        "get_state": lambda: p.get_bool("ForceTorqueController"),
+        "set_state": lambda s: (p.put_bool("ForceTorqueController", s),
                           _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
         "is_enabled": lambda: not cs.isTorqueCar and not cs.isAngleCar,
         "disabled_label": tr("Not Available"),
@@ -647,16 +647,16 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Force Turn Desires"),
         "subtitle": tr("Follow turn intent below min lane change speed."),
-        "get": lambda: p.get_bool("TurnDesires"),
-        "set": lambda s: (p.put_bool("TurnDesires", s),
+        "get_state": lambda: p.get_bool("TurnDesires"),
+        "set_state": lambda s: (p.put_bool("TurnDesires", s),
                           _sync_parent(p, "LateralTune", _LATERAL_TUNE_KEYS)),
         "visible": alt_on,
       },
       {
         "title": tr("Force Auto-Tune On"),
         "subtitle": tr("Force-enable live auto-tuning for friction and lateral accel."),
-        "get": lambda: p.get_bool("ForceAutoTune"),
-        "set": lambda s: (p.put_bool("ForceAutoTune", s),
+        "get_state": lambda: p.get_bool("ForceAutoTune"),
+        "set_state": lambda s: (p.put_bool("ForceAutoTune", s),
                           s and p.put_bool("ForceAutoTuneOff", False),
                           _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
         "is_enabled": lambda: not cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
@@ -666,8 +666,8 @@ class StarPilotLateralLayout(_SettingsPage):
       {
         "title": tr("Force Auto-Tune Off"),
         "subtitle": tr("Force-disable auto-tuning and use your set values."),
-        "get": lambda: p.get_bool("ForceAutoTuneOff"),
-        "set": lambda s: (p.put_bool("ForceAutoTuneOff", s),
+        "get_state": lambda: p.get_bool("ForceAutoTuneOff"),
+        "set_state": lambda s: (p.put_bool("ForceAutoTuneOff", s),
                           s and p.put_bool("ForceAutoTune", False),
                           _sync_parent(p, "AdvancedLateralTune", _ADVANCED_LATERAL_KEYS)),
         "is_enabled": lambda: cs.hasAutoTune and cs.isTorqueCar and not cs.isAngleCar,
