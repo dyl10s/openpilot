@@ -297,7 +297,17 @@ class TestHyundaiFingerprint:
     assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 320.0, True) == pytest.approx(0.16)
     assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.0, 320.0, True) > 0.0
     assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 320.0, False) == pytest.approx(0.70)
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 30.0, True, 250.0, True) == pytest.approx(0.12)
+    assert apply_ev9_high_angle_gain_cap(ev9_cp, 0.70, 30.0, True, 400.0, True) == pytest.approx(0.0)
     assert apply_ev9_high_angle_gain_cap(sportage_cp, 0.70, 320.0, True) == pytest.approx(0.70)
+    assert apply_ev9_high_angle_gain_cap(sportage_cp, 0.70, 30.0, True, 400.0, True) == pytest.approx(0.70)
+
+  def test_ev9_allows_lateral_at_standstill_without_changing_other_angle_platforms(self):
+    ev9_cp = CarInterface.get_params(CAR.KIA_EV9, gen_empty_fingerprint(), [], False, False, False, None)
+    sportage_cp = CarInterface.get_params(CAR.KIA_SPORTAGE_HEV_2026, gen_empty_fingerprint(), [], False, False, False, None)
+
+    assert ev9_cp.steerAtStandstill
+    assert not sportage_cp.steerAtStandstill
 
   def test_ccnc_hda2_lka_layout_does_not_set_ccnc_safety_param(self):
     fingerprint = gen_empty_fingerprint()
@@ -1848,7 +1858,7 @@ class TestHyundaiFingerprint:
       "DAMP_FACTOR": 0,
     }
 
-    msgs = hyundaicanfd.create_steering_messages(packer, CP, can_bus, True, True, 0.44, -31.5,
+    msgs = hyundaicanfd.create_steering_messages(packer, CP, can_bus, False, True, 0.44, -31.5,
                                                  lkas_base_values=stock_lkas, lka_icon=2)
     lkas_msgs = [msg for msg in msgs if msg[0] == 0x110]
     assert len(lkas_msgs) == 1
