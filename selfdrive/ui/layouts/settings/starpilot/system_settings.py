@@ -113,6 +113,8 @@ class SystemSettingsManagerView(PanelManagerView):
   TAB_BOTTOM_GAP = 18
   ACTION_PILL_WIDTH = 132
   DANGER_PILL_WIDTH = 112
+  _TOPBAR_HEIGHT = 76.0
+  _TOPBAR_GAP = 16.0
   METRICS = SYSTEM_PANEL_METRICS
 
   @property
@@ -437,11 +439,7 @@ class SystemSettingsManagerView(PanelManagerView):
 
   @property
   def bottombar_height(self) -> float:
-    return 160.0
-
-  def _draw_bottombar(self, bottombar_rect: rl.Rectangle) -> None:
-    draw_list_group_shell(bottombar_rect, style=self.PANEL_STYLE)
-    self._drive_mode_control.render(bottombar_rect)
+    return 0.0
 
   def _draw_static_elements(self, scroll_rect: rl.Rectangle, content_width: float) -> None:
     if not self._uses_two_columns(content_width):
@@ -484,7 +482,13 @@ class SystemSettingsManagerView(PanelManagerView):
     draw_custom_icon("first_aid", icon_x, icon_y, s, icon_color)
 
   def _draw_header(self, rect: rl.Rectangle):
-    pass
+    content_width = self._scroll_rect.width - AETHER_LIST_METRICS.content_right_gutter
+    bar_rect = rl.Rectangle(rect.x, rect.y - 6.0, content_width, self._TOPBAR_HEIGHT)
+    draw_list_group_shell(bar_rect, style=self.PANEL_STYLE)
+    self._drive_mode_control.render(bar_rect)
+    total_offset = self._TOPBAR_HEIGHT + self._TOPBAR_GAP
+    self._scroll_rect.y += total_offset
+    self._scroll_rect.height = max(0.0, self._scroll_rect.height - total_offset)
 
   def _measure_content_height(self, width: float) -> float:
     display_h = self._section_block_height(self._slider_section_height(self._display_slider_keys, width))
