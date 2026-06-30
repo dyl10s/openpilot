@@ -827,14 +827,15 @@ class PanelManagerView(AetherInteractiveMixin, Widget):
 
     if self._has_pagination:
       glow_w = 60.0
+      pad = self.GRID_PADDING
       if self._current_page > 0:
         rl.draw_rectangle_gradient_h(
-          int(rect.x), int(rect.y), int(glow_w), int(rect.height),
+          int(rect.x - pad), int(rect.y - pad), int(glow_w), int(rect.height + pad * 2),
           with_alpha(self.PANEL_STYLE.accent, 10), rl.Color(0, 0, 0, 0),
         )
       if self._current_page < self._page_count - 1:
         rl.draw_rectangle_gradient_h(
-          int(rect.x + rect.width - glow_w), int(rect.y), int(glow_w), int(rect.height),
+          int(rect.x + rect.width - glow_w + pad), int(rect.y - pad), int(glow_w), int(rect.height + pad * 2),
           rl.Color(0, 0, 0, 0), with_alpha(self.PANEL_STYLE.accent, 10),
         )
 
