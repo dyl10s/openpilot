@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pyray as rl
 
 from openpilot.system.hardware import HARDWARE
@@ -19,7 +21,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   TileGrid,
   draw_list_group_shell,
   draw_section_header,
-  draw_settings_list_row,
+  with_alpha,
   SECTION_GAP,
   SECTION_HEADER_HEIGHT,
   SECTION_HEADER_GAP,
@@ -52,7 +54,8 @@ CUSTOM_METRICS = AetherListMetrics(
 )
 
 PANEL_STYLE = DEFAULT_PANEL_STYLE
-ALT_ROW_HEIGHT = 88.0
+COMPRESSED_ROW_HEIGHT = 40.0
+MIN_ROW_HEIGHT = 72.0
 
 _LATERAL_TUNE_KEYS = ["TurnDesires", "NNFF", "NNFFLite", "ForceTorqueController"]
 _ADVANCED_LATERAL_KEYS = ["ForceAutoTune", "ForceAutoTuneOff"]
@@ -68,13 +71,13 @@ def _sync_parent(params, parent_key, child_keys):
 
 
 # ═══════════════════════════════════════════════════════════════
-# SteeringSubPanelView — two-column sub-panel
+# SteeringSubPanelView — two-column inline panel
 # ═══════════════════════════════════════════════════════════════
 
 class SteeringSubPanelView(PanelManagerView):
   """Two-column sub-panel: left = AetherAdjustorRows (values),
      right = TileGrid of ToggleTile (toggles).
-     Dynamic visibility via _rebuild_content()."""
+     Advanced adjustors live inline with fade animation."""
 
   METRICS = CUSTOM_METRICS
 
@@ -83,15 +86,18 @@ class SteeringSubPanelView(PanelManagerView):
     return True
 
   def __init__(self, controller, header_title, header_subtitle,
-               adjustor_defs, toggle_defs, include_alt_row=False):
+               standard_adjustor_defs, advanced_adjustor_defs, toggle_defs):
     super().__init__()
     self._controller = controller
     self._header_title = header_title
     self._header_subtitle = header_subtitle
-    self._adjustor_defs = adjustor_defs
+    self._standard_adjustor_defs = standard_adjustor_defs
+    self._advanced_adjustor_defs = advanced_adjustor_defs
     self._toggle_defs = toggle_defs
-    self._include_alt_row = include_alt_row
-    self._adjustor_rows: dict[str, AetherAdjustorRow] = {}
+    self._standard_adjustor_rows: dict[str, AetherAdjustorRow] = {}
+    self._advanced_adjustor_rows: dict[str, AetherAdjustorRow] = {}
+    self._advanced_keys: set[str] = set()
+    self._advanced_fade = 0.0
     self._left_container_h = 0.0
     self._tiles_container_h = 0.0
 
@@ -104,6 +110,9 @@ class SteeringSubPanelView(PanelManagerView):
     self._rebuild_content()
 
   def _render(self, rect: rl.Rectangle):
+    dt = rl.get_frame_time()
+    target = 1.0 if self._controller._params.get_bool("AdvancedLateralTune") else 0.0
+    self._advanced_fade += (target - self._advanced_fade) * (1 - math.exp(-dt / 0.15))
     self._rebuild_adjustors()
     super()._render(rect)
 
@@ -111,32 +120,67 @@ class SteeringSubPanelView(PanelManagerView):
     self._rebuild_adjustors()
     self._rebuild_toggle_pages()
 
-  def _rebuild_adjustors(self):
-    old_rows = self._adjustor_rows
-    self._adjustor_rows = {}
+  def _make_adjustor_row(self, defn):
+    cs = starpilot_state.car_state
+    key = defn["key"]
+    step = defn["step"]
+    min_val = defn.get("min_val", 0)
+    max_val = defn.get("max_val", 100)
 
-    for defn in self._adjustor_defs:
+    if key == "SteerKP":
+      kp = max(0.01, cs.steerKp)
+      min_val, max_val = kp * 0.5, kp * 1.5
+    elif key == "SteerLatAccel":
+      la = max(0.01, cs.latAccelFactor)
+      min_val, max_val = la * 0.5, la * 1.5
+    elif key == "SteerRatio":
+      sr = max(0.01, cs.steerRatio)
+      min_val, max_val = sr * 0.5, sr * 1.5
+    elif key == "SteerFriction":
+      max_val = max(1.0, cs.friction * 1.5)
+
+    return AetherAdjustorRow(
+      tr(defn["title"]),
+      tr(defn.get("subtitle", "")),
+      min_val, max_val, step,
+      get_value=lambda k=key: self._controller._params.get_float(k),
+      on_change=lambda _v: None,
+      on_commit=None,
+      unit=defn.get("unit", ""),
+      labels=defn.get("labels"),
+      presets=defn.get("presets", []),
+      is_active=lambda: False,
+      set_active=lambda active, k=key: self._show_slider_for(k) if active else None,
+      style=PANEL_STYLE,
+      color=PANEL_STYLE.accent,
+    )
+
+  def _rebuild_adjustors(self):
+    # Standard adjustors: filter by visible() as before
+    old_std = self._standard_adjustor_rows
+    self._standard_adjustor_rows = {}
+    for defn in self._standard_adjustor_defs:
       if defn.get("visible") is not None and not defn["visible"]():
         continue
       key = defn["key"]
-      if key in old_rows:
-        self._adjustor_rows[key] = old_rows[key]
+      if key in old_std:
+        self._standard_adjustor_rows[key] = old_std[key]
       else:
-        self._adjustor_rows[key] = AetherAdjustorRow(
-          tr(defn["title"]),
-          tr(defn.get("subtitle", "")),
-          defn["min_val"], defn["max_val"], defn["step"],
-          get_value=lambda k=key: self._controller._params.get_float(k),
-          on_change=lambda _v: None,
-          on_commit=None,
-          unit=defn.get("unit", ""),
-          labels=defn.get("labels"),
-          presets=defn.get("presets", []),
-          is_active=lambda: False,
-          set_active=lambda active, k=key: self._show_slider_for(k) if active else None,
-          style=PANEL_STYLE,
-          color=PANEL_STYLE.accent,
-        )
+        self._standard_adjustor_rows[key] = self._make_adjustor_row(defn)
+
+    # Advanced adjustors: filter by car-state availability only (not alt_on)
+    old_adv = self._advanced_adjustor_rows
+    self._advanced_adjustor_rows = {}
+    self._advanced_keys = set()
+    for defn in self._advanced_adjustor_defs:
+      if defn.get("available") is not None and not defn["available"]():
+        continue
+      key = defn["key"]
+      self._advanced_keys.add(key)
+      if key in old_adv:
+        self._advanced_adjustor_rows[key] = old_adv[key]
+      else:
+        self._advanced_adjustor_rows[key] = self._make_adjustor_row(defn)
 
   def _rebuild_toggle_pages(self):
     visible = [
@@ -156,6 +200,14 @@ class SteeringSubPanelView(PanelManagerView):
         entry["set"] = make_wrapped(original_set)
       wrapped.append(entry)
     pages = [wrapped[i:i+4] for i in range(0, len(wrapped), 4)]
+
+    # Clear in-progress page animation/drag state
+    self._page_drag_active = False
+    self._page_drag_offset = 0.0
+    self._page_animating = False
+    if hasattr(self, '_page_anim_prev_tiles'):
+      self._page_anim_prev_tiles.clear()
+
     old_page = self._current_page
     self._toggle_pages = pages
     self._page_count = max(1, len(pages))
@@ -168,6 +220,7 @@ class SteeringSubPanelView(PanelManagerView):
   def show_event(self):
     super().show_event()
     starpilot_state.update(force=True)
+    self._advanced_adjustor_rows.clear()
     self._rebuild_content()
 
   # ── layout / rendering ──
@@ -178,36 +231,58 @@ class SteeringSubPanelView(PanelManagerView):
   def _measure_content_height(self, content_width: float) -> float:
     col_width = (content_width - SECTION_GAP) / 2
 
-    for row in self._adjustor_rows.values():
+    for row in self._standard_adjustor_rows.values():
+      row.custom_row_height = None
+    for row in self._advanced_adjustor_rows.values():
       row.custom_row_height = None
 
     header_h = self._header_height()
-    left_natural = sum(row.measure_height(col_width) for row in self._adjustor_rows.values())
-    left_natural += 16.0
+
+    # Standard adjustors: natural height
+    std_natural = sum(r.measure_height(col_width) for r in self._standard_adjustor_rows.values())
+    std_natural += 16.0
+
+    # Advanced adjustors: interpolate between compressed and natural based on fade
+    adv_count = len(self._advanced_adjustor_rows)
+    adv_section_overhead = 0.0
+    if adv_count > 0 and self._advanced_fade > 0.01:
+      adv_section_overhead = (SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP) * self._advanced_fade
+      adv_natural = sum(r.measure_height(col_width) for r in self._advanced_adjustor_rows.values())
+      adv_compressed = adv_count * COMPRESSED_ROW_HEIGHT
+      adv_total_h = adv_compressed + (adv_natural - adv_compressed) * self._advanced_fade
+    else:
+      adv_total_h = 0.0
 
     tiles_needed_h = self.measure_page_grid_height(self._toggle_grid, col_width - 24) + 24
+    left_natural = std_natural + adv_section_overhead + adv_total_h
     max_natural_h = max(left_natural, tiles_needed_h)
     section_overhead = SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
 
-    alt_consumption = (ALT_ROW_HEIGHT + 12.0) if self._include_alt_row else 0.0
-
     if self._scroll_rect:
-      available_h = self._scroll_rect.height - header_h - section_overhead - 6.0 - alt_consumption
+      available_h = self._scroll_rect.height - header_h - section_overhead - 6.0
     else:
       available_h = max_natural_h
 
     max_container_h = max(0.0, available_h)
 
-    left_available = max_container_h - 16.0
-    if self._adjustor_rows and left_available > 0:
-      row_h = max(60.0, left_available / len(self._adjustor_rows))
-      for row in self._adjustor_rows.values():
+    # Distribute standard adjustor height
+    left_available = max_container_h - adv_section_overhead - adv_total_h - 16.0
+    std_count = len(self._standard_adjustor_rows)
+    if std_count > 0 and left_available > 0:
+      row_h = max(MIN_ROW_HEIGHT, left_available / std_count)
+      for row in self._standard_adjustor_rows.values():
         row.custom_row_height = row_h
+
+    # Advanced rows: compressed or full height based on fade
+    if adv_count > 0 and self._advanced_fade > 0.01:
+      adv_natural_h = max(MIN_ROW_HEIGHT, left_available / adv_count) if left_available > 0 else MIN_ROW_HEIGHT
+      for row in self._advanced_adjustor_rows.values():
+        row.custom_row_height = COMPRESSED_ROW_HEIGHT + (adv_natural_h - COMPRESSED_ROW_HEIGHT) * self._advanced_fade
 
     self._left_container_h = max_container_h
     self._tiles_container_h = max_container_h
 
-    return self._compute_two_column_height(header_h + section_overhead + max_container_h + alt_consumption)
+    return self._compute_two_column_height(header_h + section_overhead + max_container_h)
 
   def _header_height(self) -> float:
     h = 0.0
@@ -255,64 +330,88 @@ class SteeringSubPanelView(PanelManagerView):
       self._tiles_container_h, title=None, style=PANEL_STYLE,
     )
 
-    if self._include_alt_row:
-      alt_y = y + self._tiles_container_h + 12.0
-      alt_rect = rl.Rectangle(rect.x, alt_y, content_width, ALT_ROW_HEIGHT)
-      alt_state = self._controller._params.get_bool("AdvancedLateralTune")
-      alt_value = tr("ON") if alt_state else tr("OFF")
-      hovered, pressed = self._interactive_state("static:alt_row", alt_rect)
-      draw_settings_list_row(
-        alt_rect,
-        title=tr("Advanced Lateral Tuning"),
-        value=alt_value,
-        enabled=True,
-        hovered=hovered,
-        pressed=pressed,
-        is_last=False,
-        show_chevron=True,
-        title_size=30,
-        subtitle_size=20,
-        value_size=24,
-        style=PANEL_STYLE,
-      )
-
   def _draw_adjustor_column(self, y: float, x: float, width: float):
     draw_list_group_shell(
       rl.Rectangle(x, y, width, self._left_container_h),
       style=PANEL_STYLE,
     )
     current_y = y + 8
-    for key, adjustor in self._adjustor_rows.items():
+
+    # Draw standard adjustors
+    for key, adjustor in self._standard_adjustor_rows.items():
       row_h = adjustor.measure_height(width)
       row_rect = rl.Rectangle(x, current_y, width, row_h)
       adjustor.set_parent_rect(self._scroll_rect)
       adjustor.render(row_rect)
       current_y += row_h
 
+    # Draw advanced section header (fading in)
+    adv_count = len(self._advanced_adjustor_rows)
+    if adv_count > 0 and self._advanced_fade > 0.01:
+      alpha = int(255 * self._advanced_fade)
+      draw_section_header(
+        rl.Rectangle(x, current_y, width, SECTION_HEADER_HEIGHT),
+        tr("Advanced"),
+        title_color=with_alpha(PANEL_STYLE.subtitle_color, alpha),
+        style=PANEL_STYLE,
+      )
+      current_y += SECTION_HEADER_HEIGHT + SECTION_HEADER_GAP
+
+      # Draw advanced adjustors (dimmed when fading)
+      for key, adjustor in self._advanced_adjustor_rows.items():
+        row_h = adjustor.measure_height(width)
+        row_rect = rl.Rectangle(x, current_y, width, row_h)
+        adjustor.set_parent_rect(self._scroll_rect)
+        adjustor.render(row_rect)
+
+        # Dim overlay when not fully faded in
+        if self._advanced_fade < 0.99:
+          dim_alpha = int(180 * (1.0 - self._advanced_fade))
+          rl.draw_rectangle_rec(
+            rl.Rectangle(x + 1, current_y + 1, width - 2, row_h - 2),
+            rl.Color(10, 12, 16, dim_alpha),
+          )
+          # Locked indicator
+          if self._advanced_fade < 0.5:
+            lock_alpha = int(200 * (1.0 - self._advanced_fade * 2))
+            rl.draw_text_ex(
+              gui_app.font(FontWeight.NORMAL), "LOCKED",
+              rl.Vector2(x + width - 80, current_y + row_h / 2 - 6), 12, 0,
+              rl.Color(255, 255, 255, lock_alpha),
+            )
+
+        current_y += row_h
+
   # ── mouse forwarding ──
 
   def _handle_mouse_press(self, mouse_pos):
     super()._handle_mouse_press(mouse_pos)
-    for adjustor in self._adjustor_rows.values():
+    for adjustor in self._standard_adjustor_rows.values():
       adjustor._handle_mouse_press(mouse_pos)
+    if self._advanced_fade > 0.5:
+      for adjustor in self._advanced_adjustor_rows.values():
+        adjustor._handle_mouse_press(mouse_pos)
     self._toggle_grid._handle_mouse_press(mouse_pos)
 
   def _handle_mouse_release(self, mouse_pos):
-    for adjustor in self._adjustor_rows.values():
+    for adjustor in self._standard_adjustor_rows.values():
       adjustor._handle_mouse_release(mouse_pos)
+    if self._advanced_fade > 0.5:
+      for adjustor in self._advanced_adjustor_rows.values():
+        adjustor._handle_mouse_release(mouse_pos)
     self._toggle_grid._handle_mouse_release(mouse_pos)
     super()._handle_mouse_release(mouse_pos)
 
   def _handle_mouse_event(self, mouse_event):
     super()._handle_mouse_event(mouse_event)
-    for adjustor in self._adjustor_rows.values():
+    for adjustor in self._standard_adjustor_rows.values():
       adjustor._handle_mouse_event(mouse_event)
+    if self._advanced_fade > 0.5:
+      for adjustor in self._advanced_adjustor_rows.values():
+        adjustor._handle_mouse_event(mouse_event)
     self._toggle_grid._handle_mouse_event(mouse_event)
 
   def _activate_target(self, target_id: str | None):
-    if target_id == "static:alt_row":
-      self._controller._navigate_to("tuning")
-      return
     super()._activate_target(target_id)
 
 
@@ -456,66 +555,64 @@ class StarPilotLateralLayout(_SettingsPage):
       },
     ]
 
-    # Combined main panel: Steering Behavior + Lane Changes + ALT drill-down
-    merged_adjustors = sb_adjustors + lc_adjustors
-    merged_toggles = sb_toggles + lc_toggles
+    # ── Advanced adjustors (car-state availability only) ──
 
-    self._manager_view = SteeringSubPanelView(
-      self,
-      tr("Steering"),
-      tr("Configure steering behavior and lane changes."),
-      merged_adjustors, merged_toggles,
-      include_alt_row=True,
-    )
-
-    # ── Advanced Lateral Tuning (sub-panel, accessed via ALT row) ──
-
-    tuning_adjustors = [
+    advanced_adjustors = [
       {
         "key": "SteerDelay",
         "title": tr("Actuator Delay"),
         "subtitle": tr("Time between steering command and vehicle response."),
         "min_val": 0.01, "max_val": 1.0, "step": 0.01,
         "unit": "s",
-        "visible": lambda: alt_on() and cs.steerActuatorDelay != 0,
+        "available": lambda: cs.steerActuatorDelay != 0,
       },
       {
         "key": "SteerFriction",
         "title": tr("Friction"),
         "subtitle": tr("Compensates for steering friction around center."),
         "min_val": 0.0, "max_val": max(1.0, cs.friction * 1.5), "step": 0.01,
-        "visible": lambda: alt_on() and cs.friction != 0,
+        "available": lambda: cs.friction != 0 and cs.isTorqueCar and not cs.isAngleCar,
       },
       {
         "key": "SteerKP",
         "title": tr("Kp Factor"),
         "subtitle": tr("How strongly openpilot corrects lateral position."),
         "min_val": max(0.01, cs.steerKp) * 0.5, "max_val": max(0.01, cs.steerKp) * 1.5, "step": 0.01,
-        "visible": lambda: alt_on() and cs.steerKp != 0,
+        "available": lambda: cs.steerKp != 0 and cs.isTorqueCar and not cs.isAngleCar,
       },
       {
         "key": "SteerLatAccel",
         "title": tr("Lateral Acceleration"),
         "subtitle": tr("Maps steering torque to turning response."),
         "min_val": max(0.01, cs.latAccelFactor) * 0.5, "max_val": max(0.01, cs.latAccelFactor) * 1.5, "step": 0.01,
-        "visible": lambda: alt_on() and cs.latAccelFactor != 0,
+        "available": lambda: cs.latAccelFactor != 0 and cs.isTorqueCar and not cs.isAngleCar,
       },
       {
         "key": "SteerRatio",
         "title": tr("Steer Ratio"),
         "subtitle": tr("Relationship between steering wheel and road-wheel angle."),
         "min_val": max(0.01, cs.steerRatio) * 0.5, "max_val": max(0.01, cs.steerRatio) * 1.5, "step": 0.01,
-        "visible": lambda: alt_on() and cs.steerRatio != 0,
+        "available": lambda: cs.steerRatio != 0,
       },
     ]
 
-    tuning_toggles = [
+    # ── Toggle definitions (advanced master toggle is first) ──
+
+    def _on_advanced_toggle(state):
+      p.put_bool("AdvancedLateralTune", state)
+
+    all_toggles = [
+      # Master toggle (always first, always visible)
       {
         "title": tr("Advanced Lateral Tuning"),
         "subtitle": tr("Fine-tune steering response and auto-tuning."),
         "get": lambda: p.get_bool("AdvancedLateralTune"),
-        "set": lambda s: p.put_bool("AdvancedLateralTune", s),
+        "set": _on_advanced_toggle,
       },
+      # Standard toggles
+      *sb_toggles,
+      *lc_toggles,
+      # Advanced toggles (filtered by visible: alt_on)
       {
         "title": tr("NNFF"),
         "subtitle": tr("Neural net feedforward steering controller."),
@@ -579,14 +676,14 @@ class StarPilotLateralLayout(_SettingsPage):
       },
     ]
 
-    self._sub_panels["tuning"] = SteeringSubPanelView(
+    self._manager_view = SteeringSubPanelView(
       self,
-      tr("Advanced Lateral Tuning"),
-      tr("Fine-tune steering response, feedforward controllers, and auto-tuning."),
-      tuning_adjustors, tuning_toggles,
+      tr("Steering"),
+      tr("Configure steering behavior and lane changes."),
+      sb_adjustors + lc_adjustors,
+      advanced_adjustors,
+      all_toggles,
     )
-
-    self._wire_sub_panels()
 
   def _on_select(self, key: str):
     if key == "PauseAOLOnBrake":
