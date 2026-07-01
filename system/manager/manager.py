@@ -9,6 +9,18 @@ import sys
 import time
 import traceback
 
+_MANAGER_IMPORT_START = time.monotonic()
+_BOOT_TIMING_LOG_PATH = os.environ.get("SP_BOOT_TIMING_LOG", "/tmp/starpilot_boot_timing.log")
+
+
+def _append_boot_timing_line(line: str) -> None:
+  try:
+    with open(_BOOT_TIMING_LOG_PATH, "a") as f:
+      f.write(line + "\n")
+  except OSError:
+    pass
+
+
 from cereal import car, log
 import cereal.messaging as messaging
 import openpilot.system.sentry as sentry
@@ -24,12 +36,24 @@ from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.system.version import get_build_metadata, terms_version, training_version
 from openpilot.system.hardware.hw import Paths
 
+_MANAGER_CORE_IMPORT_DONE = time.monotonic()
+
 from openpilot.starpilot.common.starpilot_functions import starpilot_boot_functions, install_starpilot, uninstall_starpilot
 from openpilot.starpilot.common.starpilot_variables import (
   LEGACY_STARPILOT_PARAM_RENAMES,
   LEGACY_STARPILOT_STATS_KEY_RENAMES,
   get_starpilot_toggles,
 )
+
+_MANAGER_IMPORT_DONE = time.monotonic()
+_manager_import_timing_line = (
+  "SP_BOOT_TIMING manager_import "
+  f"core={_MANAGER_CORE_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s "
+  f"starpilot={_MANAGER_IMPORT_DONE - _MANAGER_CORE_IMPORT_DONE:.3f}s "
+  f"total={_MANAGER_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s"
+)
+print(_manager_import_timing_line, flush=True)
+_append_boot_timing_line(_manager_import_timing_line)
 
 
 LEGACY_BOLT_FP_MIGRATION_FLAG = Path("/data") / "legacy_bolt_fp_migration_v1"
@@ -48,6 +72,15 @@ LEGACY_CARMODEL_MIGRATIONS = {
 }
 STARPILOT_STATS_DROP_KEYS = {"CurrentMonthsKilometers", "ResetStats"}
 STARPILOT_STATS_MAX_KEYS = {"LongestDistanceWithoutOverride", "MaxAcceleration"}
+
+
+def _log_boot_timing(scope: str, label: str, start: float, previous: float | None = None) -> float:
+  now = time.monotonic()
+  base = previous if previous is not None else start
+  line = f"SP_BOOT_TIMING {scope} {label} +{now - base:.3f}s total={now - start:.3f}s"
+  _append_boot_timing_line(line)
+  cloudlog.warning(line)
+  return now
 
 
 def _to_text(value):
@@ -727,18 +760,25 @@ def migrate_legacy_experimental_longitudinal(params: Params, params_cache: Param
 
 
 def manager_init() -> None:
+  manager_init_start = time.monotonic()
+  last_timing = _log_boot_timing("manager_init", "start", manager_init_start, manager_init_start)
+
   save_bootlog()
+  last_timing = _log_boot_timing("manager_init", "save_bootlog", manager_init_start, last_timing)
 
   build_metadata = get_build_metadata()
+  last_timing = _log_boot_timing("manager_init", "build_metadata", manager_init_start, last_timing)
 
   params = Params()
   cache_params_path = Paths.params_cache_root()
   migrate_legacy_starpilot_params_cache(params, Paths.legacy_params_cache_root(), cache_params_path)
   params_cache = Params(cache_params_path, return_defaults=True)
+  last_timing = _log_boot_timing("manager_init", "params_cache", manager_init_start, last_timing)
 
   # Legacy FrogPilot params are unknown to the renamed schema and would be
   # deleted by clear_all() if we do not migrate them first.
   migrate_starpilot_param_renames(params, params_cache)
+  last_timing = _log_boot_timing("manager_init", "param_renames", manager_init_start, last_timing)
 
   params.clear_all(ParamKeyFlag.CLEAR_ON_MANAGER_START)
   params.clear_all(ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION)
@@ -746,8 +786,10 @@ def manager_init() -> None:
   params.clear_all(ParamKeyFlag.CLEAR_ON_IGNITION_ON)
   if build_metadata.release_channel:
     params.clear_all(ParamKeyFlag.DEVELOPMENT_ONLY)
+  last_timing = _log_boot_timing("manager_init", "clear_params", manager_init_start, last_timing)
 
   migrate_starpilot_pc_root()
+  last_timing = _log_boot_timing("manager_init", "pc_root_migration", manager_init_start, last_timing)
 
   if params.get_bool("RecordFrontLock"):
     params.put_bool("RecordFront", True)
@@ -765,6 +807,7 @@ def manager_init() -> None:
   migrate_disable_humanlike_defaults(params, params_cache)
   migrate_cluster_offset_default(params, params_cache)
   migrate_prioritize_smooth_following_default(params, params_cache)
+  last_timing = _log_boot_timing("manager_init", "starpilot_migrations", manager_init_start, last_timing)
 
   # set unset params to their default value
   for k in params.all_keys():
@@ -775,6 +818,7 @@ def manager_init() -> None:
         params.put(k, cached_value)
     else:
       params_cache.put(k, current_value)
+  last_timing = _log_boot_timing("manager_init", "params_defaults_cache_sync", manager_init_start, last_timing)
 
   # Create folders needed for msgq
   try:
@@ -783,6 +827,7 @@ def manager_init() -> None:
     pass
   except PermissionError:
     print(f"WARNING: failed to make {Paths.shm_path()}")
+  last_timing = _log_boot_timing("manager_init", "shm_path", manager_init_start, last_timing)
 
   # set params
   serial = HARDWARE.get_serial()
@@ -799,6 +844,7 @@ def manager_init() -> None:
 
   # Branch migration: rename legacy Bolt fingerprint persisted in CarParams.
   migrate_legacy_bolt_fingerprint(params)
+  last_timing = _log_boot_timing("manager_init", "version_params", manager_init_start, last_timing)
 
   # set dongle id
   reg_res = register(show_spinner=True)
@@ -806,6 +852,7 @@ def manager_init() -> None:
     dongle_id = reg_res
   else:
     raise Exception(f"Registration failed for device {serial}")
+  last_timing = _log_boot_timing("manager_init", "register", manager_init_start, last_timing)
   os.environ['DONGLE_ID'] = dongle_id  # Needed for swaglog
   os.environ['GIT_ORIGIN'] = build_metadata.openpilot.git_normalized_origin # Needed for swaglog
   os.environ['GIT_BRANCH'] = build_metadata.channel # Needed for swaglog
@@ -823,14 +870,18 @@ def manager_init() -> None:
                        commit=build_metadata.openpilot.git_commit,
                        dirty=build_metadata.openpilot.is_dirty,
                        device=HARDWARE.get_device_type())
+  last_timing = _log_boot_timing("manager_init", "logging_ready", manager_init_start, last_timing)
 
   # preimport all processes
   for p in managed_processes.values():
     p.prepare()
+  last_timing = _log_boot_timing("manager_init", "preimport_processes", manager_init_start, last_timing)
 
   # StarPilot variables
   install_starpilot(build_metadata, params)
+  last_timing = _log_boot_timing("manager_init", "install_starpilot", manager_init_start, last_timing)
   starpilot_boot_functions(build_metadata, params)
+  _log_boot_timing("manager_init", "starpilot_boot_functions", manager_init_start, last_timing)
 
 
 def manager_cleanup() -> None:
@@ -846,11 +897,14 @@ def manager_cleanup() -> None:
 
 
 def manager_thread() -> None:
+  manager_thread_start = time.monotonic()
+  last_timing = _log_boot_timing("manager_thread", "start", manager_thread_start, manager_thread_start)
   cloudlog.bind(daemon="manager")
   cloudlog.info("manager start")
   cloudlog.info({"environ": os.environ})
 
   params = Params()
+  last_timing = _log_boot_timing("manager_thread", "params", manager_thread_start, last_timing)
 
   ignore: list[str] = []
   if params.get("DongleId") in (None, UNREGISTERED_DONGLE_ID):
@@ -858,12 +912,17 @@ def manager_thread() -> None:
   if os.getenv("NOBOARD") is not None:
     ignore.append("pandad")
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]
+  last_timing = _log_boot_timing("manager_thread", "ignore_list", manager_thread_start, last_timing)
 
   sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates'], poll='deviceState')
   pm = messaging.PubMaster(['managerState'])
+  last_timing = _log_boot_timing("manager_thread", "messaging", manager_thread_start, last_timing)
 
   write_onroad_params(False, params)
-  ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, starpilot_toggles=get_starpilot_toggles())
+  initial_toggles = get_starpilot_toggles()
+  last_timing = _log_boot_timing("manager_thread", "initial_toggles", manager_thread_start, last_timing)
+  ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, starpilot_toggles=initial_toggles)
+  last_timing = _log_boot_timing("manager_thread", "initial_ensure_running", manager_thread_start, last_timing)
 
   started_prev = False
   ignition_prev = False
@@ -877,6 +936,8 @@ def manager_thread() -> None:
   params_memory = Params(memory=True)
 
   starpilot_toggles = get_starpilot_toggles()
+  last_timing = _log_boot_timing("manager_thread", "loop_toggles", manager_thread_start, last_timing)
+  _log_boot_timing("manager_thread", "loop_ready", manager_thread_start, last_timing)
 
   while True:
     sm.update(1000)
