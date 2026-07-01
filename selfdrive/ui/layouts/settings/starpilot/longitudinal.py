@@ -59,6 +59,7 @@ DECELERATION_PROFILE_OPTIONS = [
 class AdaptiveSpeedView(Widget):
   def __init__(self, controller):
     super().__init__()
+    self._header_title = tr_noop("Adaptive Speed Controls")
     self._controller = controller
     self._grid = TileGrid(columns=2, padding=12)
     self._child(self._grid)
