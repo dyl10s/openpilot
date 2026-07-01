@@ -2358,6 +2358,14 @@ class AetherInlineRangeControl(Widget):
       )
 
 
+_ICON_CHARS: dict[str, str] = {
+  # Swap to "\u26A0"/"\u24D8" after fonts regenerated with process.py
+  "alert_critical": "!",
+  "alert_state": "\u25CF",
+  "alert_info": "\u25CB",
+}
+
+
 class AetherAdjustorRow(Widget):
   def __init__(
     self,
@@ -2377,6 +2385,7 @@ class AetherAdjustorRow(Widget):
     set_active: Callable[[bool], None] | None = None,
     style: PanelStyle = DEFAULT_PANEL_STYLE,
     color: rl.Color | None = None,
+    icon_key: str | None = None,
   ):
     super().__init__()
     self._title = title
@@ -2386,6 +2395,8 @@ class AetherAdjustorRow(Widget):
     self._set_active = set_active
     self._style = style
     self._color = color or style.accent
+    valid_icons = {"sound", "steering", "navigate", "system", "display", "vehicle", "road", "aicar", "first_aid", "alert_critical", "alert_state", "alert_info"}
+    self._icon_key = icon_key if icon_key in valid_icons else None
     self._presets = presets or []
     self._preset_applied = False
     self._font_title = gui_app.font(FontWeight.MEDIUM)
@@ -2564,7 +2575,27 @@ class AetherAdjustorRow(Widget):
     self._header_rect = rl.Rectangle(rect.x, rect.y, rect.width, min(rect.height, 78))
     self._value_rect = snap_rect(rl.Rectangle(rect.x + rect.width - value_pill_w - 18, value_y, value_pill_w, value_pill_h))
     content_right = self._value_rect.x - 18
-    content_left = rect.x + 24
+
+    if self._icon_key:
+      icon_char = _ICON_CHARS.get(self._icon_key)
+      if icon_char:
+        icon_fs = max(18, int(28 * max(0.65, rect.height / 94.0)))
+        font = gui_app.font(FontWeight.BOLD)
+        ts = measure_text_cached(font, icon_char, icon_fs)
+        icon_x = rect.x + 12 + (40.0 - ts.x) / 2
+        icon_y = rect.y + (rect.height - ts.y) / 2
+        rl.draw_text_ex(font, icon_char, rl.Vector2(icon_x, icon_y), icon_fs, 0, mix_colors(rl.WHITE, self._color, 0.08))
+        content_left = rect.x + 12 + 40.0 + 12
+      else:
+        s = (51.0 / 60.0) * max(0.65, rect.height / 94.0) * 1.25
+        icon_w = 60.0 * s
+        icon_x = rect.x + 12
+        icon_y = rect.y + (rect.height - icon_w) / 2
+        draw_custom_icon(self._icon_key, icon_x, icon_y, s, mix_colors(rl.WHITE, self._color, 0.08))
+        content_left = rect.x + 12 + icon_w + 12
+    else:
+      content_left = rect.x + 24
+
     content_width = max(120.0, content_right - content_left)
 
     title_y = rect.y + 14.0 * scale_y if rect.height < 94 else rect.y + 14
@@ -2596,7 +2627,7 @@ class AetherAdjustorRow(Widget):
 
     hint_y = rect.y + rect.height - 18.0 * scale_y if rect.height < 94 else rect.y + 76
     hint_h = max(6.0, 8.0 * scale_y) if rect.height < 94 else 8
-    self._hint_rect = snap_rect(rl.Rectangle(content_left, hint_y, rect.width - 48, hint_h + 4))
+    self._hint_rect = snap_rect(rl.Rectangle(content_left, hint_y, rect.x + rect.width - 24 - content_left, hint_h + 4))
     hint_track = snap_rect(rl.Rectangle(self._hint_rect.x, self._hint_rect.y + 2, self._hint_rect.width, hint_h))
     rl.draw_rectangle_rounded(hint_track, 1.0, 10, rl.Color(255, 255, 255, 10))
     fill_w = hint_track.width * self._scrubber._value_fraction(self._current_value())
