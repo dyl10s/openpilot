@@ -160,6 +160,7 @@ SCHOOL_ZONE_MIN_SUPPORT = 2
 SCHOOL_ZONE_MIN_CONFIDENCE = 0.70
 SCHOOL_ZONE_SINGLE_READ_CONFIDENCE = 0.975
 SCHOOL_ZONE_SHORT_CIRCUIT_CONFIDENCE = 0.78
+SCHOOL_ZONE_FALLBACK_MIN_CONFIDENCE = 0.35
 DEBUG_BASE_DIR = Path("/data/media/0/vision_speed_limit_debug")
 DEBUG_CAPTURE_DIRNAME = "captures"
 SNAPSHOT_JPEG_QUALITY = 85
@@ -1162,6 +1163,7 @@ class SpeedLimitVisionDaemon:
 
       if class_id == 2:
         school_scores: dict[int, float] = {}
+        competing_scores: dict[int, float] = {}
         school_best_confidences: dict[int, float] = {}
         school_support_counts: dict[int, int] = {}
         for expand_left, expand_top, expand_right, expand_bottom in SCHOOL_ZONE_DIRECT_EXPANSIONS:
@@ -1182,6 +1184,7 @@ class SpeedLimitVisionDaemon:
 
             speed_limit_mph, read_confidence = read_result
             if speed_limit_mph not in SCHOOL_ZONE_SPEED_VALUES:
+              competing_scores[speed_limit_mph] = competing_scores.get(speed_limit_mph, 0.0) + read_confidence * crop_weight
               continue
 
             school_scores[speed_limit_mph] = school_scores.get(speed_limit_mph, 0.0) + read_confidence * crop_weight
@@ -1198,19 +1201,20 @@ class SpeedLimitVisionDaemon:
           )
           read_confidence = school_best_confidences[speed_limit_mph]
           support_count = school_support_counts[speed_limit_mph]
-          if (
-            (support_count >= SCHOOL_ZONE_MIN_SUPPORT and read_confidence >= SCHOOL_ZONE_MIN_CONFIDENCE) or
-            read_confidence >= SCHOOL_ZONE_SINGLE_READ_CONFIDENCE
-          ):
-            score = min(
-              read_confidence * 0.72 +
-              proposal_confidence * 0.22 +
-              max(support_count - 1, 0) * SCHOOL_ZONE_SUPPORT_BONUS +
-              0.04,
-              0.95,
-            )
-            if score >= SCHOOL_ZONE_SHORT_CIRCUIT_CONFIDENCE:
-              return Detection(speed_limit_mph, score)
+          if school_scores[speed_limit_mph] > max(competing_scores.values(), default=0.0):
+            if (
+              (support_count >= SCHOOL_ZONE_MIN_SUPPORT and read_confidence >= SCHOOL_ZONE_MIN_CONFIDENCE) or
+              read_confidence >= SCHOOL_ZONE_SINGLE_READ_CONFIDENCE
+            ):
+              score = min(
+                read_confidence * 0.72 +
+                proposal_confidence * 0.22 +
+                max(support_count - 1, 0) * SCHOOL_ZONE_SUPPORT_BONUS +
+                0.04,
+                0.95,
+              )
+              if score >= SCHOOL_ZONE_SHORT_CIRCUIT_CONFIDENCE:
+                return Detection(speed_limit_mph, score)
 
       proposal_area_ratio = (box_width * box_height) / max(frame_width * frame_height, 1)
       speed_scores: dict[int, float] = {}
@@ -1227,7 +1231,8 @@ class SpeedLimitVisionDaemon:
         if sign_crop.size == 0:
           continue
 
-        is_regulatory = self._is_regulatory_speed_sign(sign_crop)
+        raw_is_regulatory = self._is_regulatory_speed_sign(sign_crop)
+        is_regulatory = raw_is_regulatory
         if class_id == 2:
           is_regulatory = True
 
@@ -1243,6 +1248,13 @@ class SpeedLimitVisionDaemon:
           read_result = (model_read[0], min(model_read[1], ocr_read[1]))
 
         speed_limit_mph, read_confidence = read_result
+        if (
+          class_id == 2 and
+          proposal_confidence < SCHOOL_ZONE_FALLBACK_MIN_CONFIDENCE and
+          not raw_is_regulatory
+        ):
+          continue
+
         score = read_confidence * expansion_weight
         if is_regulatory:
           score += DETECTOR_CLASSIFIER_REGULATORY_BONUS

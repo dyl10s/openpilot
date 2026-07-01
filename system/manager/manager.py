@@ -40,6 +40,8 @@ STARPILOT_PRIORITIZE_SMOOTH_FOLLOWING_MIGRATION_FLAG = Path("/data") / "starpilo
 STARPILOT_PARAM_RENAME_MIGRATION_FLAG = Path("/data") / "starpilot_param_rename_v1"
 STARPILOT_PARAM_CANONICALIZATION_MIGRATION_FLAG = Path("/data") / "starpilot_param_canonicalization_v1"
 STARPILOT_PC_ROOT_MIGRATION_FLAG = Path("/data") / "starpilot_pc_root_v1"
+STARPILOT_PARAMS_CACHE_MIGRATION_FLAG = Path("/data") / "starpilot_params_cache_v1"
+STARPILOT_LEGACY_CACHE_MARKER_KEYS = ("RemapCancelToDistance",)
 STARPILOT_REMOVED_PARAM_KEYS = ("HumanFollowing",)
 LEGACY_CARMODEL_MIGRATIONS = {
   "CHEVROLET_BOLT_CC_2019_2021": "CHEVROLET_BOLT_CC_2018_2021",
@@ -204,6 +206,68 @@ def _remove_persisted_param_file(params: Params, key: str | bytes) -> bool:
   except Exception:
     cloudlog.exception(f"Failed to remove deprecated param file: {key}")
     return False
+
+
+def _params_store_path(root: str | Path) -> Path:
+  return Path(root) / os.environ.get("OPENPILOT_PREFIX", "d")
+
+
+def _cache_store_has_starpilot_marker(cache_root: str | Path) -> bool:
+  store_path = _params_store_path(cache_root)
+  return any((store_path / key).is_file() for key in STARPILOT_LEGACY_CACHE_MARKER_KEYS)
+
+
+def _copy_param_store_without_overwrite(source: Path, destination: Path) -> int:
+  if not source.is_dir():
+    return 0
+
+  destination.mkdir(parents=True, exist_ok=True)
+  copied_entries = 0
+  for path in source.iterdir():
+    if not path.is_file() or path.name == ".lock" or path.name.startswith(".tmp_"):
+      continue
+
+    target = destination / path.name
+    if target.exists():
+      continue
+
+    shutil.copy2(path, target)
+    copied_entries += 1
+
+  return copied_entries
+
+
+def migrate_legacy_starpilot_params_cache(params: Params, legacy_cache_root: str | Path, cache_root: str | Path) -> None:
+  if STARPILOT_PARAMS_CACHE_MIGRATION_FLAG.exists():
+    return
+
+  legacy_store = _params_store_path(legacy_cache_root)
+  cache_store = _params_store_path(cache_root)
+  active_marker = any(_has_persisted_param_file(params, key) for key in STARPILOT_LEGACY_CACHE_MARKER_KEYS)
+  cache_marker = _cache_store_has_starpilot_marker(legacy_cache_root)
+
+  migration_succeeded = True
+  copied_entries = 0
+  if active_marker or cache_marker:
+    try:
+      copied_entries = _copy_param_store_without_overwrite(legacy_store, cache_store)
+    except Exception:
+      migration_succeeded = False
+      cloudlog.exception(f"Failed to migrate legacy StarPilot params cache from {legacy_store} to {cache_store}")
+  elif legacy_store.exists():
+    cloudlog.warning(f"Skipped legacy params cache import without StarPilot marker: {legacy_store}")
+
+  if not migration_succeeded:
+    return
+
+  if copied_entries:
+    cloudlog.warning(f"Migrated {copied_entries} legacy StarPilot params cache entries from {legacy_store} to {cache_store}")
+
+  try:
+    STARPILOT_PARAMS_CACHE_MIGRATION_FLAG.parent.mkdir(parents=True, exist_ok=True)
+    STARPILOT_PARAMS_CACHE_MIGRATION_FLAG.write_text(f"{datetime.datetime.now(datetime.UTC).isoformat()}\n")
+  except Exception:
+    cloudlog.exception(f"Failed to write migration flag: {STARPILOT_PARAMS_CACHE_MIGRATION_FLAG}")
 
 
 def cleanup_removed_starpilot_params(params: Params, params_cache: Params) -> None:
@@ -668,9 +732,8 @@ def manager_init() -> None:
   build_metadata = get_build_metadata()
 
   params = Params()
-  cache_params_path = "/cache/params"
-  if HARDWARE.get_device_type() == "pc":
-    cache_params_path = os.path.join(Paths.comma_home(), "cache", "params")
+  cache_params_path = Paths.params_cache_root()
+  migrate_legacy_starpilot_params_cache(params, Paths.legacy_params_cache_root(), cache_params_path)
   params_cache = Params(cache_params_path, return_defaults=True)
 
   # Legacy FrogPilot params are unknown to the renamed schema and would be
