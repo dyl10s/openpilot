@@ -162,6 +162,13 @@ class VehicleSettingsManagerView(PanelManagerView):
         "get_state": lambda: self._controller._params.get_bool("VoltSNG"),
         "set_state": lambda s: self._controller._on_toggle("VoltSNG"),
       })
+    if cs.isJeep:
+      toggles.append({
+        "title": tr("Jeep Brake Hold"),
+        "subtitle": tr("Hold after ACC times out at a stop and resume when traffic moves."),
+        "get_state": lambda: self._controller._params.get_bool("JeepBrakeHold"),
+        "set_state": lambda s: self._controller._on_toggle("JeepBrakeHold"),
+      })
 
     if cs.isSubaru:
       toggles.append({

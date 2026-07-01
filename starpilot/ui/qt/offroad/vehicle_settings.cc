@@ -154,18 +154,21 @@ StarPilotVehiclesPanel::StarPilotVehiclesPanel(StarPilotSettingsWindow *parent, 
   });
   settingsList->addItem(disableOpenpilotLong);
 
+  StarPilotListWidget *chryslerList = new StarPilotListWidget(this);
   StarPilotListWidget *gmList = new StarPilotListWidget(this);
   StarPilotListWidget *hkgList = new StarPilotListWidget(this);
   StarPilotListWidget *subaruList = new StarPilotListWidget(this);
   StarPilotListWidget *toyotaList = new StarPilotListWidget(this);
   StarPilotListWidget *vehicleInfoList = new StarPilotListWidget(this);
 
+  ScrollView *chryslerPanel = new ScrollView(chryslerList, this);
   ScrollView *gmPanel = new ScrollView(gmList, this);
   ScrollView *hkgPanel = new ScrollView(hkgList, this);
   ScrollView *subaruPanel = new ScrollView(subaruList, this);
   ScrollView *toyotaPanel = new ScrollView(toyotaList, this);
   ScrollView *vehicleInfoPanel = new ScrollView(vehicleInfoList, this);
 
+  vehiclesLayout->addWidget(chryslerPanel);
   vehiclesLayout->addWidget(gmPanel);
   vehiclesLayout->addWidget(hkgPanel);
   vehiclesLayout->addWidget(subaruPanel);
@@ -173,6 +176,9 @@ StarPilotVehiclesPanel::StarPilotVehiclesPanel(StarPilotSettingsWindow *parent, 
   vehiclesLayout->addWidget(vehicleInfoPanel);
 
   std::vector<std::tuple<QString, QString, QString, QString>> vehicleToggles {
+    {"ChryslerToggles", tr("Chrysler/Jeep Settings"), tr("<b>StarPilot features for Chrysler and Jeep vehicles.</b>"), ""},
+    {"JeepBrakeHold", tr("Brake Hold"), tr("<b>Hold the brakes after Jeep ACC times out at a stop</b>, then send resume when traffic moves again."), ""},
+
     {"GMToggles", tr("General Motors Settings"), tr("<b>StarPilot features for General Motors vehicles.</b>"), ""},
     {"GMPedalLongitudinal", tr("Use Pedal For Longitudinal"), tr("<b>Use the pedal interceptor for full longitudinal control</b> on supported GM vehicles."), ""},
     {"GMDashSpoofOffsets", tr("Apply Offsets To Dash Spoof"), tr("<b>On GM pedal-long cars, add the configured set-speed offset</b> to the spoofed dash set speed so it matches the on-screen set speed."), ""},
@@ -209,7 +215,15 @@ StarPilotVehiclesPanel::StarPilotVehiclesPanel(StarPilotSettingsWindow *parent, 
   for (const auto &[param, title, desc, icon] : vehicleToggles) {
     AbstractControl *vehicleToggle;
 
-    if (param == "GMToggles") {
+    if (param == "ChryslerToggles") {
+      ButtonControl *chryslerButton = new ButtonControl(title, tr("MANAGE"), desc);
+      QObject::connect(chryslerButton, &ButtonControl::clicked, [vehiclesLayout, chryslerPanel, this]() {
+        openDescriptions(forceOpenDescriptions, toggles);
+        vehiclesLayout->setCurrentWidget(chryslerPanel);
+      });
+      vehicleToggle = chryslerButton;
+
+    } else if (param == "GMToggles") {
       ButtonControl *gmButton = new ButtonControl(title, tr("MANAGE"), desc);
       QObject::connect(gmButton, &ButtonControl::clicked, [vehiclesLayout, gmPanel, this]() {
         openDescriptions(forceOpenDescriptions, toggles);
@@ -275,7 +289,9 @@ StarPilotVehiclesPanel::StarPilotVehiclesPanel(StarPilotSettingsWindow *parent, 
 
     toggles[param] = vehicleToggle;
 
-    if (gmKeys.contains(param)) {
+    if (chryslerKeys.contains(param)) {
+      chryslerList->addItem(vehicleToggle);
+    } else if (gmKeys.contains(param)) {
       gmList->addItem(vehicleToggle);
     } else if (hkgKeys.contains(param)) {
       hkgList->addItem(vehicleToggle);
@@ -407,7 +423,9 @@ void StarPilotVehiclesPanel::updateToggles() {
     bool setVisible = showAllToggles || parent->tuningLevel >= parent->starpilotToggleLevels[key].toDouble();
 
     if (!showAllToggles) {
-      if (gmKeys.contains(key)) {
+      if (chryslerKeys.contains(key)) {
+        setVisible &= parent->isJeep;
+      } else if (gmKeys.contains(key)) {
         setVisible &= parent->isGM;
       } else if (hkgKeys.contains(key)) {
         setVisible &= parent->isHKGCanFd && parent->hasOpenpilotLongitudinal;
@@ -455,7 +473,9 @@ void StarPilotVehiclesPanel::updateToggles() {
     toggle->setVisible(setVisible);
 
     if (setVisible) {
-      if (gmKeys.contains(key)) {
+      if (chryslerKeys.contains(key)) {
+        toggles["ChryslerToggles"]->setVisible(true);
+      } else if (gmKeys.contains(key)) {
         toggles["GMToggles"]->setVisible(true);
       } else if (hkgKeys.contains(key)) {
         toggles["HKGToggles"]->setVisible(true);
