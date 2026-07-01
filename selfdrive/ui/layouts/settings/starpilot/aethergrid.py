@@ -449,7 +449,7 @@ def init_list_panel(rect: rl.Rectangle, style: PanelStyle | None = None, metrics
   return frame, scroll_rect, content_width
 
 
-def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
+def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *, radius_px: float = 100) -> tuple[rl.Rectangle, rl.Color]:
   snapped = snap_rect(rect)
   rx, ry, rw, rh = int(snapped.x), int(snapped.y), int(snapped.width), int(snapped.height)
   face = rl.Rectangle(rx, ry, rw, rh)
@@ -460,16 +460,16 @@ def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0)
     off = i * 2.5 * glow
     gr = rl.Rectangle(rx - off, ry - off, rw + off * 2, rh + off * 2)
     a = int(25 * (1.0 - i / 5) * glow)
-    draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=100)
+    draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=radius_px)
 
-  draw_rounded_fill(face, _HUD_BG_ON, radius_px=100)
+  draw_rounded_fill(face, _HUD_BG_ON, radius_px=radius_px)
 
   bc = rl.Color(
     max(0, min(255, int(off_border.r + (accent.r - off_border.r) * glow))),
     max(0, min(255, int(off_border.g + (accent.g - off_border.g) * glow))),
     max(0, min(255, int(off_border.b + (accent.b - off_border.b) * glow))),
     255)
-  draw_rounded_stroke(face, bc, radius_px=100)
+  draw_rounded_stroke(face, bc, radius_px=radius_px)
 
   return face, accent
 
@@ -1478,10 +1478,121 @@ def draw_standard_toggle_row(
   )
 
 
+_KNOB_ANIMATION_STATES: dict[str, float] = {}
+_TOGGLE_CONSTELLATION_CACHE: dict[str, tuple[list[dict], list[tuple[int, int]]]] = {}
+
+# Anchor-zone regions for tile (near-square) vs pill (wide/short)
+_CONST_REGIONS_TILE = [
+  (0.18, 0.30, 0.18, 0.30),  # top-left corner
+  (0.70, 0.82, 0.18, 0.30),  # top-right corner
+  (0.18, 0.30, 0.70, 0.82),  # bottom-left corner
+  (0.70, 0.82, 0.70, 0.82),  # bottom-right corner
+  (0.38, 0.62, 0.18, 0.28),  # top-center edge
+  (0.38, 0.62, 0.72, 0.82),  # bottom-center edge
+  (0.18, 0.28, 0.38, 0.62),  # left-center edge
+  (0.72, 0.82, 0.38, 0.62),  # right-center edge
+]
+_CONST_REGIONS_PILL = [
+  (0.15, 0.30, 0.22, 0.42),  # left cluster
+  (0.70, 0.85, 0.22, 0.42),  # right cluster
+  (0.15, 0.30, 0.58, 0.78),  # left cluster low
+  (0.70, 0.85, 0.58, 0.78),  # right cluster low
+  (0.38, 0.62, 0.20, 0.35),  # top-center
+  (0.38, 0.62, 0.65, 0.80),  # bottom-center
+  (0.20, 0.35, 0.38, 0.62),  # left-mid
+  (0.65, 0.80, 0.38, 0.62),  # right-mid
+]
+
+def _build_constellation_nodes(
+  rng: random.Random,
+  num: int,
+  regions: list[tuple[float, float, float, float]],
+  *,
+  r_min: float,
+  r_max: float,
+  min_sep: float,
+  x_margin: float,
+  y_margin: float,
+) -> tuple[list[dict], list[tuple[int, int]]]:
+  """Shared constellation node generator used by both tiles and toggle pills."""
+  ax_min, ax_max, ay_min, ay_max = regions[rng.randint(0, len(regions) - 1)]
+  ax = ax_min + rng.random() * (ax_max - ax_min)
+  ay = ay_min + rng.random() * (ay_max - ay_min)
+  nodes: list[dict] = []
+  for _ in range(num):
+    for _ in range(20):
+      a = rng.random() * 2.0 * math.pi
+      r = r_min + rng.random() * r_max
+      x = max(x_margin, min(1.0 - x_margin, ax + r * math.cos(a)))
+      y = max(y_margin, min(1.0 - y_margin, ay + r * math.sin(a)))
+      if all(math.sqrt((x - n['x'])**2 + (y - n['y'])**2) >= min_sep for n in nodes):
+        nodes.append({'x': x, 'y': y})
+        break
+    else:
+      nodes.append({'x': x, 'y': y})
+  nodes.sort(key=lambda n: -(abs(n['x'] - 0.5) + abs(n['y'] - 0.5)))
+  for i, n in enumerate(nodes):
+    n['w'] = 0 if i == 0 else 1 if i == 1 else 2
+  vecs: list[tuple[int, int]] = [(0, j) for j in range(1, len(nodes))]
+  return nodes, vecs
+
+
+def draw_constellation_nodes(
+  nodes: list[dict],
+  vecs: list[tuple[int, int]],
+  rect: rl.Rectangle,
+  accent: rl.Color,
+  glow: float,
+  *,
+  scale: float = 1.0,
+) -> None:
+  """Shared constellation renderer used by both tiles and toggle pills.
+
+  `scale` shrinks core/glow radii for smaller surfaces (e.g. 0.45 for pills).
+  """
+  rx, ry, rw, rh = int(rect.x), int(rect.y), int(rect.width), int(rect.height)
+  va = int(10 + glow * 25)
+  if va > 2:
+    vc = rl.Color(accent.r, accent.g, accent.b, min(255, va))
+    for i, j in vecs:
+      rl.draw_line_ex(
+        rl.Vector2(int(rx + nodes[i]['x'] * rw), int(ry + nodes[i]['y'] * rh)),
+        rl.Vector2(int(rx + nodes[j]['x'] * rw), int(ry + nodes[j]['y'] * rh)),
+        1.0, vc,
+      )
+  for nd in nodes:
+    nx = int(rx + nd['x'] * rw)
+    ny = int(ry + nd['y'] * rh)
+    w = nd.get('w', 2)
+    if w == 0:
+      core_r, diff_r, col = 3.0 * scale, 12.0 * scale, _CONST_PRIMARY
+    elif w == 1:
+      core_r, diff_r, col = 2.0 * scale, 8.0 * scale, _CONST_SECONDARY
+    else:
+      core_r, diff_r, col = 1.2 * scale, 0.0, _CONST_TERTIARY
+    da = int(5 + glow * 20)
+    if diff_r > 0 and da > 2:
+      rl.draw_circle(nx, ny, max(1.0, diff_r), rl.Color(col.r, col.g, col.b, min(255, da)))
+    ca = int(130 + glow * 125)
+    rl.draw_circle(nx, ny, max(1.0, core_r), rl.Color(col.r, col.g, col.b, min(255, ca)))
+
+
+def _get_or_create_toggle_constellation(seed_id: str) -> tuple[list[dict], list[tuple[int, int]]]:
+  if seed_id in _TOGGLE_CONSTELLATION_CACHE:
+    return _TOGGLE_CONSTELLATION_CACHE[seed_id]
+  rng = random.Random(seed_id)
+  nodes, vecs = _build_constellation_nodes(
+    rng, rng.randint(2, 4), _CONST_REGIONS_PILL,
+    r_min=0.06, r_max=0.22, min_sep=0.12, x_margin=0.10, y_margin=0.18,
+  )
+  _TOGGLE_CONSTELLATION_CACHE[seed_id] = (nodes, vecs)
+  return nodes, vecs
+
 def draw_toggle_switch(
   rect: rl.Rectangle,
   enabled: bool,
   *,
+  knob_progress: float | None = None,
   is_enabled: bool = True,
   track_color: rl.Color = AetherListColors.PRIMARY,
   off_track_color: rl.Color = rl.Color(255, 255, 255, 24),
@@ -1490,15 +1601,51 @@ def draw_toggle_switch(
   height: int = AETHER_LIST_METRICS.toggle_height,
   right_inset: int = AETHER_LIST_METRICS.toggle_right_inset,
   knob_offset: int = 20,
+  seed_id: str = "",
 ):
   toggle_rect = rl.Rectangle(rect.x + rect.width - width - right_inset, rect.y + (rect.height - height) / 2, width, height)
-  track = track_color if enabled else off_track_color
+
+  if knob_progress is None:
+    knob_progress = 1.0 if enabled else 0.0
+
   if not is_enabled:
-    track = with_alpha(mix_colors(off_track_color, track, 0.35), 42)
     knob_color = with_alpha(knob_color, 132)
-  knob_x = toggle_rect.x + toggle_rect.width - knob_offset if enabled else toggle_rect.x + knob_offset
-  rl.draw_rectangle_rounded(toggle_rect, 1.0, 16, track)
-  rl.draw_circle(int(knob_x), int(toggle_rect.y + toggle_rect.height / 2), 16, knob_color)
+
+  knob_x = toggle_rect.x + knob_offset + knob_progress * (toggle_rect.width - 2 * knob_offset)
+  knob_y = toggle_rect.y + toggle_rect.height / 2
+
+  # Delegate to draw_hud_background — same layered bloom, fill, and lerped border as tiles
+  draw_hud_background(toggle_rect, track_color if is_enabled else with_alpha(track_color, 80), knob_progress, radius_px=TILE_RADIUS_PX)
+
+  if seed_id and enabled:
+    nodes, vecs = _get_or_create_toggle_constellation(seed_id)
+    glow = knob_progress
+    draw_constellation_nodes(nodes, vecs, toggle_rect, track_color, glow, scale=0.45)
+
+    # Gravity tethers during slide — drawn after stars so they appear under knob
+    if 0.0 < knob_progress < 1.0:
+      tether_alpha = int(60 * math.sin(knob_progress * math.pi))
+      tether_col = rl.Color(track_color.r, track_color.g, track_color.b, tether_alpha)
+      for node in nodes:
+        nx = toggle_rect.x + node['x'] * toggle_rect.width
+        ny = toggle_rect.y + node['y'] * toggle_rect.height
+        rl.draw_line_ex(rl.Vector2(nx, ny), rl.Vector2(knob_x, knob_y), 1.2, tether_col)
+
+  # Nearly-square slider thumb — physical button sliding across the starfield
+  knob_w = 30.0
+  knob_h = toggle_rect.height - 8.0  # 4px inset top + bottom = 34px
+  knob_roundness = 0.65              # ≈10px corner radius on 30px width — rect, not pill
+  knob_segments = 8
+  knob_rect = snap_rect(rl.Rectangle(
+    knob_x - knob_w / 2, knob_y - knob_h / 2, knob_w, knob_h
+  ))
+  # Base fill
+  rl.draw_rectangle_rounded(knob_rect, knob_roundness, knob_segments, knob_color)
+  # Glass highlight — top ~40% of knob at low opacity, simulates light catching the face
+  highlight_rect = rl.Rectangle(knob_rect.x + 2, knob_rect.y + 2, knob_rect.width - 4, knob_rect.height * 0.40)
+  rl.draw_rectangle_rounded(highlight_rect, knob_roundness, knob_segments, with_alpha(rl.WHITE, 38))
+  # Thin border for depth
+  rl.draw_rectangle_rounded_lines_ex(knob_rect, knob_roundness, knob_segments, 1.0, with_alpha(rl.WHITE, 50))
 
 
 def draw_action_pill(
@@ -1866,7 +2013,22 @@ def draw_settings_list_row(
     )
 
   if toggle_value is not None:
-    draw_toggle_switch(draw_rect, bool(toggle_value), is_enabled=enabled, track_color=style.accent)
+    target = 1.0 if toggle_value else 0.0
+    current_progress = _KNOB_ANIMATION_STATES.get(title, target)
+    dt = rl.get_frame_time()
+    current_progress += (target - current_progress) * 12.0 * dt
+    if abs(current_progress - target) < 0.001:
+      current_progress = target
+    _KNOB_ANIMATION_STATES[title] = current_progress
+
+    draw_toggle_switch(
+      draw_rect, 
+      bool(toggle_value), 
+      knob_progress=current_progress,
+      is_enabled=enabled, 
+      track_color=style.accent,
+      seed_id=title,
+    )
     return
 
   if value:
@@ -3705,66 +3867,15 @@ class AetherTile(Widget):
       return
     rng = random.Random(self._constellation_seed())
     num = _NODE_NUM_MIN + rng.randint(0, _NODE_NUM_MAX - _NODE_NUM_MIN)
-    regions = [
-      (0.18, 0.30, 0.18, 0.30),  # top-left corner
-      (0.70, 0.82, 0.18, 0.30),  # top-right corner
-      (0.18, 0.30, 0.70, 0.82),  # bottom-left corner
-      (0.70, 0.82, 0.70, 0.82),  # bottom-right corner
-      (0.38, 0.62, 0.18, 0.28),  # top-center edge
-      (0.38, 0.62, 0.72, 0.82),  # bottom-center edge
-      (0.18, 0.28, 0.38, 0.62),  # left-center edge
-      (0.72, 0.82, 0.38, 0.62),  # right-center edge
-    ]
-    ax_min, ax_max, ay_min, ay_max = regions[rng.randint(0, 7)]
-    ax = ax_min + rng.random() * (ax_max - ax_min)
-    ay = ay_min + rng.random() * (ay_max - ay_min)
-    nodes = []
-    for _ in range(num):
-      for _ in range(20):
-        a = rng.random() * 2.0 * math.pi
-        r = 0.05 + rng.random() * 0.11
-        x = max(0.04, min(0.96, ax + r * math.cos(a)))
-        y = max(0.04, min(0.96, ay + r * math.sin(a)))
-        if all(math.sqrt((x - n['x'])**2 + (y - n['y'])**2) >= 0.07 for n in nodes):
-          nodes.append({'x': x, 'y': y})
-          break
-      else:
-        nodes.append({'x': x, 'y': y})
-    nodes.sort(key=lambda n: -(abs(n['x'] - 0.5) + abs(n['y'] - 0.5)))
-    for i, n in enumerate(nodes):
-      n['w'] = 0 if i == 0 else 1 if i == 1 else 2
-    vecs = [(0, j) for j in range(1, num)]
-    self._constellation_data = (nodes, vecs)
+    self._constellation_data = _build_constellation_nodes(
+      rng, num, _CONST_REGIONS_TILE,
+      r_min=0.05, r_max=0.11, min_sep=0.07, x_margin=0.04, y_margin=0.04,
+    )
 
   def _draw_constellation(self, face: rl.Rectangle, accent: rl.Color, glow: float):
     self._generate_and_cache_constellation()
     nodes, vecs = self._constellation_data
-    rx, ry, rw, rh = int(face.x), int(face.y), int(face.width), int(face.height)
-
-    va = int(10 + glow * 25)
-    if va > 2:
-      vc = rl.Color(accent.r, accent.g, accent.b, min(255, va))
-      for i, j in vecs:
-        x1 = int(rx + nodes[i]['x'] * rw)
-        y1 = int(ry + nodes[i]['y'] * rh)
-        x2 = int(rx + nodes[j]['x'] * rw)
-        y2 = int(ry + nodes[j]['y'] * rh)
-        rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), 1.0, vc)
-
-    for nd in nodes:
-      nx = int(rx + nd['x'] * rw)
-      ny = int(ry + nd['y'] * rh)
-      if nd['w'] == 0:
-        core_r, diff_r, col = 3.0, 12.0, _CONST_PRIMARY
-      elif nd['w'] == 1:
-        core_r, diff_r, col = 2.0, 8.0, _CONST_SECONDARY
-      else:
-        core_r, diff_r, col = 1.2, 0.0, _CONST_TERTIARY
-      da = int(5 + glow * 20)
-      if diff_r > 0 and da > 2:
-        rl.draw_circle(nx, ny, int(diff_r), rl.Color(col.r, col.g, col.b, min(255, da)))
-      ca = int(130 + glow * 125)
-      rl.draw_circle(nx, ny, int(core_r), rl.Color(col.r, col.g, col.b, min(255, ca)))
+    draw_constellation_nodes(nodes, vecs, face, accent, glow, scale=1.0)
 
   def _render_hud_background(self, rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
     sq = self._squish
