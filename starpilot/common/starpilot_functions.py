@@ -15,6 +15,14 @@ from openpilot.system.hardware import HARDWARE
 
 STARPILOT_API = os.getenv("STARPILOT_API", "https://frogpilot.com/api")
 BOOT_LOGO_STATE_PATH = Path("/cache/starpilot_boot_logo_state_v1")
+ACTIVE_THEME_PATH = Path(BASEDIR) / "starpilot/assets/active_theme"
+ACTIVE_THEME_REQUIRED_PATHS = (
+  ACTIVE_THEME_PATH / "colors/colors.json",
+  ACTIVE_THEME_PATH / "icons",
+  ACTIVE_THEME_PATH / "distance_icons",
+  ACTIVE_THEME_PATH / "signals",
+  ACTIVE_THEME_PATH / "sounds",
+)
 
 
 def _starpilot_data_root():
@@ -45,6 +53,70 @@ def _run_cmd(*args, **kwargs):
   from openpilot.starpilot.common.starpilot_utilities import run_cmd
 
   return run_cmd(*args, **kwargs)
+
+
+def _path_has_content(path):
+  if path.is_symlink() and not path.exists():
+    return False
+  if path.is_file():
+    return True
+  if not path.is_dir():
+    return False
+  try:
+    next(path.iterdir())
+    return True
+  except (OSError, StopIteration):
+    return False
+
+
+def _active_theme_ready():
+  return all(_path_has_content(path) for path in ACTIVE_THEME_REQUIRED_PATHS)
+
+
+def _normalize_dongle_id(value):
+  if isinstance(value, bytes):
+    value = value.decode("utf-8", errors="ignore")
+  if value is None:
+    return None
+  value = str(value).strip()
+  return value or None
+
+
+def _read_persisted_stock_dongle_id():
+  persisted_dongle_id_path = _starpilot_persist_root() / "comma" / "dongle_id"
+  if not persisted_dongle_id_path.is_file():
+    return None
+  return _normalize_dongle_id(persisted_dongle_id_path.read_text())
+
+
+def _ensure_stock_dongle_id_fast(params):
+  current_dongle_id = _normalize_dongle_id(params.get("DongleId"))
+  konik_dongle_id = _normalize_dongle_id(params.get("KonikDongleId"))
+  stock_dongle_id = _normalize_dongle_id(params.get("StockDongleId"))
+
+  if stock_dongle_id not in (None, konik_dongle_id):
+    return stock_dongle_id
+
+  candidate = _read_persisted_stock_dongle_id()
+  if candidate in (None, konik_dongle_id):
+    candidate = current_dongle_id if current_dongle_id != konik_dongle_id else None
+
+  if candidate is not None and candidate != stock_dongle_id:
+    params.put("StockDongleId", candidate)
+
+  return candidate
+
+
+def _sync_cached_konik_dongle_id(params):
+  current_dongle_id = _normalize_dongle_id(params.get("DongleId"))
+  konik_dongle_id = _normalize_dongle_id(params.get("KonikDongleId"))
+  stock_dongle_id = _ensure_stock_dongle_id_fast(params)
+
+  if params.get_bool("UseKonikServer"):
+    if konik_dongle_id is not None and current_dongle_id != konik_dongle_id:
+      params.put("DongleId", konik_dongle_id)
+  elif current_dongle_id == konik_dongle_id and stock_dongle_id is not None:
+    params.put("DongleId", stock_dongle_id)
 
 
 def _boot_logo_cache_key(selected_logo, source_logo):
@@ -117,12 +189,40 @@ def seed_desktop_theme_assets():
 
 
 def starpilot_boot_functions(build_metadata, params):
+  params.put("BuildMetadata", json.dumps(dataclasses.asdict(build_metadata)))
+  _sync_cached_konik_dongle_id(params)
+
+  def boot_thread():
+    try:
+      _finish_starpilot_boot(build_metadata)
+    except Exception as error:
+      print(f"StarPilot boot functions failed: {error}")
+
+  if _active_theme_ready():
+    threading.Thread(target=boot_thread, daemon=True).start()
+    return
+
+  # Brand-new installs need active theme links before UI starts. Existing
+  # installs keep this off the manager hot path and refresh in the background.
+  _refresh_active_theme(Params())
+  threading.Thread(target=boot_thread, daemon=True).start()
+
+
+def _refresh_active_theme(params):
   from openpilot.starpilot.assets.theme_manager import ThemeManager
-  from openpilot.starpilot.common.connect_server import sync_konik_dongle_id
-  from openpilot.starpilot.common.maps_catalog import sanitize_selected_locations_csv
   from openpilot.starpilot.common.starpilot_variables import StarPilotVariables
 
   params_memory = Params(memory=True)
+  starpilot_toggles = StarPilotVariables().starpilot_toggles
+  ThemeManager(params, params_memory, boot_run=True).update_active_theme(time_validated=system_time_valid(), starpilot_toggles=starpilot_toggles, boot_run=True)
+
+
+def _finish_starpilot_boot(build_metadata):
+  from openpilot.starpilot.common.connect_server import sync_konik_dongle_id
+  from openpilot.starpilot.common.maps_catalog import sanitize_selected_locations_csv
+  from openpilot.starpilot.common.starpilot_backups import backup_starpilot
+
+  params = Params()
 
   maps_selected_raw = params.get("MapsSelected")
   maps_selected = sanitize_selected_locations_csv(maps_selected_raw)
@@ -133,21 +233,14 @@ def starpilot_boot_functions(build_metadata, params):
 
   params.put("BuildMetadata", json.dumps(dataclasses.asdict(build_metadata)))
 
-  starpilot_toggles = StarPilotVariables().starpilot_toggles
-  ThemeManager(params, params_memory, boot_run=True).update_active_theme(time_validated=system_time_valid(), starpilot_toggles=starpilot_toggles, boot_run=True)
-
+  _refresh_active_theme(params)
   sync_konik_dongle_id(params)
 
-  def boot_thread():
-    from openpilot.starpilot.common.starpilot_backups import backup_starpilot
+  while not system_time_valid():
+    print("Waiting for system time to become valid...")
+    time.sleep(1)
 
-    while not system_time_valid():
-      print("Waiting for system time to become valid...")
-      time.sleep(1)
-
-    backup_starpilot(build_metadata, params)
-
-  threading.Thread(target=boot_thread, daemon=True).start()
+  backup_starpilot(build_metadata, params)
 
 
 def install_starpilot(build_metadata, params):

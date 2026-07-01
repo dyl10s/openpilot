@@ -13,7 +13,7 @@ const FAVORITE_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, s
 let syncScheduled = false
 let lastParams = null
 const DYNAMIC_DEFAULT_DEP_KEYS = new Set(["AccelerationProfile", "EVTuning", "TruckTuning"])
-const PANDA_FIRMWARE_TOGGLE_KEYS = new Set(["HKGRemoteStartBootsComma"])
+const PANDA_FIRMWARE_TOGGLE_KEYS = new Set(["IgnoreIgnitionLine", "RemoteStartBootsComma", "HKGRemoteStartBootsComma"])
 
 // Module-level state (persists across route changes)
 const state = reactive({
