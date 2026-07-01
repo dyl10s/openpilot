@@ -2952,6 +2952,14 @@ class SettingSection:
   row_height: int = ROW_HEIGHT
 
 
+@dataclass
+class ParentToggle:
+  label: str
+  get_state: Callable[[], bool]
+  set_state: Callable[[bool], None]
+  subtitle: str = ""
+
+
 # ── AetherSettingsView — reusable list-panel ManagerView ──
 
 class AetherSettingsView(PanelManagerView):
@@ -2965,6 +2973,7 @@ class AetherSettingsView(PanelManagerView):
 
   def __init__(self, controller, sections: list[SettingSection],
                *, header_title: str = "", header_subtitle: str = "",
+               parent_toggle: ParentToggle | None = None,
                tab_defs: list[dict] | None = None,
                panel_style=None, fade_height: float = AETHER_LIST_METRICS.fade_height,
                metrics = COMPACT_PANEL_METRICS):
@@ -2976,7 +2985,8 @@ class AetherSettingsView(PanelManagerView):
     self._sections = sections
     self._header_title = header_title
     self._header_subtitle = header_subtitle
-    self._has_header = bool(header_title)
+    self._parent_toggle = parent_toggle
+    self._has_header = bool(header_title) or parent_toggle is not None
     self._tab_defs = tab_defs
     self._active_tab_key = tab_defs[0]["id"] if tab_defs else ""
     self._scroll_panel = GuiScrollPanel2(horizontal=False)
@@ -2992,8 +3002,19 @@ class AetherSettingsView(PanelManagerView):
           return row
     return None
 
+  def _target_at(self, mouse_pos: MousePos) -> str | None:
+    if self._parent_toggle:
+      mid = f"parent_toggle:{self._parent_toggle.label}"
+      rect = self._interactive_rects.get(mid)
+      if rect and point_hits(mouse_pos, rect, None, pad_x=6, pad_y=6):
+        return mid
+    return super()._target_at(mouse_pos)
+
   def _activate_target(self, target_id: str | None):
     if not target_id:
+      return
+    if target_id.startswith("parent_toggle:") and self._parent_toggle:
+      self._parent_toggle.set_state(not self._parent_toggle.get_state())
       return
     if target_id.startswith("tab:") and self._tab_defs:
       self._active_tab_key = target_id[4:]
@@ -3013,6 +3034,19 @@ class AetherSettingsView(PanelManagerView):
   def _compute_header_height(self, content_width: float) -> float:
     if not self._has_header:
       return 0.0
+    if self._parent_toggle:
+      h = max(42.0, 40.0)  # toggle (42px at header top) vs title area (32px + 8px gap)
+      subtitle_text = tr(self._parent_toggle.subtitle) if self._parent_toggle.subtitle else ""
+      if self._header_subtitle:
+        subtitle_text = tr(self._header_subtitle)
+      if subtitle_text:
+        toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
+        col_w = max(100.0, content_width + AETHER_LIST_METRICS.content_right_gutter - toggle_take)
+        desc_font = gui_app.font(FontWeight.NORMAL)
+        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 18, max_lines=4)
+        h += len(desc_lines) * 22.0 + 12.0
+      h += SECTION_GAP
+      return h
     h = 40.0  # title (32px) + inner gap (8px)
     if self._header_subtitle:
       subtitle_text = tr(self._header_subtitle)
@@ -3066,7 +3100,42 @@ class AetherSettingsView(PanelManagerView):
   def _draw_header(self, rect: rl.Rectangle):
     title = tr(self._header_title) if self._header_title else ""
     subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-    draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=18)
+
+    if self._parent_toggle:
+      toggle = self._parent_toggle
+
+      display_title = title if title else tr(toggle.label)
+      subtitle_text = subtitle if subtitle else (tr(toggle.subtitle) if toggle.subtitle else "")
+
+      toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
+      text_rect = rl.Rectangle(rect.x, rect.y, max(100.0, rect.width - toggle_take), rect.height)
+      draw_settings_panel_header(text_rect, display_title, subtitle_text, title_size=32, subtitle_size=18)
+
+      toggle_id = f"parent_toggle:{toggle.label}"
+      tw = AETHER_LIST_METRICS.toggle_width
+      th = AETHER_LIST_METRICS.toggle_height
+      ri = AETHER_LIST_METRICS.toggle_right_inset
+      toggle_rect = rl.Rectangle(rect.x + rect.width - tw - ri, rect.y, tw, th)
+      self._interactive_rects[toggle_id] = toggle_rect
+
+      toggle_value = toggle.get_state()
+      target_progress = 1.0 if toggle_value else 0.0
+      current_progress = _KNOB_ANIMATION_STATES.get(toggle_id, target_progress)
+      dt = rl.get_frame_time()
+      current_progress += (target_progress - current_progress) * 12.0 * dt
+      if abs(current_progress - target_progress) < 0.001:
+        current_progress = target_progress
+      _KNOB_ANIMATION_STATES[toggle_id] = current_progress
+
+      draw_toggle_switch(
+        rl.Rectangle(rect.x, rect.y, rect.width, th),
+        toggle_value,
+        knob_progress=current_progress,
+        track_color=self._panel_style.accent,
+        seed_id=toggle_id,
+      )
+    else:
+      draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=18)
 
   def _active_sections(self) -> list[SettingSection]:
     if self._tab_defs and self._active_tab_key:
@@ -3129,12 +3198,20 @@ class AetherSettingsView(PanelManagerView):
     active = self._active_sections()
     has_visible = any(self._visible_rows(s) for s in active)
     if not has_visible:
-      draw_empty_state_card(
-        rl.Rectangle(rect.x, y, width, rect.height - (y - rect.y)),
-        tr("No settings to display"),
-        tr("All options in this panel are hidden or unavailable."),
-        style=self._panel_style,
-      )
+      if self._parent_toggle and not self._parent_toggle.get_state():
+        draw_empty_state_card(
+          rl.Rectangle(rect.x, y, width, rect.height - (y - rect.y)),
+          tr("Enable {} to configure settings.").format(tr(self._parent_toggle.label)),
+          "",
+          style=self._panel_style,
+        )
+      elif not self._parent_toggle:
+        draw_empty_state_card(
+          rl.Rectangle(rect.x, y, width, rect.height - (y - rect.y)),
+          tr("No settings to display"),
+          tr("All options in this panel are hidden or unavailable."),
+          style=self._panel_style,
+        )
       return
     i = 0
     while i < len(active):

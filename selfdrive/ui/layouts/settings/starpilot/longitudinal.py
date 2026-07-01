@@ -19,6 +19,7 @@ from openpilot.selfdrive.ui.layouts.settings.starpilot.aethergrid import (
   AETHER_LIST_METRICS,
   AetherSliderDialog,
   DEFAULT_PANEL_STYLE,
+  ParentToggle,
   SettingRow,
   SettingSection,
   AetherSettingsView,
@@ -249,6 +250,14 @@ class StarPilotLongitudinalLayout(_SettingsPage):
   def _show_stop_tuning_values(self) -> bool:
     return self._advanced_enabled() and not (starpilot_state.car_state.isToyota and self._params.get_bool("FrogsGoMoosTweak"))
 
+  def _make_parent(self, key: str, label: str, subtitle: str = "") -> ParentToggle:
+    return ParentToggle(
+      label=label,
+      subtitle=subtitle,
+      get_state=lambda k=key: self._params.get_bool(k),
+      set_state=lambda s, k=key: self._params.put_bool(k, s),
+    )
+
   def _build_view(self):
     ol = lambda: starpilot_state.car_state.hasOpenpilotLongitudinal
     ce_on = lambda: self._params.get_bool("ConditionalExperimental")
@@ -258,10 +267,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
     
     # ── 1. Longitudinal Tuning Rows ──
     self._tune_rows = [
-      SettingRow("LongitudinalTune", "toggle", tr_noop("Longitudinal Tuning"),
-                 subtitle=tr_noop("Acceleration and braking control changes to fine-tune how openpilot drives."),
-                 get_state=lambda: self._params.get_bool("LongitudinalTune"),
-                 set_state=lambda s: self._params.put_bool("LongitudinalTune", s)),
       SettingRow("AccelProfile", "value", tr_noop("Acceleration Profile"),
                  subtitle=tr_noop("Choose how quickly openpilot speeds up."),
                  get_value=self._get_acceleration_profile_label,
@@ -297,10 +302,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
     # ── 2. Advanced Actuators Rows ──
     adv = self._advanced_enabled
     self._advanced_rows = [
-      SettingRow("AdvancedLongitudinalTune", "toggle", tr_noop("Advanced Longitudinal Tuning"),
-                 subtitle=tr_noop("Advanced acceleration and braking changes for refining launch, stopping, and actuator response."),
-                 get_state=lambda: self._params.get_bool("AdvancedLongitudinalTune"),
-                 set_state=lambda s: self._params.put_bool("AdvancedLongitudinalTune", s)),
       SettingRow("EVTuning", "toggle", tr_noop("EV Tuning"),
                  subtitle=tr_noop("Acceleration tuning for EV and direct-drive vehicles."),
                  get_state=lambda: self._params.get_bool("EVTuning"),
@@ -359,10 +360,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
 
     # ── 3. Speed Limit Controller (SLC) Rows ──
     self._slc_rows = [
-      SettingRow("SLC", "toggle", tr_noop("Speed Limit Controller"),
-                 subtitle=tr_noop("Limit the car's maximum speed to the current speed limit."),
-                 get_state=lambda: self._params.get_bool("SpeedLimitController"),
-                 set_state=lambda s: self._params.put_bool("SpeedLimitController", s)),
       SettingRow("SLCFallback", "value", tr_noop("Fallback Speed"),
                  subtitle="",
                  get_value=lambda: self._params.get("SLCFallback", encoding="utf-8") or "Set Speed",
@@ -436,10 +433,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
 
     # ── 4. Adaptive Speed Controls Rows (CES + CSC) ──
     self._conditional_experimental_rows = [
-      SettingRow("ConditionalExperimental", "toggle", tr_noop("Conditional Experimental Mode"),
-                 subtitle="",
-                 get_state=lambda: self._params.get_bool("ConditionalExperimental"),
-                 set_state=lambda s: self._params.put_bool("ConditionalExperimental", s)),
       SettingRow("PersistExp", "toggle", tr_noop("Persist Experimental State"),
                  subtitle=tr_noop("Keep override through reboots until manually cleared."),
                  get_state=lambda: self._params.get_bool("PersistExperimentalState"),
@@ -508,10 +501,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
     ]
 
     self._curve_speed_controller_rows = [
-      SettingRow("CurveSpeed", "toggle", tr_noop("Curve Speed Controller"),
-                 subtitle="",
-                 get_state=lambda: self._params.get_bool("CurveSpeedController"),
-                 set_state=lambda s: self._params.put_bool("CurveSpeedController", s)),
       SettingRow("ShowCSCStatus", "toggle", tr_noop("Status Widget"),
                  subtitle=tr_noop("Show the Curve Speed Controller ambient effect on the driving screen."),
                  get_state=lambda: self._params.get_bool("ShowCSCStatus"),
@@ -537,10 +526,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
 
     # ── 5. Driving Personalities Rows ──
     self._personality_rows = [
-      SettingRow("PersonalitiesToggle", "toggle", tr_noop("Driving Personalities"),
-                 subtitle="",
-                 get_state=lambda: self._params.get_bool("CustomPersonalities"),
-                 set_state=lambda s: self._params.put_bool("CustomPersonalities", s)),
       SettingRow("Traffic", "value", tr_noop("Traffic"),
                  subtitle=tr_noop("Configure follow distance, smoothness, and response for traffic conditions."),
                  get_value=lambda: tr_noop("Configure"),
@@ -561,10 +546,6 @@ class StarPilotLongitudinalLayout(_SettingsPage):
 
     # ── 6. Daily QOL & Weather Rows ──
     self._daily_rows = [
-      SettingRow("QOLToggle", "toggle", tr_noop("Quality of Life"),
-                 subtitle="",
-                 get_state=lambda: self._params.get_bool("QOLLongitudinal"),
-                 set_state=lambda s: self._params.put_bool("QOLLongitudinal", s)),
       SettingRow("CustomCruise", "value", tr_noop("Cruise Interval"),
                  subtitle="",
                  get_value=lambda: f"{max(1, self._params.get_int('CustomCruise'))} mph",
@@ -661,6 +642,19 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       panel_style=PANEL_STYLE,
     )
 
+    pt_tune = self._make_parent("LongitudinalTune", "Longitudinal Tuning",
+      "Acceleration and braking control changes to fine-tune how openpilot drives.")
+    pt_advanced = self._make_parent("AdvancedLongitudinalTune", "Advanced Longitudinal Tuning",
+      "Advanced acceleration and braking changes for refining launch, stopping, and actuator response.")
+    pt_personality = self._make_parent("CustomPersonalities", "Driving Personalities")
+    pt_daily = self._make_parent("QOLLongitudinal", "Quality of Life")
+    pt_slc = self._make_parent("SpeedLimitController", "Speed Limit Controller",
+      "Limit the car's maximum speed to the current speed limit.")
+    pt_ce = self._make_parent("ConditionalExperimental", "Conditional Experimental",
+      "Configure triggers and threshold speeds for automated Experimental Mode switching.")
+    pt_csc = self._make_parent("CurveSpeedController", "Curve Speed Controller",
+      "Configure speed control on curves and reset collected calibration data.")
+
     ce_rows = self._conditional_experimental_rows
     self._sub_panels["ce"] = AetherSettingsView(
       self,
@@ -670,6 +664,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       ],
       header_title=tr("Conditional Experimental"),
       header_subtitle=tr("Configure triggers and threshold speeds for automated Experimental Mode switching."),
+      parent_toggle=pt_ce,
       panel_style=PANEL_STYLE,
     )
 
@@ -682,6 +677,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       ],
       header_title=tr("Curve Speed Controller"),
       header_subtitle=tr("Configure speed control on curves and reset collected calibration data."),
+      parent_toggle=pt_csc,
       panel_style=PANEL_STYLE,
     )
 
@@ -693,6 +689,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       [SettingSection(title="", rows=self._tune_rows)],
       header_title=tr_noop("Longitudinal Tuning"),
       header_subtitle=tr_noop("Configure acceleration profiles, smooth following, lane changes, and route speed control."),
+      parent_toggle=pt_tune,
       panel_style=PANEL_STYLE,
     )
     self._sub_panels["advanced"] = AetherSettingsView(
@@ -700,6 +697,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       [SettingSection(title="", rows=self._advanced_rows)],
       header_title=tr_noop("Advanced Actuators"),
       header_subtitle=tr_noop("Adjust actuator delay, EV/Truck tuning, and launch/stop speeds/rates."),
+      parent_toggle=pt_advanced,
       panel_style=PANEL_STYLE,
     )
     self._sub_panels["slc"] = AetherSettingsView(
@@ -707,6 +705,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       [SettingSection(title="", rows=self._slc_rows)],
       header_title=tr_noop("Speed Limit Controller"),
       header_subtitle=tr_noop("Manage auto speed matching, confirmation, offsets, and source priority."),
+      parent_toggle=pt_slc,
       panel_style=PANEL_STYLE,
     )
     self._sub_panels["personality"] = AetherSettingsView(
@@ -714,6 +713,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       [SettingSection(title="", rows=self._personality_rows)],
       header_title=tr_noop("Driving Personalities"),
       header_subtitle=tr_noop("Customize follow distance and jerk/response metrics for each personality profile."),
+      parent_toggle=pt_personality,
       panel_style=PANEL_STYLE,
     )
     self._sub_panels["daily"] = AetherSettingsView(
@@ -721,6 +721,7 @@ class StarPilotLongitudinalLayout(_SettingsPage):
       [SettingSection(title="", rows=self._daily_rows)],
       header_title=tr_noop("Daily QOL & Weather"),
       header_subtitle=tr_noop("Configure cruise intervals, standstill behaviors, gear mapping, and weather presets."),
+      parent_toggle=pt_daily,
       panel_style=PANEL_STYLE,
     )
     self._wire_sub_panels()
