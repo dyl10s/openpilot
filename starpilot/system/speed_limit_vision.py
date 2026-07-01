@@ -149,9 +149,9 @@ DETECTOR_CLASSIFIER_SMALL_BOX_AREA_RATIO = 0.004
 DETECTOR_CLASSIFIER_MIN_ACCEPT_WIDTH = 28
 DETECTOR_CLASSIFIER_MIN_ACCEPT_HEIGHT = 40
 DETECTOR_CLASSIFIER_RESCUE_MIN_WIDTH = 14
-DETECTOR_CLASSIFIER_RESCUE_MIN_HEIGHT = 24
+DETECTOR_CLASSIFIER_RESCUE_MIN_HEIGHT = 18
 DETECTOR_CLASSIFIER_RESCUE_MIN_X_RATIO = 0.52
-DETECTOR_CLASSIFIER_RESCUE_MIN_SUPPORT = 2
+DETECTOR_CLASSIFIER_RESCUE_MIN_SUPPORT = 1
 DETECTOR_CLASSIFIER_RESCUE_MIN_CONFIDENCE = 0.90
 DETECTOR_CLASSIFIER_RESCUE_MAX_SCORE = 0.64
 SCHOOL_ZONE_SPEED_PRIOR = 0.12
@@ -161,6 +161,7 @@ SCHOOL_ZONE_MIN_CONFIDENCE = 0.70
 SCHOOL_ZONE_SINGLE_READ_CONFIDENCE = 0.975
 SCHOOL_ZONE_SHORT_CIRCUIT_CONFIDENCE = 0.78
 SCHOOL_ZONE_FALLBACK_MIN_CONFIDENCE = 0.35
+NON_SCHOOL_LOW_SPEED_COMPETING_MIN_CONFIDENCE = 0.95
 DEBUG_BASE_DIR = Path("/data/media/0/vision_speed_limit_debug")
 DEBUG_CAPTURE_DIRNAME = "captures"
 SNAPSHOT_JPEG_QUALITY = 85
@@ -1152,7 +1153,7 @@ class SpeedLimitVisionDaemon:
         continue
       is_small_box = box_width < DETECTOR_CLASSIFIER_MIN_ACCEPT_WIDTH or box_height < DETECTOR_CLASSIFIER_MIN_ACCEPT_HEIGHT
       # Tiny far-away proposals are the main nighttime false-positive source.
-      # Keep a narrow rescue path for right-side proposals with strong repeated reads,
+      # Keep a narrow rescue path for right-side high-confidence reads,
       # then let temporal confirmation decide whether they are real.
       if is_small_box and (
         box_width < DETECTOR_CLASSIFIER_RESCUE_MIN_WIDTH or
@@ -1281,6 +1282,20 @@ class SpeedLimitVisionDaemon:
       )
       if class_id == 2 and speed_limit_mph not in SCHOOL_ZONE_SPEED_VALUES:
         continue
+      if class_id != 2 and speed_limit_mph in SCHOOL_ZONE_SPEED_VALUES:
+        competing_speed_limit_mph = max(
+          (speed for speed in speed_scores if speed not in SCHOOL_ZONE_SPEED_VALUES),
+          key=lambda speed: (speed_best_confidences[speed], speed_scores[speed]),
+          default=None,
+        )
+        if competing_speed_limit_mph is not None:
+          read_confidence = speed_best_confidences[speed_limit_mph]
+          competing_confidence = speed_best_confidences[competing_speed_limit_mph]
+          if (
+            competing_confidence >= NON_SCHOOL_LOW_SPEED_COMPETING_MIN_CONFIDENCE and
+            competing_confidence >= read_confidence
+          ):
+            speed_limit_mph = competing_speed_limit_mph
       read_confidence = speed_best_confidences[speed_limit_mph]
       support_count = speed_support_counts[speed_limit_mph]
       score = min(
