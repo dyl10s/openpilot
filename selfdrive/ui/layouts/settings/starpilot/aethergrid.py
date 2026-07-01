@@ -1314,7 +1314,18 @@ def draw_settings_panel_header(header_rect: rl.Rectangle, title: str, subtitle: 
                                 subtitle_color: rl.Color = AetherListColors.SUBTEXT,
                                 title_weight: FontWeight = PANEL_HEADER_TITLE_FONT,
                                 subtitle_weight: FontWeight = PANEL_HEADER_SUBTITLE_FONT):
-  pass
+  if not title:
+    return
+  title_font = gui_app.font(title_weight)
+  y = header_rect.y
+  rl.draw_text_ex(title_font, title, rl.Vector2(header_rect.x, y), title_size, 0, title_color)
+  y += title_size + 8
+  if subtitle:
+    desc_font = gui_app.font(subtitle_weight)
+    desc_lines = wrap_text(desc_font, subtitle, header_rect.width * max_subtitle_width, subtitle_size, max_lines=4)
+    for line in desc_lines:
+      rl.draw_text_ex(desc_font, line, rl.Vector2(header_rect.x, y), subtitle_size, 0, subtitle_color)
+      y += subtitle_size + 4
 
 
 
@@ -2999,11 +3010,30 @@ class AetherSettingsView(PanelManagerView):
     elif row.type == "toggle" and row.set_state and row.get_state:
       row.set_state(not row.get_state())
 
+  def _compute_header_height(self, content_width: float) -> float:
+    if not self._has_header:
+      return 0.0
+    h = 40.0  # title (32px) + inner gap (8px)
+    if self._header_subtitle:
+      subtitle_text = tr(self._header_subtitle)
+      if subtitle_text:
+        desc_font = gui_app.font(FontWeight.NORMAL)
+        col_w = (content_width - self.COLUMN_GAP) / 2 if self._uses_two_columns(content_width) else content_width
+        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 18, max_lines=4)
+        h += len(desc_lines) * 22.0 + 12.0
+    h += SECTION_GAP
+    return h
+
   def _render(self, rect: rl.Rectangle):
     self.set_rect(rect)
     self._interactive_rects.clear()
 
-    frame, scroll_rect, content_width = init_list_panel(rect, self._panel_style, metrics=self._metrics)
+    shell_w = min(rect.width - self._metrics.outer_margin_x * 2, self._metrics.max_content_width)
+    content_width = shell_w - self._metrics.panel_padding_x * 2 - AETHER_LIST_METRICS.content_right_gutter
+
+    header_h = self._compute_header_height(content_width)
+    metrics = replace(self._metrics, header_height=header_h) if header_h > 0 else self._metrics
+    frame, scroll_rect, content_width = init_list_panel(rect, self._panel_style, metrics=metrics)
     self._scroll_rect = scroll_rect
 
     if self._has_header:
@@ -3036,7 +3066,7 @@ class AetherSettingsView(PanelManagerView):
   def _draw_header(self, rect: rl.Rectangle):
     title = tr(self._header_title) if self._header_title else ""
     subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-    draw_settings_panel_header(rect, title, subtitle)
+    draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=18)
 
   def _active_sections(self) -> list[SettingSection]:
     if self._tab_defs and self._active_tab_key:
@@ -3094,26 +3124,6 @@ class AetherSettingsView(PanelManagerView):
   def _draw_scroll_content(self, rect: rl.Rectangle, width: float):
     y = rect.y + self._scroll_offset
     
-    if self._has_header:
-      title = tr(self._header_title) if self._header_title else ""
-      subtitle = tr(self._header_subtitle) if self._header_subtitle else ""
-      
-      col_w = (width - self.COLUMN_GAP) / 2 if self._uses_two_columns(width) else width
-      
-      title_font = gui_app.font(FontWeight.SEMI_BOLD)
-      title_size = 32
-      rl.draw_text_ex(title_font, title, rl.Vector2(rect.x + 8, y), title_size, 0, AetherListColors.HEADER)
-      y += title_size + 8
-      
-      if subtitle:
-        desc_font = gui_app.font(FontWeight.NORMAL)
-        desc_size = 18
-        desc_lines = wrap_text(desc_font, subtitle, col_w - 16, desc_size, max_lines=4)
-        for line in desc_lines:
-          rl.draw_text_ex(desc_font, line, rl.Vector2(rect.x + 8, y), desc_size, 0, AetherListColors.SUBTEXT)
-          y += desc_size + 4
-        y += 12
-
     if self._tab_defs:
       y = self._draw_tabs(y, rect.x, width)
     active = self._active_sections()
