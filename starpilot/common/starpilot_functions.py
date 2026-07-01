@@ -16,12 +16,20 @@ from openpilot.system.hardware import HARDWARE
 STARPILOT_API = os.getenv("STARPILOT_API", "https://frogpilot.com/api")
 BOOT_LOGO_STATE_PATH = Path("/cache/starpilot_boot_logo_state_v1")
 ACTIVE_THEME_PATH = Path(BASEDIR) / "starpilot/assets/active_theme"
+STOCK_THEME_PATH = Path(BASEDIR) / "starpilot/assets/stock_theme"
 ACTIVE_THEME_REQUIRED_PATHS = (
   ACTIVE_THEME_PATH / "colors/colors.json",
   ACTIVE_THEME_PATH / "icons",
   ACTIVE_THEME_PATH / "distance_icons",
-  ACTIVE_THEME_PATH / "signals",
   ACTIVE_THEME_PATH / "sounds",
+  ACTIVE_THEME_PATH / "steering_wheel",
+)
+ACTIVE_THEME_BOOTSTRAP_LINKS = (
+  ("colors", STOCK_THEME_PATH / "colors"),
+  ("icons", STOCK_THEME_PATH / "icons"),
+  ("distance_icons", STOCK_THEME_PATH / "distance_icons"),
+  ("sounds", STOCK_THEME_PATH / "sounds"),
+  ("steering_wheel", STOCK_THEME_PATH / "steering_wheel"),
 )
 
 
@@ -71,6 +79,40 @@ def _path_has_content(path):
 
 def _active_theme_ready():
   return all(_path_has_content(path) for path in ACTIVE_THEME_REQUIRED_PATHS)
+
+
+def _replace_with_symlink(path, target):
+  if path.is_symlink() or path.is_file():
+    try:
+      path.unlink()
+    except OSError:
+      return
+  elif path.exists():
+    import shutil
+
+    try:
+      shutil.rmtree(path)
+    except OSError:
+      return
+
+  path.parent.mkdir(parents=True, exist_ok=True)
+  try:
+    path.symlink_to(target, target_is_directory=target.is_dir())
+  except OSError:
+    pass
+
+
+def _ensure_minimal_active_theme():
+  for name, target in ACTIVE_THEME_BOOTSTRAP_LINKS:
+    if target.exists() and not _path_has_content(ACTIVE_THEME_PATH / name):
+      _replace_with_symlink(ACTIVE_THEME_PATH / name, target)
+
+  signals_path = ACTIVE_THEME_PATH / "signals"
+  if signals_path.is_symlink() and not signals_path.exists():
+    try:
+      signals_path.unlink()
+    except OSError:
+      pass
 
 
 def _normalize_dongle_id(value):
@@ -202,9 +244,10 @@ def starpilot_boot_functions(build_metadata, params):
     threading.Thread(target=boot_thread, daemon=True).start()
     return
 
-  # Brand-new installs need active theme links before UI starts. Existing
-  # installs keep this off the manager hot path and refresh in the background.
-  _refresh_active_theme(Params())
+  # Brand-new or partially migrated installs need basic active theme links
+  # before UI starts. Use stock links here and let the full theme refresh run
+  # off the manager hot path.
+  _ensure_minimal_active_theme()
   threading.Thread(target=boot_thread, daemon=True).start()
 
 
