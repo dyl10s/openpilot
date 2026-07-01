@@ -449,7 +449,7 @@ def init_list_panel(rect: rl.Rectangle, style: PanelStyle | None = None, metrics
   return frame, scroll_rect, content_width
 
 
-def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *, radius_px: float = 100) -> tuple[rl.Rectangle, rl.Color]:
+def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *, radius_px: float = 100, bg_color: rl.Color | None = None) -> tuple[rl.Rectangle, rl.Color]:
   snapped = snap_rect(rect)
   rx, ry, rw, rh = int(snapped.x), int(snapped.y), int(snapped.width), int(snapped.height)
   face = rl.Rectangle(rx, ry, rw, rh)
@@ -462,7 +462,7 @@ def draw_hud_background(rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0,
     a = int(25 * (1.0 - i / 5) * glow)
     draw_rounded_fill(gr, rl.Color(accent.r, accent.g, accent.b, max(0, min(255, a))), radius_px=radius_px)
 
-  draw_rounded_fill(face, _HUD_BG_ON, radius_px=radius_px)
+  draw_rounded_fill(face, bg_color if bg_color is not None else _HUD_BG_ON, radius_px=radius_px)
 
   bc = rl.Color(
     max(0, min(255, int(off_border.r + (accent.r - off_border.r) * glow))),
@@ -1613,6 +1613,8 @@ def draw_toggle_switch(
   right_inset: int = AETHER_LIST_METRICS.toggle_right_inset,
   knob_offset: int = 20,
   seed_id: str = "",
+  radius_px: float = TILE_RADIUS_PX,
+  bg_color: rl.Color | None = None,
 ):
   toggle_rect = rl.Rectangle(rect.x + rect.width - width - right_inset, rect.y + (rect.height - height) / 2, width, height)
 
@@ -1626,7 +1628,7 @@ def draw_toggle_switch(
   knob_y = toggle_rect.y + toggle_rect.height / 2
 
   # Delegate to draw_hud_background — same layered bloom, fill, and lerped border as tiles
-  draw_hud_background(toggle_rect, track_color if is_enabled else with_alpha(track_color, 80), knob_progress, radius_px=TILE_RADIUS_PX)
+  draw_hud_background(toggle_rect, track_color if is_enabled else with_alpha(track_color, 80), knob_progress, radius_px=radius_px, bg_color=bg_color)
 
   if seed_id and enabled:
     nodes, vecs = _get_or_create_toggle_constellation(seed_id)
@@ -3119,20 +3121,15 @@ class AetherSettingsView(PanelManagerView):
       self._interactive_rects[toggle_id] = toggle_rect
 
       toggle_value = toggle.get_state()
-      target_progress = 1.0 if toggle_value else 0.0
-      current_progress = _KNOB_ANIMATION_STATES.get(toggle_id, target_progress)
-      dt = rl.get_frame_time()
-      current_progress += (target_progress - current_progress) * 12.0 * dt
-      if abs(current_progress - target_progress) < 0.001:
-        current_progress = target_progress
-      _KNOB_ANIMATION_STATES[toggle_id] = current_progress
 
       draw_toggle_switch(
         rl.Rectangle(rect.x, rect.y, rect.width, th),
         toggle_value,
-        knob_progress=current_progress,
+        knob_progress=1.0 if toggle_value else 0.0,
         track_color=self._panel_style.accent,
         seed_id=toggle_id,
+        radius_px=100,
+        bg_color=rl.Color(12, 10, 18, 255),
       )
     else:
       draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=18)
