@@ -51,17 +51,20 @@ def write_onroad_params(started, params):
 
 
 def save_bootlog():
-  # copy current params
-  tmp = tempfile.mkdtemp()
-  params_dirname = pathlib.Path(Params().get_param_path()).name
-  params_dir = os.path.join(tmp, params_dirname)
-  shutil.copytree(Params().get_param_path(), params_dir, dirs_exist_ok=True)
-
-  def fn(tmpdir):
+  def fn():
+    tmpdir = tempfile.mkdtemp()
     env = os.environ.copy()
     env['PARAMS_COPY_PATH'] = tmpdir
-    subprocess.call("./bootlog", cwd=os.path.join(BASEDIR, "system/loggerd"), env=env)
-    shutil.rmtree(tmpdir)
-  t = threading.Thread(target=fn, args=(tmp, ))
+
+    try:
+      params = Params()
+      params_dirname = pathlib.Path(params.get_param_path()).name
+      params_dir = os.path.join(tmpdir, params_dirname)
+      shutil.copytree(params.get_param_path(), params_dir, dirs_exist_ok=True)
+      subprocess.call("./bootlog", cwd=os.path.join(BASEDIR, "system/loggerd"), env=env)
+    finally:
+      shutil.rmtree(tmpdir, ignore_errors=True)
+
+  t = threading.Thread(target=fn)
   t.daemon = True
   t.start()

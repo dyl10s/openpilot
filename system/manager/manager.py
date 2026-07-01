@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 import signal
 import sys
+import threading
 import time
 import traceback
 
@@ -23,7 +24,6 @@ def _append_boot_timing_line(line: str) -> None:
 
 from cereal import car, log
 import cereal.messaging as messaging
-import openpilot.system.sentry as sentry
 from openpilot.common.utils import atomic_write
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType
 from openpilot.common.text_window import TextWindow
@@ -81,6 +81,37 @@ def _log_boot_timing(scope: str, label: str, start: float, previous: float | Non
   _append_boot_timing_line(line)
   cloudlog.warning(line)
   return now
+
+
+def _sync_params_cache_async(cache_params_path: str, values: list[tuple[bytes | str, object]]) -> None:
+  try:
+    params_cache = Params(cache_params_path, return_defaults=True)
+    for key, value in values:
+      if params_cache.get(key) != value:
+        params_cache.put(key, value)
+  except Exception:
+    cloudlog.exception("failed to sync params cache")
+
+
+def _init_sentry_async() -> None:
+  def fn() -> None:
+    try:
+      import openpilot.system.sentry as sentry
+
+      sentry.init(sentry.SentryProject.SELFDRIVE)
+    except Exception:
+      cloudlog.exception("failed to initialize sentry")
+
+  threading.Thread(target=fn, daemon=True).start()
+
+
+def _capture_manager_exception() -> None:
+  try:
+    import openpilot.system.sentry as sentry
+
+    sentry.capture_exception()
+  except Exception:
+    cloudlog.exception("failed to capture manager exception")
 
 
 def _to_text(value):
@@ -810,6 +841,7 @@ def manager_init() -> None:
   last_timing = _log_boot_timing("manager_init", "starpilot_migrations", manager_init_start, last_timing)
 
   # set unset params to their default value
+  params_cache_updates = []
   for k in params.all_keys():
     current_value = params.get(k)
     if current_value is None:
@@ -817,7 +849,9 @@ def manager_init() -> None:
       if cached_value is not None:
         params.put(k, cached_value)
     else:
-      params_cache.put(k, current_value)
+      params_cache_updates.append((k, current_value))
+  if params_cache_updates:
+    threading.Thread(target=_sync_params_cache_async, args=(cache_params_path, params_cache_updates), daemon=True).start()
   last_timing = _log_boot_timing("manager_init", "params_defaults_cache_sync", manager_init_start, last_timing)
 
   # Create folders needed for msgq
@@ -862,7 +896,6 @@ def manager_init() -> None:
     os.environ['CLEAN'] = '1'
 
   # init logging
-  sentry.init(sentry.SentryProject.SELFDRIVE)
   cloudlog.bind_global(dongle_id=dongle_id,
                        version=build_metadata.openpilot.version,
                        origin=build_metadata.openpilot.git_normalized_origin,
@@ -870,12 +903,18 @@ def manager_init() -> None:
                        commit=build_metadata.openpilot.git_commit,
                        dirty=build_metadata.openpilot.is_dirty,
                        device=HARDWARE.get_device_type())
+  _init_sentry_async()
   last_timing = _log_boot_timing("manager_init", "logging_ready", manager_init_start, last_timing)
 
-  # preimport all processes
-  for p in managed_processes.values():
-    p.prepare()
-  last_timing = _log_boot_timing("manager_init", "preimport_processes", manager_init_start, last_timing)
+  # Preimporting every process serializes a lot of import work before manager can
+  # start the always-on processes. Keep the old behavior available for debugging,
+  # but optimize normal boot by letting children import their modules in parallel.
+  if os.getenv("SP_MANAGER_PREIMPORT", "0").lower() in ("1", "true", "yes", "on"):
+    for p in managed_processes.values():
+      p.prepare()
+    last_timing = _log_boot_timing("manager_init", "preimport_processes", manager_init_start, last_timing)
+  else:
+    last_timing = _log_boot_timing("manager_init", "preimport_processes_skipped", manager_init_start, last_timing)
 
   # StarPilot variables
   install_starpilot(build_metadata, params)
@@ -1024,7 +1063,7 @@ def main() -> None:
     manager_thread()
   except Exception:
     traceback.print_exc()
-    sentry.capture_exception()
+    _capture_manager_exception()
   finally:
     manager_cleanup()
 
