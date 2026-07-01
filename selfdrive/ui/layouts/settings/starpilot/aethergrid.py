@@ -1869,7 +1869,7 @@ GROUP_HAIRLINE_COLOR = rl.Color(255, 255, 255, 10)
 GROUP_HEADER_COLOR = rl.Color(255, 255, 255, 90)
 
 def draw_group_header(x: float, y: float, width: float, label: str) -> float:
-  gui_label(rl.Rectangle(x, y, width, GROUP_HEADER_HEIGHT), label, 14, GROUP_HEADER_COLOR, FontWeight.MEDIUM)
+  gui_label(rl.Rectangle(x, y, width, GROUP_HEADER_HEIGHT), label, 16, GROUP_HEADER_COLOR, FontWeight.MEDIUM)
   y += GROUP_HEADER_HEIGHT
   rl.draw_line(int(x), int(y), int(x + width), int(y), GROUP_HAIRLINE_COLOR)
   return y + GROUP_HEADER_GAP
@@ -2520,7 +2520,7 @@ class AetherAdjustorRow(Widget):
       text,
       rl.Vector2(rect.x + 10, rect.y + 7),
       max(1.0, rect.width - 20),
-      15,
+      16,
       align_center=True,
       color=text_color,
     )
@@ -2553,9 +2553,9 @@ class AetherAdjustorRow(Widget):
     )
 
     scale_y = rect.height / 94.0
-    title_fs = max(14, int(24 * scale_y)) if rect.height < 94 else 24
-    sub_fs = max(11, int(18 * scale_y)) if rect.height < 94 else 18
-    val_fs = max(11, int(18 * scale_y)) if rect.height < 94 else 18
+    title_fs = max(16, int(24 * scale_y)) if rect.height < 94 else 24
+    sub_fs = max(14, int(20 * scale_y)) if rect.height < 94 else 20
+    val_fs = max(14, int(20 * scale_y)) if rect.height < 94 else 20
 
     value_pill_w = min(float(AETHER_LIST_METRICS.adjustor_value_pill_width), max(118.0, rect.width * 0.22))
     value_pill_h = max(24.0, 36.0 * scale_y) if rect.height < 94 else AETHER_LIST_METRICS.adjustor_value_pill_height
@@ -2571,9 +2571,10 @@ class AetherAdjustorRow(Widget):
     title_h = max(18.0, 28.0 * scale_y) if rect.height < 94 else 28
     gui_label(rl.Rectangle(content_left, title_y, content_width, title_h), self._title, title_fs, self._style.title_color, FontWeight.MEDIUM)
 
-    sub_y = rect.y + 44.0 * scale_y if rect.height < 94 else rect.y + 44
-    sub_h = max(14.0, 22.0 * scale_y) if rect.height < 94 else 22
-    gui_label(rl.Rectangle(content_left, sub_y, content_width, sub_h), self._subtitle, sub_fs, self._style.subtitle_color, FontWeight.NORMAL)
+    if self._subtitle:
+      sub_y = rect.y + 44.0 * scale_y if rect.height < 94 else rect.y + 44
+      sub_h = max(14.0, 22.0 * scale_y) if rect.height < 94 else 22
+      gui_label(rl.Rectangle(content_left, sub_y, content_width, sub_h), self._subtitle, sub_fs, self._style.subtitle_color, FontWeight.NORMAL)
 
     pill_fill = rl.Color(255, 255, 255, 5)
     pill_border = rl.Color(255, 255, 255, 14)
@@ -4126,12 +4127,12 @@ class ToggleTile(AetherTile):
 
     content_pad = SPACING.tile_content
     max_w = rw - content_pad * 2
-    text_scale = max(0.82, min(1.12, min(rw / 360.0, rh / 205.0)))
-    title_size = max(20, int(round(24 * text_scale)))
+    text_scale = max(0.82, min(1.12, rh / 205.0))
+    title_size = max(22, int(round(28 * text_scale)))
 
     if not enabled:
       title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-      desc_size = max(16, int(round(16 * text_scale)))
+      desc_size = max(17, int(round(18 * text_scale)))
       disabled_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
       desc_lines = self._wrap_text(self._font_desc, disabled_text, max_w, desc_size, max_lines=2)
 
@@ -4150,7 +4151,7 @@ class ToggleTile(AetherTile):
       title_color = rl.WHITE if active else _HUD_TEXT_DIM
       if self.desc:
         title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-        desc_size = max(16, int(round(16 * text_scale)))
+        desc_size = max(17, int(round(18 * text_scale)))
         desc_lines = self._wrap_text(self._font_desc, self.desc, max_w, desc_size, max_lines=2)
 
         if len(title_lines) == 1:

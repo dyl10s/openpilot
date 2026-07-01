@@ -380,11 +380,11 @@ class StarPilotSoundsLayout(_SettingsPage):
   }
   VOLUME_INFO = {
     "WarningImmediateVolume": {"title": tr_noop("Immediate Warning"), "subtitle": tr_noop("Critical safety intervention"), "min": 25},
-    "WarningSoftVolume": {"title": tr_noop("Soft Warning"), "subtitle": tr_noop("Approaching system limits"), "min": 25},
-    "RefuseVolume": {"title": tr_noop("Engagement Refused"), "subtitle": tr_noop("Action refused by system"), "min": 0},
-    "PromptDistractedVolume": {"title": tr_noop("Distracted Driver"), "subtitle": tr_noop("Driver attention required"), "min": 0},
-    "EngageVolume": {"title": tr_noop("Engagement Chime"), "subtitle": tr_noop("System engaged confirmation"), "min": 0},
-    "DisengageVolume": {"title": tr_noop("Disengagement Alert"), "subtitle": tr_noop("Handoff to manual control"), "min": 0},
+    "WarningSoftVolume": {"title": tr_noop("Soft Warning"), "subtitle": "", "min": 25},
+    "RefuseVolume": {"title": tr_noop("Engagement Refused"), "subtitle": "", "min": 0},
+    "PromptDistractedVolume": {"title": tr_noop("Distracted Driver"), "subtitle": "", "min": 0},
+    "EngageVolume": {"title": tr_noop("Engagement Chime"), "subtitle": "", "min": 0},
+    "DisengageVolume": {"title": tr_noop("Disengagement Alert"), "subtitle": "", "min": 0},
     "PromptVolume": {"title": tr_noop("General Prompt"), "subtitle": tr_noop("System guidance prompt"), "min": 0},
     "BelowSteerSpeedVolume": {"title": tr_noop("Low Speed Alert"), "subtitle": tr_noop("Minimum speed for steering"), "min": 0},
   }
