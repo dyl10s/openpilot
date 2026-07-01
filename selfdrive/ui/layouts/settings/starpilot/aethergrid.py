@@ -1168,7 +1168,7 @@ class BreadcrumbController:
     alpha = self._expand_alpha
 
     ACTIVE_SIZE   = 24
-    PAST_SIZE     = 17
+    PAST_SIZE     = 20
     CHEVRON_SIZE  = 16
     CHEVRON_W     = 14
     GAP           = 16
@@ -1299,7 +1299,7 @@ class BreadcrumbController:
 PANEL_HEADER_TITLE_Y: int = 34
 PANEL_HEADER_SUBTITLE_Y: int = 78
 PANEL_HEADER_TITLE_FONT_SIZE: int = 40
-PANEL_HEADER_SUBTITLE_FONT_SIZE: int = 22
+PANEL_HEADER_SUBTITLE_FONT_SIZE: int = 20
 PANEL_HEADER_TITLE_FONT: FontWeight = FontWeight.SEMI_BOLD
 PANEL_HEADER_SUBTITLE_FONT: FontWeight = FontWeight.NORMAL
 
@@ -1342,7 +1342,7 @@ def draw_status_badges(
   style: PanelStyle,
   *,
   height: float = 28.0,
-  font_size: int = 15,
+  font_size: int = 17,
   gap: float = 8.0,
   padding_x: float = 18.0,
   text_color: rl.Color = AetherListColors.HEADER,
@@ -3045,8 +3045,8 @@ class AetherSettingsView(PanelManagerView):
         toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
         col_w = max(100.0, content_width + AETHER_LIST_METRICS.content_right_gutter - toggle_take)
         desc_font = gui_app.font(FontWeight.NORMAL)
-        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 18, max_lines=4)
-        h += len(desc_lines) * 22.0 + 12.0
+        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 20, max_lines=4)
+        h += len(desc_lines) * 24.0 + 12.0
       h += SECTION_GAP
       return h
     h = 40.0  # title (32px) + inner gap (8px)
@@ -3055,8 +3055,8 @@ class AetherSettingsView(PanelManagerView):
       if subtitle_text:
         desc_font = gui_app.font(FontWeight.NORMAL)
         col_w = (content_width - self.COLUMN_GAP) / 2 if self._uses_two_columns(content_width) else content_width
-        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 18, max_lines=4)
-        h += len(desc_lines) * 22.0 + 12.0
+        desc_lines = wrap_text(desc_font, subtitle_text, col_w, 20, max_lines=4)
+        h += len(desc_lines) * 24.0 + 12.0
     h += SECTION_GAP
     return h
 
@@ -3111,7 +3111,7 @@ class AetherSettingsView(PanelManagerView):
 
       toggle_take = AETHER_LIST_METRICS.toggle_width + AETHER_LIST_METRICS.toggle_right_inset + 16
       text_rect = rl.Rectangle(rect.x, rect.y, max(100.0, rect.width - toggle_take), rect.height)
-      draw_settings_panel_header(text_rect, display_title, subtitle_text, title_size=32, subtitle_size=18)
+      draw_settings_panel_header(text_rect, display_title, subtitle_text, title_size=32, subtitle_size=20)
 
       toggle_id = f"parent_toggle:{toggle.label}"
       tw = AETHER_LIST_METRICS.toggle_width
@@ -3132,7 +3132,7 @@ class AetherSettingsView(PanelManagerView):
         bg_color=rl.Color(12, 10, 18, 255),
       )
     else:
-      draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=18)
+      draw_settings_panel_header(rect, title, subtitle, title_size=32, subtitle_size=20)
 
   def _active_sections(self) -> list[SettingSection]:
     if self._tab_defs and self._active_tab_key:
@@ -3861,7 +3861,7 @@ class AetherTile(Widget):
     scale = max(0.82, min(1.12, min(face.width / 360.0, face.height / 205.0)))
     title_size = max(22, int(round(title_size * scale)))
     primary_size = max(18, int(round(primary_size * scale)))
-    desc_size = max(14, int(round(desc_size * scale)))
+    desc_size = max(16, int(round(desc_size * scale)))
     title_lines = self._wrap_text(title_font, title, max_w, title_size, max_lines=2)
     has_icon = (icon is not None) or (custom_icon_key is not None)
     icon_scale = min(0.80, max(0.56, scale * 0.72)) if has_icon else 0.0
@@ -4131,7 +4131,7 @@ class ToggleTile(AetherTile):
 
     if not enabled:
       title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-      desc_size = max(14, int(round(16 * text_scale)))
+      desc_size = max(16, int(round(16 * text_scale)))
       disabled_text = tr(self._disabled_label) if self._disabled_label else tr("LOCKED")
       desc_lines = self._wrap_text(self._font_desc, disabled_text, max_w, desc_size, max_lines=2)
 
@@ -4150,7 +4150,7 @@ class ToggleTile(AetherTile):
       title_color = rl.WHITE if active else _HUD_TEXT_DIM
       if self.desc:
         title_lines = self._wrap_text(self._font, self.title, max_w, title_size, max_lines=2)
-        desc_size = max(14, int(round(16 * text_scale)))
+        desc_size = max(16, int(round(16 * text_scale)))
         desc_lines = self._wrap_text(self._font_desc, self.desc, max_w, desc_size, max_lines=2)
 
         if len(title_lines) == 1:

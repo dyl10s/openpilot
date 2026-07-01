@@ -205,12 +205,12 @@ class MapStatusCard(Widget):
         rl.Color(94, 168, 130, 22),
         AetherListColors.SUCCESS_SOFT,
         AetherListColors.HEADER,
-        font_size=15,
+        font_size=17,
       )
     gui_text_box(
       rl.Rectangle(content_x, title_y + 28, summary_w, 38),
       self._controller._progress_body(),
-      17,
+      18,
       AetherListColors.SUBTEXT,
       font_weight=FontWeight.NORMAL,
       line_scale=0.94,
