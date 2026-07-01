@@ -2,7 +2,6 @@
 import datetime
 import json
 import os
-import shutil
 from pathlib import Path
 import signal
 import sys
@@ -24,26 +23,18 @@ def _append_boot_timing_line(line: str) -> None:
 
 from cereal import car, log
 import cereal.messaging as messaging
-from openpilot.common.utils import atomic_write
 from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType
-from openpilot.common.text_window import TextWindow
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.manager.helpers import unblock_stdout, write_onroad_params, save_bootlog
 from openpilot.system.manager.process import ensure_running
 from openpilot.system.manager.process_config import managed_processes
-from openpilot.system.athena.registration import register, UNREGISTERED_DONGLE_ID
-from openpilot.common.swaglog import cloudlog, add_file_handler
+from openpilot.common.swaglog import cloudlog
 from openpilot.system.version import get_build_metadata, terms_version, training_version
 from openpilot.system.hardware.hw import Paths
 
 _MANAGER_CORE_IMPORT_DONE = time.monotonic()
 
 from openpilot.starpilot.common.starpilot_functions import starpilot_boot_functions, install_starpilot, uninstall_starpilot
-from openpilot.starpilot.common.starpilot_variables import (
-  LEGACY_STARPILOT_PARAM_RENAMES,
-  LEGACY_STARPILOT_STATS_KEY_RENAMES,
-  get_starpilot_toggles,
-)
 
 _MANAGER_IMPORT_DONE = time.monotonic()
 _manager_import_timing_line = (
@@ -67,8 +58,22 @@ STARPILOT_PC_ROOT_MIGRATION_FLAG = Path("/data") / "starpilot_pc_root_v1"
 STARPILOT_PARAMS_CACHE_MIGRATION_FLAG = Path("/data") / "starpilot_params_cache_v1"
 STARPILOT_LEGACY_CACHE_MARKER_KEYS = ("RemapCancelToDistance",)
 STARPILOT_REMOVED_PARAM_KEYS = ("HumanFollowing",)
+UNREGISTERED_DONGLE_ID = "UnregisteredDevice"
+POWER_WATCHDOG_PATH = "/var/tmp/power_watchdog"
 LEGACY_CARMODEL_MIGRATIONS = {
   "CHEVROLET_BOLT_CC_2019_2021": "CHEVROLET_BOLT_CC_2018_2021",
+}
+LEGACY_STARPILOT_PARAM_RENAMES = {
+  "FrogPilotApiToken": "StarPilotApiToken",
+  "FrogPilotCarParams": "StarPilotCarParams",
+  "FrogPilotCarParamsPersistent": "StarPilotCarParamsPersistent",
+  "FrogPilotDongleId": "StarPilotDongleId",
+  "FrogPilotStats": "StarPilotStats",
+}
+LEGACY_STARPILOT_STATS_KEY_RENAMES = {
+  "FrogPilotDrives": "StarPilotDrives",
+  "FrogPilotMeters": "StarPilotMeters",
+  "FrogPilotSeconds": "StarPilotSeconds",
 }
 STARPILOT_STATS_DROP_KEYS = {"CurrentMonthsKilometers", "ResetStats"}
 STARPILOT_STATS_MAX_KEYS = {"LongestDistanceWithoutOverride", "MaxAcceleration"}
@@ -112,6 +117,30 @@ def _capture_manager_exception() -> None:
     sentry.capture_exception()
   except Exception:
     cloudlog.exception("failed to capture manager exception")
+
+
+def _write_power_watchdog(timestamp: float) -> None:
+  import tempfile
+
+  tmp_file_name = None
+  try:
+    with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(POWER_WATCHDOG_PATH), delete=False) as f:
+      tmp_file_name = f.name
+      f.write(str(timestamp))
+    os.replace(tmp_file_name, POWER_WATCHDOG_PATH)
+    tmp_file_name = None
+  finally:
+    if tmp_file_name is not None:
+      try:
+        os.unlink(tmp_file_name)
+      except FileNotFoundError:
+        pass
+
+
+def _get_starpilot_toggles(sm=None):
+  from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
+
+  return get_starpilot_toggles(sm)
 
 
 def _to_text(value):
@@ -285,6 +314,8 @@ def _copy_param_store_without_overwrite(source: Path, destination: Path) -> int:
   if not source.is_dir():
     return 0
 
+  import shutil
+
   destination.mkdir(parents=True, exist_ok=True)
   copied_entries = 0
   for path in source.iterdir():
@@ -401,6 +432,8 @@ def _merge_tree_without_overwrite(source: Path, destination: Path) -> int:
 
   if not source.exists():
     return moved_entries
+
+  import shutil
 
   if not destination.exists():
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -881,6 +914,8 @@ def manager_init() -> None:
   last_timing = _log_boot_timing("manager_init", "version_params", manager_init_start, last_timing)
 
   # set dongle id
+  from openpilot.system.athena.registration import register
+
   reg_res = register(show_spinner=True)
   if reg_res:
     dongle_id = reg_res
@@ -958,7 +993,7 @@ def manager_thread() -> None:
   last_timing = _log_boot_timing("manager_thread", "messaging", manager_thread_start, last_timing)
 
   write_onroad_params(False, params)
-  initial_toggles = get_starpilot_toggles()
+  initial_toggles = _get_starpilot_toggles()
   last_timing = _log_boot_timing("manager_thread", "initial_toggles", manager_thread_start, last_timing)
   ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, starpilot_toggles=initial_toggles)
   last_timing = _log_boot_timing("manager_thread", "initial_ensure_running", manager_thread_start, last_timing)
@@ -974,7 +1009,7 @@ def manager_thread() -> None:
 
   params_memory = Params(memory=True)
 
-  starpilot_toggles = get_starpilot_toggles()
+  starpilot_toggles = _get_starpilot_toggles()
   last_timing = _log_boot_timing("manager_thread", "loop_toggles", manager_thread_start, last_timing)
   _log_boot_timing("manager_thread", "loop_ready", manager_thread_start, last_timing)
 
@@ -1024,8 +1059,7 @@ def manager_thread() -> None:
     # kick AGNOS power monitoring watchdog
     try:
       if sm.all_checks(['deviceState']):
-        with atomic_write("/var/tmp/power_watchdog", "w", overwrite=True) as f:
-          f.write(str(time.monotonic()))
+        _write_power_watchdog(time.monotonic())
     except Exception:
       pass
 
@@ -1048,7 +1082,7 @@ def manager_thread() -> None:
       break
 
     # StarPilot variables
-    starpilot_toggles = get_starpilot_toggles(sm)
+    starpilot_toggles = _get_starpilot_toggles(sm)
 
 
 def main() -> None:
@@ -1087,6 +1121,9 @@ if __name__ == "__main__":
   except KeyboardInterrupt:
     print("got CTRL-C, exiting")
   except Exception:
+    from openpilot.common.swaglog import add_file_handler
+    from openpilot.common.text_window import TextWindow
+
     add_file_handler(cloudlog)
     cloudlog.exception("Manager failed to start")
 

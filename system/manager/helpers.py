@@ -1,18 +1,11 @@
-import errno
-import fcntl
 import os
-import sys
-import pathlib
-import shutil
-import signal
-import subprocess
-import tempfile
-import threading
-
-from openpilot.common.basedir import BASEDIR
-from openpilot.common.params import Params
 
 def unblock_stdout() -> None:
+  import errno
+  import fcntl
+  import signal
+  import sys
+
   # get a non-blocking stdout
   child_pid, child_pty = os.forkpty()
   if child_pid != 0:  # parent
@@ -51,7 +44,17 @@ def write_onroad_params(started, params):
 
 
 def save_bootlog():
+  import threading
+
   def fn():
+    import pathlib
+    import shutil
+    import subprocess
+    import tempfile
+
+    from openpilot.common.basedir import BASEDIR
+    from openpilot.common.params import Params
+
     tmpdir = tempfile.mkdtemp()
     env = os.environ.copy()
     env['PARAMS_COPY_PATH'] = tmpdir

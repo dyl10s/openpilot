@@ -316,7 +316,12 @@ def default_ev_tuning_enabled(CP):
   ev_vehicle |= getattr(CP, "transmissionType", None) == car.CarParams.TransmissionType.direct
   return bool(ev_vehicle)
 
-def get_starpilot_toggles(sm=messaging.SubMaster(["starpilotPlan"])):
+def get_starpilot_toggles(sm=None):
+  if sm is None:
+    if not hasattr(get_starpilot_toggles, "_sm"):
+      get_starpilot_toggles._sm = messaging.SubMaster(["starpilotPlan"])
+    sm = get_starpilot_toggles._sm
+
   toggles_text = sm["starpilotPlan"].starpilotToggles
   if toggles_text:
     get_starpilot_toggles._last_toggles_text = toggles_text
