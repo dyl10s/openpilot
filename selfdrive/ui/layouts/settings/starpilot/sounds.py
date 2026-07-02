@@ -100,16 +100,6 @@ class SoundsManagerView(PanelManagerView):
       self._active_adjustor_key = None
 
   def _init_adjustors(self):
-    volume_icon_map = {
-      "WarningImmediateVolume": "alert_critical",
-      "WarningSoftVolume": "alert_critical",
-      "RefuseVolume": "alert_critical",
-      "PromptDistractedVolume": "alert_critical",
-      "EngageVolume": "alert_state",
-      "DisengageVolume": "alert_state",
-      "PromptVolume": "alert_info",
-      "BelowSteerSpeedVolume": "alert_info",
-    }
     for key in self._controller.VOLUME_KEYS:
       info = self._controller.VOLUME_INFO[key]
 
@@ -127,7 +117,6 @@ class SoundsManagerView(PanelManagerView):
         set_active=lambda active, k=key: self._show_volume_slider(k) if active else None,
         style=PANEL_STYLE,
         color=PANEL_STYLE.accent,
-        icon_key=volume_icon_map.get(key),
       )
       self._adjustor_rows[key] = adjustor
 
@@ -164,7 +153,6 @@ class SoundsManagerView(PanelManagerView):
       ) if active else None,
       style=PANEL_STYLE,
       color=PANEL_STYLE.accent,
-      icon_key="alert_info",
     )
     self._adjustor_rows[cd_key] = cd_adjustor
 
