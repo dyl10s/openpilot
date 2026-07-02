@@ -26,6 +26,7 @@ TILE_SIGNAL_WIDTH = 1
 MIN_TILE_WIDTH = 300
 
 _HUD_BG_ON = rl.Color(12, 10, 18, 230)
+_HUD_BG_DISABLED = rl.Color(6, 5, 10, 235)
 _HUD_BORDER_OFF = rl.Color(28, 27, 34, 255)
 _HUD_TEXT_DIM = rl.Color(220, 220, 230, 220)
 # Constellation accent node colors (replaces top dash LED)
@@ -3736,7 +3737,10 @@ class AetherTile(Widget):
 
     color = getattr(self, "_active_color", getattr(self, "surface_color", rl.WHITE)) if enabled else getattr(self, "_disabled_color", rl.Color(120, 120, 120, 255))
     glow = getattr(self, "_glow", 1.0) if enabled else 0.0
-    face, accent = self._render_hud_background(rect, color, glow)
+    if not enabled:
+      face, accent = self._render_hud_background(rect, color, glow, bg_color=_HUD_BG_DISABLED, const_connected=False)
+    else:
+      face, accent = self._render_hud_background(rect, color, glow)
     
     rx, ry, rw, rh = face.x, face.y, face.width, face.height
     content_pad = max(24, int(rh * 0.15))
@@ -3989,15 +3993,23 @@ class AetherTile(Widget):
     nodes, vecs = self._constellation_data
     draw_constellation_nodes(nodes, vecs, face, accent, glow, scale=1.0)
 
-  def _render_hud_background(self, rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0) -> tuple[rl.Rectangle, rl.Color]:
+  def _draw_constellation_disconnected(self, face: rl.Rectangle, accent: rl.Color, glow: float):
+    self._generate_and_cache_constellation()
+    nodes, _ = self._constellation_data
+    draw_constellation_nodes(nodes, [], face, accent, glow, scale=1.0)
+
+  def _render_hud_background(self, rect: rl.Rectangle, accent: rl.Color, glow: float = 1.0, *, bg_color: rl.Color | None = None, const_connected: bool = True) -> tuple[rl.Rectangle, rl.Color]:
     sq = self._squish
     snapped = snap_rect(rect)
     sw = snapped.width * sq
     sh = snapped.height * sq
     ox = snapped.x + (snapped.width - sw) / 2
     oy = snapped.y + (snapped.height - sh) / 2
-    face, accent = draw_hud_background(rl.Rectangle(ox, oy, sw, sh), accent, glow)
-    self._draw_constellation(face, accent, glow)
+    face, accent = draw_hud_background(rl.Rectangle(ox, oy, sw, sh), accent, glow, bg_color=bg_color)
+    if const_connected:
+      self._draw_constellation(face, accent, glow)
+    else:
+      self._draw_constellation_disconnected(face, accent, glow)
     return face, accent
 
   def _render(self, rect: rl.Rectangle):
@@ -4151,9 +4163,10 @@ class ToggleTile(AetherTile):
       return
 
     # --- HUD toggle path (show_led) ---
-    color = self._active_color if enabled else self._disabled_color
-    glow = self._glow if enabled else 0.0
-    face, accent = self._render_hud_background(rect, color, glow)
+    if not enabled:
+      face, accent = self._render_hud_background(rect, self._disabled_color, 0.0, bg_color=_HUD_BG_DISABLED, const_connected=False)
+    else:
+      face, accent = self._render_hud_background(rect, self._active_color, self._glow)
     rx, ry, rw, rh = face.x, face.y, face.width, face.height
 
     content_pad = SPACING.tile_content
