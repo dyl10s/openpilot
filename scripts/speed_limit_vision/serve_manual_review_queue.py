@@ -50,6 +50,9 @@ HTML = r"""<!doctype html>
     .images { display: grid; gap: 12px; align-content: start; }
     .panel { background: #181818; border: 1px solid #303030; border-radius: 8px; padding: 10px; }
     .imageWrap { display: grid; place-items: center; background: #050505; border-radius: 6px; min-height: 160px; overflow: hidden; }
+    .frameStage { position: relative; display: inline-block; max-width: 100%; }
+    .frameStage img { display: block; }
+    #bboxCanvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
     img { max-width: 100%; max-height: 52vh; object-fit: contain; }
     .crop img { image-rendering: auto; max-height: 28vh; }
     .meta { display: grid; gap: 5px; font-size: 13px; color: #ddd; }
@@ -86,7 +89,7 @@ HTML = r"""<!doctype html>
       </div>
       <div class="panel">
         <div class="muted">Frame</div>
-        <div class="imageWrap"><img id="frameImg"></div>
+        <div class="imageWrap"><div class="frameStage"><img id="frameImg"><canvas id="bboxCanvas"></canvas></div></div>
       </div>
     </section>
     <aside class="panel">
@@ -106,6 +109,11 @@ HTML = r"""<!doctype html>
         <button data-status="ignore" class="warn">Ignore / Bad Crop (i/x)</button>
         <button data-status="needs_later">Needs Later</button>
       </div>
+      <label>Box</label>
+      <input id="bboxInput" placeholder="x1,y1,x2,y2 - drag on frame to set">
+      <div class="buttons">
+        <button id="clearBBoxBtn">Clear Box (b)</button>
+      </div>
       <label>Ignore reason</label>
       <input id="ignoreReason" placeholder="false_positive, blurry, side_road, duplicate">
       <label>Notes</label>
@@ -124,6 +132,9 @@ let current = null;
 let draft = {};
 let speedBuffer = "";
 let speedBufferTimer = null;
+let drawingBox = false;
+let drawingStart = null;
+let previewBox = null;
 
 function qs(sel) { return document.querySelector(sel); }
 function qsa(sel) { return Array.from(document.querySelectorAll(sel)); }
@@ -139,6 +150,109 @@ async function loadQueue() {
 
 function setActive(selector, attr, value) {
   qsa(selector).forEach(btn => btn.classList.toggle("active", btn.dataset[attr] === String(value)));
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseBBox(text) {
+  const values = String(text || "").split(",").map(v => Number(v.trim()));
+  if (values.length !== 4 || values.some(v => !Number.isFinite(v))) return null;
+  const [x1, y1, x2, y2] = values.map(v => Math.round(v));
+  if (x2 <= x1 || y2 <= y1) return null;
+  return [x1, y1, x2, y2];
+}
+
+function formatBBox(box) {
+  return box.map(v => String(Math.round(v))).join(",");
+}
+
+function setBBox(text, shouldDraw = true) {
+  draft.review_bbox = text || "";
+  qs("#bboxInput").value = draft.review_bbox;
+  if (shouldDraw) drawBBox();
+}
+
+function canvasPoint(ev) {
+  const canvas = qs("#bboxCanvas");
+  const img = qs("#frameImg");
+  const rect = canvas.getBoundingClientRect();
+  if (!img.naturalWidth || !img.naturalHeight || rect.width <= 0 || rect.height <= 0) return null;
+  const x = clamp(Math.round((ev.clientX - rect.left) * img.naturalWidth / rect.width), 0, img.naturalWidth - 1);
+  const y = clamp(Math.round((ev.clientY - rect.top) * img.naturalHeight / rect.height), 0, img.naturalHeight - 1);
+  return [x, y];
+}
+
+function boxToCanvas(box) {
+  const img = qs("#frameImg");
+  const canvas = qs("#bboxCanvas");
+  const sx = canvas.width / img.naturalWidth;
+  const sy = canvas.height / img.naturalHeight;
+  return [box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy];
+}
+
+function drawBBox() {
+  const canvas = qs("#bboxCanvas");
+  const img = qs("#frameImg");
+  const ctx = canvas.getContext("2d");
+  const displayWidth = Math.round(img.clientWidth || 0);
+  const displayHeight = Math.round(img.clientHeight || 0);
+  if (displayWidth > 0 && displayHeight > 0 && (canvas.width !== displayWidth || canvas.height !== displayHeight)) {
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!img.naturalWidth || !img.naturalHeight || canvas.width <= 0 || canvas.height <= 0) return;
+
+  const box = previewBox || parseBBox(draft.review_bbox);
+  if (!box) return;
+  const [x1, y1, x2, y2] = boxToCanvas(box);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = previewBox ? "#ffd24a" : "#39a7ff";
+  ctx.fillStyle = "rgba(57, 167, 255, 0.12)";
+  ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+}
+
+function startBoxDraw(ev) {
+  if (!current) return;
+  const point = canvasPoint(ev);
+  if (!point) return;
+  ev.preventDefault();
+  drawingBox = true;
+  drawingStart = point;
+  previewBox = [point[0], point[1], point[0] + 1, point[1] + 1];
+  qs("#bboxCanvas").setPointerCapture(ev.pointerId);
+  drawBBox();
+}
+
+function moveBoxDraw(ev) {
+  if (!drawingBox || !drawingStart) return;
+  const point = canvasPoint(ev);
+  if (!point) return;
+  ev.preventDefault();
+  previewBox = [
+    Math.min(drawingStart[0], point[0]),
+    Math.min(drawingStart[1], point[1]),
+    Math.max(drawingStart[0], point[0]),
+    Math.max(drawingStart[1], point[1]),
+  ];
+  drawBBox();
+}
+
+function finishBoxDraw(ev) {
+  if (!drawingBox) return;
+  ev.preventDefault();
+  drawingBox = false;
+  const finalBox = previewBox;
+  previewBox = null;
+  drawingStart = null;
+  if (finalBox && finalBox[2] - finalBox[0] >= 4 && finalBox[3] - finalBox[1] >= 4) {
+    setBBox(formatBBox(finalBox));
+  } else {
+    drawBBox();
+  }
 }
 
 function clearSpeedBuffer() {
@@ -222,6 +336,7 @@ function render() {
   qs("#status").textContent = `${index + 1}/${rows.length}`;
   qs("#cropImg").src = current.crop_path ? `/media/${current.record_key}/crop` : "";
   qs("#frameImg").src = `/media/${current.record_key}/frame`;
+  setBBox(draft.review_bbox, false);
   qs("#ignoreReason").value = draft.review_ignore_reason;
   qs("#notes").value = draft.review_notes;
   setActive("#speedButtons button", "speed", draft.review_speed_limit_mph);
@@ -231,6 +346,7 @@ function render() {
     ["record", current.record_key],
     ["candidate", `${current.candidate_speed_limit_mph || "none"} @ ${current.candidate_confidence || ""}`],
     ["class", `${current.detector_class} (${current.proposal_confidence})`],
+    ["bbox", draft.review_bbox],
     ["reasons", current.review_reasons],
     ["map", `${current.map_relation} current=${current.map_current_speed_limit_mph} next=${current.map_next_speed_limit_mph} dist=${current.map_next_speed_limit_distance_m}`],
     ["reads", current.read_sources],
@@ -247,6 +363,7 @@ function manualReviewStatus() {
 async function save(moveNext = true, forcedStatus = null) {
   if (!current) return;
   draft.review_status = forcedStatus || manualReviewStatus();
+  draft.review_bbox = qs("#bboxInput").value.trim();
   draft.review_ignore_reason = qs("#ignoreReason").value;
   draft.review_notes = qs("#notes").value;
   const payload = {record_key: current.record_key, ...draft};
@@ -268,6 +385,7 @@ qs("#filter").onchange = loadQueue;
 qs("#nextBtn").onclick = next;
 qs("#prevBtn").onclick = prev;
 qs("#saveBtn").onclick = () => save(true);
+qs("#clearBBoxBtn").onclick = () => setBBox("");
 qs("#acceptPredBtn").onclick = () => {
   if (!current) return;
   draft.review_speed_limit_mph = current.candidate_speed_limit_mph || "";
@@ -282,6 +400,13 @@ qsa("#statusButtons button").forEach(btn => btn.onclick = () => {
   draft.review_status = btn.dataset.status;
   setActive("#statusButtons button", "status", draft.review_status);
 });
+qs("#bboxInput").oninput = () => setBBox(qs("#bboxInput").value.trim());
+qs("#frameImg").onload = () => drawBBox();
+qs("#bboxCanvas").addEventListener("pointerdown", startBoxDraw);
+qs("#bboxCanvas").addEventListener("pointermove", moveBoxDraw);
+qs("#bboxCanvas").addEventListener("pointerup", finishBoxDraw);
+qs("#bboxCanvas").addEventListener("pointercancel", finishBoxDraw);
+window.addEventListener("resize", drawBBox);
 document.addEventListener("keydown", ev => {
   if (ev.target.tagName === "TEXTAREA" || ev.target.tagName === "INPUT") return;
   const key = ev.key.toLowerCase();
@@ -301,6 +426,11 @@ document.addEventListener("keydown", ev => {
   if (key === "s") { clearSpeedBuffer(); draft.review_sign_type = "school_zone"; setActive("#typeButtons button", "type", "school_zone"); }
   if (key === "r") { clearSpeedBuffer(); draft.review_sign_type = "regulatory"; setActive("#typeButtons button", "type", "regulatory"); }
   if (key === "a") { clearSpeedBuffer(); draft.review_sign_type = "advisory"; setActive("#typeButtons button", "type", "advisory"); }
+  if (key === "b") {
+    clearSpeedBuffer();
+    setBBox("");
+    return;
+  }
   if (key === "i" || key === "x") {
     clearSpeedBuffer();
     draft.review_status = "ignore";

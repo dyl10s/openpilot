@@ -25,6 +25,8 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--max-rows", type=int, default=0, help="Optional cap after filtering.")
   parser.add_argument("--seed", type=int, default=0, help="Sampling seed used with --max-rows.")
   parser.add_argument("--output-csv", type=Path, help="Optional per-row prediction output.")
+  parser.add_argument("--detector-min-confidence", type=float, help="Override runtime US detector confidence threshold.")
+  parser.add_argument("--classifier-min-confidence", type=float, help="Override runtime US classifier confidence threshold.")
   parser.add_argument("--strict-positive-recall", type=float, help="Exit non-zero if positive exact recall is below this value.")
   parser.add_argument("--strict-negative-fpr", type=float, help="Exit non-zero if negative false-positive rate is above this value.")
   return parser.parse_args()
@@ -91,6 +93,10 @@ def main() -> int:
 
   slv.US_DETECTOR_MODEL_PATH = detector_path
   slv.US_CLASSIFIER_MODEL_PATH = classifier_path
+  if args.detector_min_confidence is not None:
+    slv.US_DETECTOR_MIN_CONFIDENCE = args.detector_min_confidence
+  if args.classifier_min_confidence is not None:
+    slv.US_CLASSIFIER_MIN_CONFIDENCE = args.classifier_min_confidence
   daemon = slv.SpeedLimitVisionDaemon(use_runtime=False)
 
   output_rows: list[dict[str, str]] = []
