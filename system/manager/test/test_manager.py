@@ -9,7 +9,7 @@ from cereal import car
 from openpilot.common.params import Params, ParamKeyFlag
 import openpilot.system.manager.manager as manager
 from openpilot.system.manager.process import ensure_running
-from openpilot.system.manager.process_config import managed_processes, procs
+from openpilot.system.manager.process_config import managed_processes, procs, python_process_start_method, python_ui_enabled
 from openpilot.system.hardware import HARDWARE
 
 os.environ['FAKEUPLOAD'] = "1"
@@ -110,6 +110,18 @@ class TestManager:
 
     assert names.index("the_galaxy") < ui_idx
     assert names.index("galaxy") < ui_idx
+
+  def test_python_process_start_method_follows_ui_implementation(self):
+    assert python_process_start_method(False, False) == "fork"
+    assert python_process_start_method(True, False) == "subprocess"
+    assert python_process_start_method(True, True) == "fork"
+
+  def test_python_ui_env_override(self, monkeypatch):
+    monkeypatch.setenv("USE_RAYLIB_UI", "1")
+    assert python_ui_enabled("tici") is True
+
+    monkeypatch.setenv("USE_RAYLIB_UI", "0")
+    assert python_ui_enabled("mici") is False
 
   def test_manager_startup_toggles_use_params_only(self, tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_BRANCH", "StarPilot")

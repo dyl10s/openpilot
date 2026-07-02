@@ -24,7 +24,6 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.common.watchdog import WATCHDOG_FN
 
 ENABLE_WATCHDOG = os.getenv("NO_WATCHDOG") is None
-PYTHON_PROCESS_START_METHOD = os.getenv("PYTHON_PROCESS_START_METHOD", "subprocess")
 
 DEBUG_ENV_KEYS = (
   "XDG_RUNTIME_DIR",
@@ -644,7 +643,7 @@ class NativeProcess(ManagerProcess):
 
 
 class PythonProcess(ManagerProcess):
-  def __init__(self, name, module, should_run, enabled=True, sigkill=False, watchdog_max_dt=None, nice=None):
+  def __init__(self, name, module, should_run, enabled=True, sigkill=False, watchdog_max_dt=None, nice=None, start_method=None):
     self.name = name
     self.module = module
     self.should_run = should_run
@@ -652,6 +651,7 @@ class PythonProcess(ManagerProcess):
     self.sigkill = sigkill
     self.watchdog_max_dt = watchdog_max_dt
     self.nice = nice
+    self.start_method = start_method
     self.launcher = launcher
 
   def prepare(self) -> None:
@@ -682,14 +682,15 @@ class PythonProcess(ManagerProcess):
     name = self.name if "modeld" not in self.name else "MainProcess"
 
     cloudlog.info(f"starting python {self.module}")
-    if PYTHON_PROCESS_START_METHOD == "subprocess":
+    start_method = self.start_method or os.getenv("PYTHON_PROCESS_START_METHOD", "fork")
+    if start_method == "subprocess":
       launcher_code = (
         "from openpilot.system.manager.process import launcher; "
         f"launcher({self.module!r}, {self.name!r}, {self.nice!r})"
       )
       self.proc = SubprocessProcess(subprocess.Popen([sys.executable, "-c", launcher_code]))
     else:
-      self.proc = multiprocessing.get_context(PYTHON_PROCESS_START_METHOD).Process(
+      self.proc = multiprocessing.get_context(start_method).Process(
         name=name,
         target=self.launcher,
         args=(self.module, self.name, self.nice),
