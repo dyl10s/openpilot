@@ -53,6 +53,7 @@ IONIQ_6_LAUNCH_HOLD_SPEED_V = [0.75, 0.6, 0.4, 0.0]
 IONIQ_6_STOP_BRAKE_CAP_MAX_SPEED = 2.0
 IONIQ_6_STOP_BRAKE_CAP_SPEED_BP = [0.0, 0.08, 0.25, 0.6, 1.2, 2.0, 3.0]
 IONIQ_6_STOP_BRAKE_CAP_ACCEL_V = [-0.15, -0.16, -0.22, -0.42, -0.78, -1.15, -1.40]
+EV6_GT_LINE_STOP_BRAKE_CAP_MAX_SPEED = 1.2
 IONIQ_6_STOP_HOLD_JERK_BP = [0.0, 0.15, 0.6, 1.2, 2.0, 3.0]
 IONIQ_6_STOP_HOLD_JERK_V = [0.35, 0.40, 0.48, 0.65, 0.85, 1.10]
 IONIQ_6_STOP_RELEASE_JERK_BP = [0.0, 0.15, 0.5]
@@ -122,8 +123,14 @@ def _calculate_ioniq_6_dynamic_lower_jerk(accel_error: float) -> float:
   return IONIQ_6_LONG_MIN_JERK
 
 
+def should_use_ev6_gt_line_stop_direct_tracking(ev6_gt_line: bool, stopping: bool, v_ego: float,
+                                                 accel_cmd: float, actual_accel: float) -> bool:
+  return bool(ev6_gt_line and stopping and v_ego > EV6_GT_LINE_STOP_BRAKE_CAP_MAX_SPEED and accel_cmd < actual_accel)
+
+
 def update_ioniq_6_longitudinal_tuning(state: Ioniq6LongitudinalTuningState, accel_cmd: float, v_ego: float, a_ego: float,
-                                       long_control_state: LongCtrlState, long_active: bool) -> Ioniq6LongitudinalTuningState:
+                                       long_control_state: LongCtrlState, long_active: bool,
+                                       ev6_gt_line: bool = False) -> Ioniq6LongitudinalTuningState:
   starting = long_control_state == LongCtrlState.starting
   stopping = long_control_state == LongCtrlState.stopping
   restart_from_stop = state.long_control_state_last in (LongCtrlState.stopping, LongCtrlState.starting) and \
@@ -165,7 +172,8 @@ def update_ioniq_6_longitudinal_tuning(state: Ioniq6LongitudinalTuningState, acc
   state.jerk_lower = min(dynamic_lower_jerk, lower_speed_limit)
 
   if state.stopping:
-    if v_ego <= IONIQ_6_STOP_BRAKE_CAP_MAX_SPEED:
+    stop_brake_cap_max_speed = EV6_GT_LINE_STOP_BRAKE_CAP_MAX_SPEED if ev6_gt_line else IONIQ_6_STOP_BRAKE_CAP_MAX_SPEED
+    if v_ego <= stop_brake_cap_max_speed:
       stop_brake_cap = float(np.interp(v_ego, IONIQ_6_STOP_BRAKE_CAP_SPEED_BP, IONIQ_6_STOP_BRAKE_CAP_ACCEL_V))
       state.desired_accel = min(0.0, max(accel_cmd, stop_brake_cap))
       state.jerk_upper = min(state.jerk_upper, float(np.interp(v_ego, IONIQ_6_STOP_HOLD_JERK_BP, IONIQ_6_STOP_HOLD_JERK_V)) * IONIQ_6_RESPONSE_MULTIPLIER)
@@ -487,18 +495,23 @@ class CarController(CarControllerBase):
 
     use_egmp_dynamic_long_tuning = egmp_dynamic_longitudinal_tuning(self.CP) and self.long_active_ecu and \
                                    actuators.longControlState in (LongCtrlState.starting, LongCtrlState.pid, LongCtrlState.stopping)
+    is_ev6_gt_line = kia_ev6_gt_line_longitudinal_tuning(self.CP.carFingerprint, getattr(self.CP, "carVin", ""))
     if should_reset_ev6_gt_line_longitudinal_tuning(self.CP, actuators.longControlState):
       self._ioniq_6_long_tuning = reset_ev6_gt_line_longitudinal_tuning(self._ioniq_6_long_tuning, self.CP,
                                                                          actuators.longControlState)
     elif use_egmp_dynamic_long_tuning and self.frame % 5 == 0:
       self._ioniq_6_long_tuning = update_ioniq_6_longitudinal_tuning(self._ioniq_6_long_tuning, accel_cmd,
                                                                       CS.out.vEgo, CS.out.aEgo,
-                                                                      actuators.longControlState, self.long_active_ecu)
+                                                                      actuators.longControlState, self.long_active_ecu,
+                                                                      ev6_gt_line=is_ev6_gt_line)
     use_egmp_smoothed_accel = use_egmp_dynamic_long_tuning and (
       accel_cmd >= self._ioniq_6_long_tuning.actual_accel or
       self._ioniq_6_long_tuning.launch_active or
       self._ioniq_6_long_tuning.stopping
     )
+    if should_use_ev6_gt_line_stop_direct_tracking(is_ev6_gt_line, self._ioniq_6_long_tuning.stopping,
+                                                   CS.out.vEgo, accel_cmd, self._ioniq_6_long_tuning.actual_accel):
+      use_egmp_smoothed_accel = False
     if use_egmp_dynamic_long_tuning:
       if use_egmp_smoothed_accel:
         accel = self._ioniq_6_long_tuning.actual_accel

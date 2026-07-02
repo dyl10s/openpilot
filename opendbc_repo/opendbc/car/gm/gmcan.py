@@ -17,6 +17,8 @@ MALIBU_BUTTON_MAP = {
   CruiseButtons.CANCEL: 5,
 }
 
+ACC_CRUISE_STATE_ADAPTIVE = 2
+
 
 def malibu_phase_map_for_button(button):
   key = MALIBU_BUTTON_MAP.get(button)
@@ -220,6 +222,7 @@ def create_acc_dashboard_command(packer, bus, enabled, target_speed_kph, hud_con
 
   values = {
     "ACCAlwaysOne": 1,
+    "ACCCruiseState": ACC_CRUISE_STATE_ADAPTIVE,
     "ACCResumeButton": 0,
     "ACCSpeedSetpoint": target_speed,
     "ACCGapLevel": hud_control.leadDistanceBars * enabled,  # 3 "far", 0 "inactive"

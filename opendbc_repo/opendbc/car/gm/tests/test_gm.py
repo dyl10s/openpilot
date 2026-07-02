@@ -554,7 +554,11 @@ class TestGMCarController:
 
     parser.update([0, [msg]])
 
-    assert parser.vl["ASCMActiveCruiseControlStatus"]["FCWAlert"] == 2
+    values = parser.vl["ASCMActiveCruiseControlStatus"]
+
+    assert values["ACCCruiseState"] == 2
+    assert values["ACCCmdActive"] == 1
+    assert values["FCWAlert"] == 2
 
   def test_acc_dashboard_command_uses_openpilot_hud_when_disengaged(self):
     packer = CANPacker(DBC[CAR.CHEVROLET_VOLT_ASCM][Bus.pt])
@@ -572,6 +576,7 @@ class TestGMCarController:
     values = parser.vl["ASCMActiveCruiseControlStatus"]
 
     assert values["ACCSpeedSetpoint"] == 50
+    assert values["ACCCruiseState"] == 2
     assert values["ACCGapLevel"] == 0
     assert values["ACCCmdActive"] == 0
     assert values["ACCLeadCar"] == 1

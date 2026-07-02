@@ -11,7 +11,8 @@ from opendbc.car.hyundai.carcontroller import CarController, Ioniq6LongitudinalT
                                              update_ioniq_6_longitudinal_tuning, \
                                              update_genesis_g90_longitudinal_tuning, egmp_dynamic_longitudinal_tuning, \
                                              should_reset_ev6_gt_line_longitudinal_tuning, reset_ev6_gt_line_longitudinal_tuning, \
-                                             get_angle_smoothing_alpha, apply_ev9_high_angle_gain_cap, ev9_driver_override_active
+                                             get_angle_smoothing_alpha, apply_ev9_high_angle_gain_cap, ev9_driver_override_active, \
+                                             should_use_ev6_gt_line_stop_direct_tracking
 from opendbc.car.hyundai.carstate import CarState, decode_canfd_camera_lead, decode_ioniq_6_blindspot_radar_state
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai import hyundaican, hyundaicanfd
@@ -1112,6 +1113,24 @@ class TestHyundaiFingerprint:
     assert state.stopping
     assert state.desired_accel == pytest.approx(-2.82)
     assert state.actual_accel < -1.8
+
+  def test_kia_ev6_gt_line_longitudinal_tuning_helper_delays_final_stop_cap(self):
+    state = Ioniq6LongitudinalTuningState(actual_accel=-2.82, accel_last=-2.82,
+                                          long_control_state_last=LongCtrlState.pid)
+
+    state = update_ioniq_6_longitudinal_tuning(state, accel_cmd=-2.82, v_ego=1.8, a_ego=-2.4,
+                                               long_control_state=LongCtrlState.stopping, long_active=True,
+                                               ev6_gt_line=True)
+    assert state.stopping
+    assert state.desired_accel == pytest.approx(-2.82)
+    assert state.actual_accel == pytest.approx(-2.82)
+
+  def test_kia_ev6_gt_line_prefers_direct_stop_tracking_above_final_band(self):
+    assert should_use_ev6_gt_line_stop_direct_tracking(True, True, 1.8, -2.05, -1.29)
+    assert not should_use_ev6_gt_line_stop_direct_tracking(True, True, 1.0, -2.05, -1.29)
+    assert not should_use_ev6_gt_line_stop_direct_tracking(True, False, 1.8, -2.05, -1.29)
+    assert not should_use_ev6_gt_line_stop_direct_tracking(False, True, 1.8, -2.05, -1.29)
+    assert not should_use_ev6_gt_line_stop_direct_tracking(True, True, 1.8, -1.0, -1.29)
 
   def test_genesis_g90_longitudinal_tuning_softens_final_stop_hold(self):
     state = GenesisG90LongitudinalTuningState()
