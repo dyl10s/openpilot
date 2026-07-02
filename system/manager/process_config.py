@@ -33,14 +33,12 @@ def python_ui_enabled(device_type: str) -> bool:
   return device_type not in ("tici", "tizi")
 
 
-def python_process_start_method(uses_python_ui: bool, is_pc: bool = PC) -> str:
-  # Native/QT UI devices rely on fork copy-on-write to keep onroad memory low.
-  # Python/raylib UI uses subprocess to avoid fork/import-lock boot hangs.
+def python_ui_process_start_method(uses_python_ui: bool, is_pc: bool = PC) -> str:
   return "fork" if is_pc or not uses_python_ui else "subprocess"
 
 
 PYTHON_UI = python_ui_enabled(device_type)
-os.environ.setdefault("PYTHON_PROCESS_START_METHOD", python_process_start_method(PYTHON_UI))
+PYTHON_UI_PROCESS_START_METHOD = python_ui_process_start_method(PYTHON_UI)
 
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 
@@ -176,7 +174,13 @@ procs += [
 ]
 
 if PYTHON_UI:
-  procs.append(PythonProcess("ui", "selfdrive.ui.ui", always_run, watchdog_max_dt=UI_WATCHDOG_MAX_DT))
+  procs.append(PythonProcess(
+    "ui",
+    "selfdrive.ui.ui",
+    always_run,
+    watchdog_max_dt=UI_WATCHDOG_MAX_DT,
+    start_method=PYTHON_UI_PROCESS_START_METHOD,
+  ))
 else:
   procs.append(NativeProcess("ui", "selfdrive/ui", ["./ui"], always_run, watchdog_max_dt=UI_WATCHDOG_MAX_DT))
 
