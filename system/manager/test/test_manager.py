@@ -125,12 +125,13 @@ class TestManager:
   def test_python_ui_subprocess_is_scoped_to_ui(self):
     ui_proc = managed_processes["ui"]
     uses_python_ui = python_ui_enabled(HARDWARE.get_device_type())
+    subprocess_scoped_procs = {"the_galaxy"}
 
     assert isinstance(ui_proc, PythonProcess) == uses_python_ui
     if uses_python_ui:
       assert ui_proc.start_method == python_ui_process_start_method(uses_python_ui)
     for proc in procs:
-      if isinstance(proc, PythonProcess) and proc.name != "ui":
+      if isinstance(proc, PythonProcess) and proc.name not in subprocess_scoped_procs | {"ui"}:
         assert proc.start_method is None
 
   def test_python_ui_env_override(self, monkeypatch):

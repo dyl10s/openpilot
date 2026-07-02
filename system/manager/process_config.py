@@ -39,6 +39,7 @@ def python_ui_process_start_method(uses_python_ui: bool, is_pc: bool = PC) -> st
 
 PYTHON_UI = python_ui_enabled(device_type)
 PYTHON_UI_PROCESS_START_METHOD = python_ui_process_start_method(PYTHON_UI)
+THE_GALAXY_PROCESS_START_METHOD = "fork" if PC else "subprocess"
 
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 
@@ -169,7 +170,13 @@ procs = [
 
 # StarPilot variables
 procs += [
-  PythonProcess("the_galaxy", "starpilot.system.the_galaxy.the_galaxy", always_run, nice=19),
+  PythonProcess(
+    "the_galaxy",
+    "starpilot.system.the_galaxy.the_galaxy",
+    always_run,
+    nice=19,
+    start_method=THE_GALAXY_PROCESS_START_METHOD,
+  ),
   PythonProcess("galaxy", "starpilot.system.galaxy.galaxy", always_run, nice=19),
 ]
 
