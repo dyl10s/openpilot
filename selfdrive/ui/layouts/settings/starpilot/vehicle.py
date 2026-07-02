@@ -88,7 +88,7 @@ class VehicleSettingsManagerView(PanelManagerView):
     self._controller = controller
     self._shell_rect = rl.Rectangle(0, 0, 0, 0)
     self._toggle_grid = TileGrid(columns=2, padding=12, force_square=True,
-                                 min_tile_height=130.0, max_tile_height=280.0)
+                                 min_tile_height=130.0)
     self.register_page_grid(self._toggle_grid)
     self._last_make = ""
     self._last_model = ""

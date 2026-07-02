@@ -71,7 +71,7 @@ class SoundsManagerView(PanelManagerView):
     )
 
   def _init_toggles(self):
-    self._toggle_grid = TileGrid(columns=2, padding=12, force_square=True, min_tile_height=130.0, max_tile_height=280.0)
+    self._toggle_grid = TileGrid(columns=2, padding=12, force_square=True, min_tile_height=130.0)
     self._child(self._toggle_grid)
     self._page_grid = self._toggle_grid
 
