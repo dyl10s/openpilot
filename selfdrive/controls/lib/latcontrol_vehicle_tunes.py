@@ -514,8 +514,8 @@ IONIQ_6_DIRECTIONAL_TAPER_UNWIND_LEFT = 2.15
 IONIQ_6_DIRECTIONAL_TAPER_UNWIND_RIGHT = 4.25
 IONIQ_6_DIRECTIONAL_TAPER_FLOOR_LEFT = 0.48
 IONIQ_6_DIRECTIONAL_TAPER_FLOOR_RIGHT = 0.52
-IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_LEFT = 0.16
-IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_RIGHT = 0.04
+IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_LEFT = 0.20
+IONIQ_6_DIRECTIONAL_TAPER_UNWIND_FLOOR_RIGHT = 0.10
 IONIQ_6_DIRECTIONAL_TAPER_JERK_ONSET = 0.60
 IONIQ_6_DIRECTIONAL_TAPER_JERK_WIDTH = 0.14
 IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF = 0.98
@@ -523,6 +523,8 @@ IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED = 11.2
 IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_SPEED_WIDTH = 1.5
 IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT = 0.10
 IONIQ_6_DIRECTIONAL_TAPER_LOW_SPEED_RELIEF_LAT_WIDTH = 0.06
+IONIQ_6_UNWIND_HIGH_SPEED_SPEED = 23.2
+IONIQ_6_UNWIND_HIGH_SPEED_SPEED_WIDTH = 1.7
 IONIQ_6_CRAWL_TURN_IN_FF_BOOST_LEFT = 0.18
 IONIQ_6_CRAWL_TURN_IN_FF_BOOST_RIGHT = 0.24
 IONIQ_6_CRAWL_TURN_IN_FF_SPEED = 5.3
@@ -1786,10 +1788,11 @@ def get_ioniq_6_friction_threshold(v_ego: float, desired_lateral_accel: float = 
   phase = _ioniq_6_transition_phase(desired_lateral_accel, desired_lateral_jerk)
   turn_in_weight = max(phase, 0.0)
   unwind_weight = max(-phase, 0.0)
+  unwind_speed_weight = _ioniq_6_sigmoid((v_ego - IONIQ_6_UNWIND_HIGH_SPEED_SPEED) / IONIQ_6_UNWIND_HIGH_SPEED_SPEED_WIDTH)
   threshold_scale = 1.0 - (_ioniq_6_side_value(desired_lateral_accel, IONIQ_6_TURN_IN_THRESHOLD_REDUCTION_LEFT, IONIQ_6_TURN_IN_THRESHOLD_REDUCTION_RIGHT) *
                            transition_envelope * turn_in_weight)
   threshold_scale += (_ioniq_6_side_value(desired_lateral_accel, IONIQ_6_UNWIND_THRESHOLD_INCREASE_LEFT, IONIQ_6_UNWIND_THRESHOLD_INCREASE_RIGHT) *
-                      transition_envelope * unwind_weight)
+                      transition_envelope * unwind_weight * unwind_speed_weight)
   return base_threshold * min(max(threshold_scale, 0.82), 1.18)
 
 
@@ -1798,11 +1801,12 @@ def get_ioniq_6_friction_scale(v_ego: float, desired_lateral_accel: float, desir
   phase = _ioniq_6_transition_phase(desired_lateral_accel, desired_lateral_jerk)
   turn_in_weight = max(phase, 0.0)
   unwind_weight = max(-phase, 0.0)
+  unwind_speed_weight = _ioniq_6_sigmoid((v_ego - IONIQ_6_UNWIND_HIGH_SPEED_SPEED) / IONIQ_6_UNWIND_HIGH_SPEED_SPEED_WIDTH)
   friction_scale = IONIQ_6_FRICTION_MULT
   friction_scale += (_ioniq_6_side_value(desired_lateral_accel, IONIQ_6_TURN_IN_FRICTION_BOOST_LEFT, IONIQ_6_TURN_IN_FRICTION_BOOST_RIGHT) *
                      transition_envelope * turn_in_weight)
   friction_scale -= (_ioniq_6_side_value(desired_lateral_accel, IONIQ_6_UNWIND_FRICTION_REDUCTION_LEFT, IONIQ_6_UNWIND_FRICTION_REDUCTION_RIGHT) *
-                     transition_envelope * unwind_weight)
+                     transition_envelope * unwind_weight * unwind_speed_weight)
   return min(max(friction_scale, 0.82), 1.08)
 
 

@@ -6,6 +6,8 @@ import struct
 import threading
 import time
 import subprocess
+import multiprocessing
+import sys
 from pathlib import Path
 from collections.abc import Callable, ValuesView
 from abc import ABC, abstractmethod
@@ -22,6 +24,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.common.watchdog import WATCHDOG_FN
 
 ENABLE_WATCHDOG = os.getenv("NO_WATCHDOG") is None
+PYTHON_PROCESS_START_METHOD = os.getenv("PYTHON_PROCESS_START_METHOD", "subprocess")
 
 DEBUG_ENV_KEYS = (
   "XDG_RUNTIME_DIR",
@@ -465,11 +468,33 @@ def join_process(process: Process, timeout: float) -> None:
     time.sleep(0.001)
 
 
+class SubprocessProcess:
+  def __init__(self, proc: subprocess.Popen):
+    self._proc = proc
+
+  @property
+  def pid(self) -> int | None:
+    return self._proc.pid
+
+  @property
+  def exitcode(self) -> int | None:
+    return self._proc.poll()
+
+  def is_alive(self) -> bool:
+    return self._proc.poll() is None
+
+  def join(self, timeout: float | None = None) -> None:
+    try:
+      self._proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+      pass
+
+
 class ManagerProcess(ABC):
   daemon = False
   sigkill = False
   should_run: Callable[[bool, Params, car.CarParams, SimpleNamespace], bool]
-  proc: Process | None = None
+  proc: Process | SubprocessProcess | None = None
   enabled = True
   name = ""
 
@@ -657,8 +682,19 @@ class PythonProcess(ManagerProcess):
     name = self.name if "modeld" not in self.name else "MainProcess"
 
     cloudlog.info(f"starting python {self.module}")
-    self.proc = Process(name=name, target=self.launcher, args=(self.module, self.name, self.nice))
-    self.proc.start()
+    if PYTHON_PROCESS_START_METHOD == "subprocess":
+      launcher_code = (
+        "from openpilot.system.manager.process import launcher; "
+        f"launcher({self.module!r}, {self.name!r}, {self.nice!r})"
+      )
+      self.proc = SubprocessProcess(subprocess.Popen([sys.executable, "-c", launcher_code]))
+    else:
+      self.proc = multiprocessing.get_context(PYTHON_PROCESS_START_METHOD).Process(
+        name=name,
+        target=self.launcher,
+        args=(self.module, self.name, self.nice),
+      )
+      self.proc.start()
     self.last_watchdog_time = 0
     self.watchdog_seen = False
     self.shutting_down = False

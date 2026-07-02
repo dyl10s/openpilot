@@ -2,10 +2,15 @@ import jwt
 import os
 import requests
 from datetime import datetime, timedelta, UTC
+from functools import cache
+from openpilot.common.params import Params
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.version import get_version
 
-from openpilot.starpilot.common.starpilot_utilities import use_konik_server
+
+@cache
+def use_konik_server() -> bool:
+  return Params().get_bool("UseKonikServer")
 
 API_HOST = os.getenv('API_HOST', f"https://api.{'konik.ai' if use_konik_server() else 'commadotai.com'}")
 

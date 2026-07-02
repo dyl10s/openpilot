@@ -6,7 +6,7 @@ from pathlib import Path
 import json
 
 from cereal import car
-from openpilot.common.params import Params
+from openpilot.common.params import Params, ParamKeyFlag
 import openpilot.system.manager.manager as manager
 from openpilot.system.manager.process import ensure_running
 from openpilot.system.manager.process_config import managed_processes, procs
@@ -19,14 +19,28 @@ BLACKLIST_PROCS = ['manage_athenad', 'pandad', 'pigeond']
 
 
 class FileBackedFakeParams:
-  def __init__(self, root: Path, values: dict[str, object] | None = None):
+  def __init__(
+    self,
+    root: Path,
+    values: dict[str, object] | None = None,
+    keys: set[str] | None = None,
+    flags: dict[str, ParamKeyFlag] | None = None,
+  ):
     self.root = root
+    self.keys = set(keys or [])
+    self.flags = dict(flags or {})
     self.root.mkdir(parents=True, exist_ok=True)
     for key, value in (values or {}).items():
       self.put(key, value)
 
-  def get_param_path(self, key):
+  def get_param_path(self, key=""):
     return str(self.root / (key.decode() if isinstance(key, bytes) else str(key)))
+
+  def all_keys(self):
+    return sorted(self.keys)
+
+  def get_key_flag(self, key):
+    return self.flags.get(key.decode() if isinstance(key, bytes) else str(key), ParamKeyFlag.PERSISTENT)
 
   def get(self, key):
     path = Path(self.get_param_path(key))
@@ -48,6 +62,7 @@ class FileBackedFakeParams:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
   def put(self, key, value):
+    self.keys.add(key.decode() if isinstance(key, bytes) else str(key))
     path = Path(self.get_param_path(key))
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -95,6 +110,59 @@ class TestManager:
 
     assert names.index("the_galaxy") < ui_idx
     assert names.index("galaxy") < ui_idx
+
+  def test_manager_startup_toggles_use_params_only(self, tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_BRANCH", "StarPilot")
+    params = FileBackedFakeParams(tmp_path / "params", {
+      "DeviceManagement": True,
+      "NoLogging": True,
+      "NoUploads": True,
+      "DisableOnroadUploads": True,
+      "SpeedLimitFiller": True,
+      "VisionSpeedLimitDetection": True,
+      "ForceOffroad": True,
+      "ForceOnroad": False,
+    })
+
+    toggles = manager._get_manager_startup_toggles(params)
+
+    assert toggles.no_logging is True
+    assert toggles.no_uploads is True
+    assert toggles.no_onroad_uploads is True
+    assert toggles.speed_limit_filler is True
+    assert toggles.vision_speed_limit_detection is True
+    assert toggles.force_offroad is True
+    assert toggles.force_onroad is False
+
+  def test_restore_missing_params_from_cache_preserves_live_values(self, tmp_path):
+    params = FileBackedFakeParams(
+      tmp_path / "params",
+      {"ExistingParam": "live"},
+      keys={"ExistingParam", "RestoredParam", "MissingParam", "TransientParam"},
+      flags={"TransientParam": ParamKeyFlag.CLEAR_ON_MANAGER_START},
+    )
+    params_cache = FileBackedFakeParams(
+      tmp_path / "cache",
+      {"ExistingParam": "cached", "RestoredParam": "restored", "TransientParam": "stale"},
+    )
+
+    restored_keys = manager._restore_missing_params_from_cache(params, params_cache)
+
+    assert restored_keys == ["RestoredParam"]
+    assert params.get("ExistingParam") == "live"
+    assert params.get("RestoredParam") == "restored"
+    assert params.get("MissingParam") is None
+    assert params.get("TransientParam") is None
+
+  def test_iter_param_store_keys_skips_lock_and_temp_files(self, tmp_path):
+    store_path = tmp_path / "params"
+    store_path.mkdir()
+    (store_path / "GoodParam").write_text("1")
+    (store_path / ".lock").write_text("")
+    (store_path / ".tmp_value_abc").write_text("stale")
+    (store_path / "nested").mkdir()
+
+    assert manager._iter_param_store_keys(store_path) == {"GoodParam"}
 
   def test_blacklisted_procs(self):
     # TODO: ensure there are blacklisted procs until we have a dedicated test

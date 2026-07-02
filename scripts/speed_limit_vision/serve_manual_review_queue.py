@@ -76,7 +76,7 @@ HTML = r"""<!doctype html>
       <option value="negative">Negatives</option>
     </select>
     <span class="status" id="status"></span>
-    <span class="muted">Keys: j/k next/prev, 0 ignore, s school, r regulatory, a advisory</span>
+    <span class="muted">Keys: Space/p accept model, type speed to correct, i/x ignore, Enter save correction, j/k next/prev, s school, r regulatory, a advisory</span>
   </header>
   <main>
     <section class="images">
@@ -101,11 +101,9 @@ HTML = r"""<!doctype html>
         <button data-type="construction">Construction</button>
         <button data-type="not_speed_limit">Not Speed Limit</button>
       </div>
-      <h3>Status</h3>
+      <h3>Action</h3>
       <div class="buttons" id="statusButtons">
-        <button data-status="accepted" class="primary">Accept</button>
-        <button data-status="corrected">Corrected</button>
-        <button data-status="ignore" class="warn">Ignore</button>
+        <button data-status="ignore" class="warn">Ignore / Bad Crop (i/x)</button>
         <button data-status="needs_later">Needs Later</button>
       </div>
       <label>Ignore reason</label>
@@ -113,8 +111,8 @@ HTML = r"""<!doctype html>
       <label>Notes</label>
       <textarea id="notes"></textarea>
       <div class="buttons">
-        <button id="saveBtn" class="primary">Save</button>
-        <button id="acceptPredBtn">Accept Prediction</button>
+        <button id="acceptPredBtn">Accept Model Prediction (Space)</button>
+        <button id="saveBtn" class="primary">Save Correction (Enter)</button>
       </div>
     </aside>
   </main>
@@ -124,6 +122,8 @@ let rows = [];
 let index = 0;
 let current = null;
 let draft = {};
+let speedBuffer = "";
+let speedBufferTimer = null;
 
 function qs(sel) { return document.querySelector(sel); }
 function qsa(sel) { return Array.from(document.querySelectorAll(sel)); }
@@ -141,6 +141,27 @@ function setActive(selector, attr, value) {
   qsa(selector).forEach(btn => btn.classList.toggle("active", btn.dataset[attr] === String(value)));
 }
 
+function clearSpeedBuffer() {
+  speedBuffer = "";
+  if (speedBufferTimer) clearTimeout(speedBufferTimer);
+  speedBufferTimer = null;
+}
+
+function inferredType(row) {
+  if (!row) return "";
+  if (row.detector_class === "school_zone_speed_limit") return "school_zone";
+  if (row.detector_class === "advisory_speed_limit") return "advisory";
+  if (row.detector_class === "negative_empty") return "not_speed_limit";
+  return "regulatory";
+}
+
+function ensureSpeedSignType() {
+  if (draft.review_sign_type === "not_speed_limit") {
+    draft.review_sign_type = inferredType(current);
+    setActive("#typeButtons button", "type", draft.review_sign_type);
+  }
+}
+
 function renderSpeedButtons() {
   const root = qs("#speedButtons");
   root.innerHTML = "";
@@ -149,11 +170,36 @@ function renderSpeedButtons() {
     btn.textContent = speed;
     btn.dataset.speed = speed;
     btn.onclick = () => {
-      draft.review_speed_limit_mph = String(speed);
-      setActive("#speedButtons button", "speed", speed);
+      setSpeed(speed, false);
     };
     root.appendChild(btn);
   }
+}
+
+function setSpeed(speed, shouldSave) {
+  draft.review_speed_limit_mph = String(speed);
+  ensureSpeedSignType();
+  setActive("#speedButtons button", "speed", speed);
+  if (shouldSave) save(true, "corrected");
+}
+
+function handleDigitShortcut(digit) {
+  speedBuffer += digit;
+  if (speedBuffer.length > 2) speedBuffer = speedBuffer.slice(-2);
+  if (speedBufferTimer) clearTimeout(speedBufferTimer);
+  speedBufferTimer = setTimeout(clearSpeedBuffer, 1000);
+
+  if (speedBuffer.length < 2) return;
+
+  const speed = Number(speedBuffer);
+  clearSpeedBuffer();
+  if (speeds.includes(speed)) {
+    setSpeed(speed, true);
+    return;
+  }
+
+  speedBuffer = digit;
+  speedBufferTimer = setTimeout(clearSpeedBuffer, 1000);
 }
 
 function render() {
@@ -167,8 +213,8 @@ function render() {
   }
   draft = {
     review_status: current.review_status || "",
-    review_speed_limit_mph: current.review_speed_limit_mph || "",
-    review_sign_type: current.review_sign_type || "",
+    review_speed_limit_mph: current.review_speed_limit_mph || current.candidate_speed_limit_mph || "",
+    review_sign_type: current.review_sign_type || inferredType(current),
     review_bbox: current.review_bbox || current.bbox || "",
     review_ignore_reason: current.review_ignore_reason || "",
     review_notes: current.review_notes || "",
@@ -193,8 +239,14 @@ function render() {
   ].map(([k,v]) => `<div><span class="muted">${k}:</span> <code>${String(v || "")}</code></div>`).join("");
 }
 
-async function save(moveNext = true) {
+function manualReviewStatus() {
+  if (draft.review_status === "ignore" || draft.review_status === "needs_later") return draft.review_status;
+  return "corrected";
+}
+
+async function save(moveNext = true, forcedStatus = null) {
   if (!current) return;
+  draft.review_status = forcedStatus || manualReviewStatus();
   draft.review_ignore_reason = qs("#ignoreReason").value;
   draft.review_notes = qs("#notes").value;
   const payload = {record_key: current.record_key, ...draft};
@@ -218,12 +270,9 @@ qs("#prevBtn").onclick = prev;
 qs("#saveBtn").onclick = () => save(true);
 qs("#acceptPredBtn").onclick = () => {
   if (!current) return;
-  draft.review_status = "accepted";
   draft.review_speed_limit_mph = current.candidate_speed_limit_mph || "";
-  draft.review_sign_type = current.detector_class === "school_zone_speed_limit" ? "school_zone" :
-    current.detector_class === "advisory_speed_limit" ? "advisory" :
-    current.detector_class === "negative_empty" ? "not_speed_limit" : "regulatory";
-  save(true);
+  draft.review_sign_type = inferredType(current);
+  save(true, "accepted");
 };
 qsa("#typeButtons button").forEach(btn => btn.onclick = () => {
   draft.review_sign_type = btn.dataset.type;
@@ -235,13 +284,33 @@ qsa("#statusButtons button").forEach(btn => btn.onclick = () => {
 });
 document.addEventListener("keydown", ev => {
   if (ev.target.tagName === "TEXTAREA" || ev.target.tagName === "INPUT") return;
-  if (ev.key === "j") next();
-  if (ev.key === "k") prev();
-  if (ev.key === "s") { draft.review_sign_type = "school_zone"; setActive("#typeButtons button", "type", "school_zone"); }
-  if (ev.key === "r") { draft.review_sign_type = "regulatory"; setActive("#typeButtons button", "type", "regulatory"); }
-  if (ev.key === "a") { draft.review_sign_type = "advisory"; setActive("#typeButtons button", "type", "advisory"); }
-  if (ev.key === "0") { draft.review_status = "ignore"; draft.review_sign_type = "not_speed_limit"; setActive("#statusButtons button", "status", "ignore"); setActive("#typeButtons button", "type", "not_speed_limit"); }
-  if (ev.key === "Enter") save(true);
+  const key = ev.key.toLowerCase();
+  if (/^[0-9]$/.test(ev.key)) {
+    ev.preventDefault();
+    handleDigitShortcut(ev.key);
+    return;
+  }
+  if (key === "j") { clearSpeedBuffer(); next(); }
+  if (key === "k") { clearSpeedBuffer(); prev(); }
+  if (ev.key === " " || key === "p") {
+    ev.preventDefault();
+    clearSpeedBuffer();
+    qs("#acceptPredBtn").click();
+    return;
+  }
+  if (key === "s") { clearSpeedBuffer(); draft.review_sign_type = "school_zone"; setActive("#typeButtons button", "type", "school_zone"); }
+  if (key === "r") { clearSpeedBuffer(); draft.review_sign_type = "regulatory"; setActive("#typeButtons button", "type", "regulatory"); }
+  if (key === "a") { clearSpeedBuffer(); draft.review_sign_type = "advisory"; setActive("#typeButtons button", "type", "advisory"); }
+  if (key === "i" || key === "x") {
+    clearSpeedBuffer();
+    draft.review_status = "ignore";
+    draft.review_sign_type = "not_speed_limit";
+    setActive("#statusButtons button", "status", "ignore");
+    setActive("#typeButtons button", "type", "not_speed_limit");
+    save(true, "ignore");
+    return;
+  }
+  if (key === "enter") { clearSpeedBuffer(); save(true); }
 });
 loadQueue();
 </script>

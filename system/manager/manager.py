@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import traceback
+from types import SimpleNamespace
 
 _MANAGER_IMPORT_START = time.monotonic()
 _BOOT_TIMING_LOG_PATH = os.environ.get("SP_BOOT_TIMING_LOG", "/tmp/starpilot_boot_timing.log")
@@ -37,14 +38,15 @@ _MANAGER_CORE_IMPORT_DONE = time.monotonic()
 from openpilot.starpilot.common.starpilot_functions import starpilot_boot_functions, install_starpilot, uninstall_starpilot
 
 _MANAGER_IMPORT_DONE = time.monotonic()
-_manager_import_timing_line = (
-  "SP_BOOT_TIMING manager_import "
-  f"core={_MANAGER_CORE_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s "
-  f"starpilot={_MANAGER_IMPORT_DONE - _MANAGER_CORE_IMPORT_DONE:.3f}s "
-  f"total={_MANAGER_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s"
-)
-print(_manager_import_timing_line, flush=True)
-_append_boot_timing_line(_manager_import_timing_line)
+if __name__ == "__main__":
+  _manager_import_timing_line = (
+    "SP_BOOT_TIMING manager_import "
+    f"core={_MANAGER_CORE_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s "
+    f"starpilot={_MANAGER_IMPORT_DONE - _MANAGER_CORE_IMPORT_DONE:.3f}s "
+    f"total={_MANAGER_IMPORT_DONE - _MANAGER_IMPORT_START:.3f}s"
+  )
+  print(_manager_import_timing_line, flush=True)
+  _append_boot_timing_line(_manager_import_timing_line)
 
 
 LEGACY_BOLT_FP_MIGRATION_FLAG = Path("/data") / "legacy_bolt_fp_migration_v1"
@@ -58,8 +60,15 @@ STARPILOT_PC_ROOT_MIGRATION_FLAG = Path("/data") / "starpilot_pc_root_v1"
 STARPILOT_PARAMS_CACHE_MIGRATION_FLAG = Path("/data") / "starpilot_params_cache_v1"
 STARPILOT_LEGACY_CACHE_MARKER_KEYS = ("RemapCancelToDistance",)
 STARPILOT_REMOVED_PARAM_KEYS = ("HumanFollowing",)
+PARAMS_CACHE_RESTORE_SKIP_FLAGS = (
+  ParamKeyFlag.CLEAR_ON_MANAGER_START
+  | ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION
+  | ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION
+  | ParamKeyFlag.CLEAR_ON_IGNITION_ON
+)
 UNREGISTERED_DONGLE_ID = "UnregisteredDevice"
 POWER_WATCHDOG_PATH = "/var/tmp/power_watchdog"
+_PENDING_PARAMS_CACHE_SYNC: tuple[str, list[str]] | None = None
 LEGACY_CARMODEL_MIGRATIONS = {
   "CHEVROLET_BOLT_CC_2019_2021": "CHEVROLET_BOLT_CC_2018_2021",
 }
@@ -88,14 +97,84 @@ def _log_boot_timing(scope: str, label: str, start: float, previous: float | Non
   return now
 
 
-def _sync_params_cache_async(cache_params_path: str, values: list[tuple[bytes | str, object]]) -> None:
+def _sync_params_cache_keys_async(cache_params_path: str, keys: list[str]) -> None:
   try:
+    params = Params()
     params_cache = Params(cache_params_path, return_defaults=True)
-    for key, value in values:
-      if params_cache.get(key) != value:
-        params_cache.put(key, value)
+    for key in keys:
+      current_value = params.get(key)
+      if current_value is not None and params_cache.get(key) != current_value:
+        params_cache.put(key, current_value)
   except Exception:
     cloudlog.exception("failed to sync params cache")
+
+
+def _schedule_params_cache_sync(cache_params_path: str, keys: list[str]) -> None:
+  timer = threading.Timer(5.0, _sync_params_cache_keys_async, args=(cache_params_path, keys))
+  timer.daemon = True
+  timer.start()
+
+
+def _schedule_pending_params_cache_sync() -> None:
+  global _PENDING_PARAMS_CACHE_SYNC
+
+  pending_sync = _PENDING_PARAMS_CACHE_SYNC
+  _PENDING_PARAMS_CACHE_SYNC = None
+  if pending_sync is not None and pending_sync[1]:
+    _schedule_params_cache_sync(*pending_sync)
+
+
+def _iter_param_store_keys(store_path: str | Path) -> set[str]:
+  try:
+    path = Path(store_path)
+    if not path.is_dir():
+      return set()
+
+    with os.scandir(path) as entries:
+      return {
+        entry.name
+        for entry in entries
+        if entry.is_file(follow_symlinks=False) and entry.name != ".lock" and not entry.name.startswith(".tmp_")
+      }
+  except Exception:
+    cloudlog.exception(f"failed to list params store: {store_path}")
+    return set()
+
+
+def _param_key_to_text(key: bytes | str) -> str:
+  return key.decode("utf-8", errors="ignore") if isinstance(key, bytes) else str(key)
+
+
+def _should_restore_param_from_cache(params: Params, key: bytes | str) -> bool:
+  try:
+    return not (params.get_key_flag(key) & PARAMS_CACHE_RESTORE_SKIP_FLAGS)
+  except Exception:
+    return False
+
+
+def _restore_missing_params_from_cache(params: Params, params_cache: Params, active_keys: set[str] | None = None) -> list[str]:
+  active_keys = active_keys if active_keys is not None else _iter_param_store_keys(params.get_param_path())
+  restored_keys: list[str] = []
+
+  for raw_key in params.all_keys():
+    key = _param_key_to_text(raw_key)
+    if key in active_keys:
+      continue
+
+    if not _should_restore_param_from_cache(params, raw_key):
+      continue
+
+    cached_value = params_cache.get(raw_key)
+    if cached_value is None:
+      continue
+
+    try:
+      params.put(raw_key, cached_value)
+      restored_keys.append(key)
+    except Exception:
+      cloudlog.exception(f"failed to restore param from cache: {key}")
+
+  return restored_keys
 
 
 def _init_sentry_async() -> None:
@@ -141,6 +220,29 @@ def _get_starpilot_toggles(sm=None):
   from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 
   return get_starpilot_toggles(sm)
+
+
+def _get_manager_startup_toggles(params: Params | None = None) -> SimpleNamespace:
+  params = params or Params()
+  force_onroad = params.get_bool("ForceOnroad")
+  device_management = params.get_bool("DeviceManagement")
+  vetting_branch = os.environ.get("GIT_BRANCH") == "StarPilot-Vetting"
+
+  no_logging = False
+  no_uploads = False
+  if device_management and not vetting_branch:
+    no_logging = params.get_bool("NoLogging")
+    no_uploads = params.get_bool("NoUploads")
+
+  return SimpleNamespace(
+    force_offroad=params.get_bool("ForceOffroad"),
+    force_onroad=force_onroad,
+    no_logging=no_logging or (force_onroad and HARDWARE.get_device_type() == "pc"),
+    no_uploads=no_uploads,
+    no_onroad_uploads=params.get_bool("DisableOnroadUploads") if no_uploads else False,
+    speed_limit_filler=params.get_bool("SpeedLimitFiller"),
+    vision_speed_limit_detection=params.get_bool("VisionSpeedLimitDetection"),
+  )
 
 
 def _to_text(value):
@@ -824,11 +926,12 @@ def migrate_legacy_experimental_longitudinal(params: Params, params_cache: Param
 
 
 def manager_init() -> None:
+  global _PENDING_PARAMS_CACHE_SYNC
+
   manager_init_start = time.monotonic()
   last_timing = _log_boot_timing("manager_init", "start", manager_init_start, manager_init_start)
 
-  save_bootlog()
-  last_timing = _log_boot_timing("manager_init", "save_bootlog", manager_init_start, last_timing)
+  last_timing = _log_boot_timing("manager_init", "save_bootlog_deferred", manager_init_start, last_timing)
 
   build_metadata = get_build_metadata()
   last_timing = _log_boot_timing("manager_init", "build_metadata", manager_init_start, last_timing)
@@ -874,17 +977,11 @@ def manager_init() -> None:
   last_timing = _log_boot_timing("manager_init", "starpilot_migrations", manager_init_start, last_timing)
 
   # set unset params to their default value
-  params_cache_updates = []
-  for k in params.all_keys():
-    current_value = params.get(k)
-    if current_value is None:
-      cached_value = params_cache.get(k)
-      if cached_value is not None:
-        params.put(k, cached_value)
-    else:
-      params_cache_updates.append((k, current_value))
-  if params_cache_updates:
-    threading.Thread(target=_sync_params_cache_async, args=(cache_params_path, params_cache_updates), daemon=True).start()
+  active_param_keys = _iter_param_store_keys(params.get_param_path())
+  last_timing = _log_boot_timing("manager_init", f"params_store_snapshot_{len(active_param_keys)}", manager_init_start, last_timing)
+  restored_param_keys = _restore_missing_params_from_cache(params, params_cache, active_param_keys)
+  last_timing = _log_boot_timing("manager_init", f"params_restore_{len(restored_param_keys)}", manager_init_start, last_timing)
+  params_cache_update_keys = sorted(active_param_keys)
   last_timing = _log_boot_timing("manager_init", "params_defaults_cache_sync", manager_init_start, last_timing)
 
   # Create folders needed for msgq
@@ -938,7 +1035,6 @@ def manager_init() -> None:
                        commit=build_metadata.openpilot.git_commit,
                        dirty=build_metadata.openpilot.is_dirty,
                        device=HARDWARE.get_device_type())
-  _init_sentry_async()
   last_timing = _log_boot_timing("manager_init", "logging_ready", manager_init_start, last_timing)
 
   # Preimporting every process serializes a lot of import work before manager can
@@ -956,6 +1052,7 @@ def manager_init() -> None:
   last_timing = _log_boot_timing("manager_init", "install_starpilot", manager_init_start, last_timing)
   starpilot_boot_functions(build_metadata, params)
   _log_boot_timing("manager_init", "starpilot_boot_functions", manager_init_start, last_timing)
+  _PENDING_PARAMS_CACHE_SYNC = (cache_params_path, params_cache_update_keys)
 
 
 def manager_cleanup() -> None:
@@ -993,7 +1090,7 @@ def manager_thread() -> None:
   last_timing = _log_boot_timing("manager_thread", "messaging", manager_thread_start, last_timing)
 
   write_onroad_params(False, params)
-  initial_toggles = _get_starpilot_toggles()
+  initial_toggles = _get_manager_startup_toggles(params)
   last_timing = _log_boot_timing("manager_thread", "initial_toggles", manager_thread_start, last_timing)
   ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, starpilot_toggles=initial_toggles)
   last_timing = _log_boot_timing("manager_thread", "initial_ensure_running", manager_thread_start, last_timing)
@@ -1009,9 +1106,12 @@ def manager_thread() -> None:
 
   params_memory = Params(memory=True)
 
-  starpilot_toggles = _get_starpilot_toggles()
+  starpilot_toggles = _get_manager_startup_toggles(params)
   last_timing = _log_boot_timing("manager_thread", "loop_toggles", manager_thread_start, last_timing)
   _log_boot_timing("manager_thread", "loop_ready", manager_thread_start, last_timing)
+  save_bootlog()
+  _init_sentry_async()
+  _schedule_pending_params_cache_sync()
 
   while True:
     sm.update(1000)
