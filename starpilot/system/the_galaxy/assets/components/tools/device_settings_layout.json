@@ -2848,6 +2848,14 @@
         "ui_type": "toggle",
         "parent_key": "AdvancedCustomUI",
         "settings_tier": "advanced"
+      },
+      {
+        "key": "DisableWideRoad",
+        "label": "Disable Wide Road Camera",
+        "description": "Only enable this if the wide camera is broken or for development!\n\nDisabling the wide camera may degrade driving performance and cause instability.\n\nRequires a reboot to take effect.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "settings_tier": "advanced"
       }
     ]
   },
