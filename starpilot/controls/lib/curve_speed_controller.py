@@ -20,6 +20,27 @@ LAT_ACCEL_MAX = 3.0
 PARAM_REFRESH_FRAMES = int(round(1.0 / DT_MDL))
 
 
+def is_user_overriding_longitudinal(sm):
+  try:
+    if any(getattr(event, "overrideLongitudinal", False) for event in sm["onroadEvents"]):
+      return True
+  except (KeyError, TypeError):
+    pass
+
+  car_state = sm["carState"]
+  starpilot_car_state = sm["starpilotCarState"]
+  return bool(
+    getattr(car_state, "gasPressed", False) or
+    getattr(car_state, "brakePressed", False) or
+    getattr(starpilot_car_state, "accelPressed", False)
+  )
+
+
+def is_manual_speed_control(sm):
+  """Return whether the driver, rather than longitudinal control, owns speed."""
+  return not bool(sm["carControl"].longActive) or is_user_overriding_longitudinal(sm)
+
+
 class CurveSpeedController:
   def __init__(self, StarPilotVCruise):
     self.starpilot_planner = StarPilotVCruise.starpilot_planner
