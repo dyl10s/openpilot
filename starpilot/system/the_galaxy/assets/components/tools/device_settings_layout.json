@@ -46,7 +46,9 @@
         "step": 0.01,
         "precision": 2,
         "parent_key": "AdvancedLateralTune",
-        "settings_tier": "advanced"
+        "settings_tier": "advanced",
+        "disabled_when_key_true": "UseAutoSteerDelay",
+        "disabled_reason": "Auto-learned delay is enabled."
       },
       {
         "key": "SteerFriction",
@@ -794,7 +796,7 @@
       {
         "key": "CustomAccelProfile0MPH",
         "label": "0 mph",
-        "description": "Max acceleration in m/s² at the fixed 0 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 0 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -807,7 +809,7 @@
       {
         "key": "CustomAccelProfile11MPH",
         "label": "11 mph",
-        "description": "Max acceleration in m/s² at the fixed 11 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 11 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -820,7 +822,7 @@
       {
         "key": "CustomAccelProfile22MPH",
         "label": "22 mph",
-        "description": "Max acceleration in m/s² at the fixed 22 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 22 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -833,7 +835,7 @@
       {
         "key": "CustomAccelProfile34MPH",
         "label": "34 mph",
-        "description": "Max acceleration in m/s² at the fixed 34 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 34 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -846,7 +848,7 @@
       {
         "key": "CustomAccelProfile45MPH",
         "label": "45 mph",
-        "description": "Max acceleration in m/s² at the fixed 45 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 45 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -859,7 +861,7 @@
       {
         "key": "CustomAccelProfile56MPH",
         "label": "56 mph",
-        "description": "Max acceleration in m/s² at the fixed 56 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 56 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -872,7 +874,7 @@
       {
         "key": "CustomAccelProfile89MPH",
         "label": "89 mph",
-        "description": "Max acceleration in m/s² at the fixed 89 mph breakpoint.",
+        "description": "Max acceleration in m/s\u00b2 at the fixed 89 mph breakpoint.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 0.0,
@@ -1069,7 +1071,8 @@
         "min": 0.0,
         "max": 9.0,
         "parent_key": "ConditionalExperimental",
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "step": 0.1
       },
       {
         "key": "CESignalSpeed",
@@ -1122,7 +1125,7 @@
       {
         "key": "CurveSpeedLateralAccel",
         "label": "Curve Lateral Accel",
-        "description": "Lateral acceleration allowed through curves, in m/s². Higher values corner faster; lower values slow down earlier and harder.",
+        "description": "Lateral acceleration allowed through curves, in m/s\u00b2. Higher values corner faster; lower values slow down earlier and harder.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 1.5,
@@ -1624,7 +1627,7 @@
       {
         "key": "CustomCruise",
         "label": "Cruise Interval",
-        "description": "How much the set speed increases or decreases for each + or – cruise control button press.",
+        "description": "How much the set speed increases or decreases for each + or \u2013 cruise control button press.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 1.0,
@@ -1635,7 +1638,7 @@
       {
         "key": "CustomCruiseLong",
         "label": "Cruise Interval (Hold)",
-        "description": "How much the set speed increases or decreases while holding the + or – cruise control buttons.",
+        "description": "How much the set speed increases or decreases while holding the + or \u2013 cruise control buttons.",
         "data_type": "float",
         "ui_type": "numeric",
         "min": 1.0,
@@ -1739,7 +1742,8 @@
         "min": 0.0,
         "max": 3.0,
         "step": 0.01,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "LowVisibilityOffsets"
       },
       {
         "key": "IncreasedStoppedDistanceLowVisibility",
@@ -1749,7 +1753,8 @@
         "ui_type": "numeric",
         "min": 0.0,
         "max": 10.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "LowVisibilityOffsets"
       },
       {
         "key": "ReduceAccelerationLowVisibility",
@@ -1760,7 +1765,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "LowVisibilityOffsets"
       },
       {
         "key": "ReduceLateralAccelerationLowVisibility",
@@ -1771,7 +1777,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "LowVisibilityOffsets"
       },
       {
         "key": "RainOffsets",
@@ -1791,7 +1798,8 @@
         "min": 0.0,
         "max": 3.0,
         "step": 0.01,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainOffsets"
       },
       {
         "key": "IncreasedStoppedDistanceRain",
@@ -1801,7 +1809,8 @@
         "ui_type": "numeric",
         "min": 0.0,
         "max": 10.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainOffsets"
       },
       {
         "key": "ReduceAccelerationRain",
@@ -1812,7 +1821,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainOffsets"
       },
       {
         "key": "ReduceLateralAccelerationRain",
@@ -1823,7 +1833,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainOffsets"
       },
       {
         "key": "RainStormOffsets",
@@ -1843,7 +1854,8 @@
         "min": 0.0,
         "max": 3.0,
         "step": 0.01,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainStormOffsets"
       },
       {
         "key": "IncreasedStoppedDistanceRainStorm",
@@ -1853,7 +1865,8 @@
         "ui_type": "numeric",
         "min": 0.0,
         "max": 10.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainStormOffsets"
       },
       {
         "key": "ReduceAccelerationRainStorm",
@@ -1864,7 +1877,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainStormOffsets"
       },
       {
         "key": "ReduceLateralAccelerationRainStorm",
@@ -1875,7 +1889,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "RainStormOffsets"
       },
       {
         "key": "SnowOffsets",
@@ -1895,7 +1910,8 @@
         "min": 0.0,
         "max": 3.0,
         "step": 0.01,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "SnowOffsets"
       },
       {
         "key": "IncreasedStoppedDistanceSnow",
@@ -1905,7 +1921,8 @@
         "ui_type": "numeric",
         "min": 0.0,
         "max": 10.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "SnowOffsets"
       },
       {
         "key": "ReduceAccelerationSnow",
@@ -1916,7 +1933,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "SnowOffsets"
       },
       {
         "key": "ReduceLateralAccelerationSnow",
@@ -1927,7 +1945,8 @@
         "min": 0.0,
         "max": 99.0,
         "step": 1.0,
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "parent_key": "SnowOffsets"
       },
       {
         "key": "SpeedLimitController",
@@ -2147,7 +2166,7 @@
       },
       {
         "key": "Offset1",
-        "label": "Speed Offset (0–24 mph)",
+        "label": "Speed Offset (0\u201324 mph)",
         "description": "How much to offset posted speed-limits between 0 and 24 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2158,7 +2177,7 @@
       },
       {
         "key": "Offset2",
-        "label": "Speed Offset (25–34 mph)",
+        "label": "Speed Offset (25\u201334 mph)",
         "description": "How much to offset posted speed-limits between 25 and 34 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2169,7 +2188,7 @@
       },
       {
         "key": "Offset3",
-        "label": "Speed Offset (35–44 mph)",
+        "label": "Speed Offset (35\u201344 mph)",
         "description": "How much to offset posted speed-limits between 35 and 44 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2180,7 +2199,7 @@
       },
       {
         "key": "Offset4",
-        "label": "Speed Offset (45–54 mph)",
+        "label": "Speed Offset (45\u201354 mph)",
         "description": "How much to offset posted speed-limits between 45 and 54 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2191,7 +2210,7 @@
       },
       {
         "key": "Offset5",
-        "label": "Speed Offset (55–64 mph)",
+        "label": "Speed Offset (55\u201364 mph)",
         "description": "How much to offset posted speed-limits between 55 and 64 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2202,7 +2221,7 @@
       },
       {
         "key": "Offset6",
-        "label": "Speed Offset (65–74 mph)",
+        "label": "Speed Offset (65\u201374 mph)",
         "description": "How much to offset posted speed-limits between 65 and 74 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2213,7 +2232,7 @@
       },
       {
         "key": "Offset7",
-        "label": "Speed Offset (75–99 mph)",
+        "label": "Speed Offset (75\u201399 mph)",
         "description": "How much to offset posted speed-limits between 75 and 99 mph.",
         "data_type": "float",
         "ui_type": "numeric",
@@ -2347,6 +2366,15 @@
         "ui_type": "toggle",
         "parent_key": "AdvancedLongitudinalTune",
         "settings_tier": "advanced"
+      },
+      {
+        "key": "CEOpenRoad",
+        "label": "Open Road",
+        "description": "Keep Experimental Mode active on an open road after reaching the set speed when no lead vehicle is detected. This can help the model anticipate braking sooner.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "ConditionalExperimental",
+        "settings_tier": "simple"
       }
     ]
   },
@@ -2533,7 +2561,8 @@
         "data_type": "bool",
         "ui_type": "toggle",
         "parent_key": "CustomUI",
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "is_parent_toggle": true
       },
       {
         "key": "DynamicPedalsOnUI",
@@ -2971,7 +3000,7 @@
       {
         "key": "WarningImmediateVolume",
         "label": "Warning Immediate Volume",
-        "description": "Set the volume for the loudest warnings that require urgent attention.\n\nExamples include: \"DISENGAGE IMMEDIATELY — Driver Distracted\", \"DISENGAGE IMMEDIATELY — Driver Unresponsive\".",
+        "description": "Set the volume for the loudest warnings that require urgent attention.\n\nExamples include: \"DISENGAGE IMMEDIATELY \u2014 Driver Distracted\", \"DISENGAGE IMMEDIATELY \u2014 Driver Unresponsive\".",
         "data_type": "int",
         "ui_type": "numeric",
         "min": 25.0,
@@ -4180,7 +4209,8 @@
         "min": 0.0,
         "max": 33.0,
         "parent_key": "DeviceManagement",
-        "settings_tier": "simple"
+        "settings_tier": "simple",
+        "step": 1.0
       },
       {
         "key": "NoLogging",
@@ -4568,6 +4598,62 @@
         "data_type": "bool",
         "ui_type": "toggle",
         "settings_tier": "advanced"
+      },
+      {
+        "key": "AlphaLongitudinalEnabled",
+        "label": "openpilot Longitudinal Control (Alpha)",
+        "description": "Enable openpilot longitudinal control for vehicles that support it. This replaces the vehicle's stock ACC and may disable automatic emergency braking. Changing this setting restarts the driving stack.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "GalaxyDeveloperMode",
+        "requires_offroad": true,
+        "confirm_message": "Enable openpilot Longitudinal Control? This is an alpha feature, replaces the vehicle's stock ACC, and may disable automatic emergency braking.",
+        "settings_tier": "advanced"
+      },
+      {
+        "key": "ForceOffroad",
+        "label": "Force Offroad",
+        "description": "Temporarily switch the device to the offroad state for remote updates when the vehicle is parked. This control is only available while the vehicle reports Park.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "parent_key": "GalaxyDeveloperMode",
+        "requires_parked": true,
+        "confirm_message": "Force the device offroad? Only use this while the vehicle is in Park.",
+        "settings_tier": "advanced"
+      }
+    ]
+  },
+  {
+    "name": "Sentry Mode",
+    "icon": "bi-shield-exclamation",
+    "params": [
+      {
+        "key": "SentryModeEnabled",
+        "label": "Sentry Mode",
+        "description": "Detect movement while parked and send alerts through Galaxy.",
+        "data_type": "bool",
+        "ui_type": "toggle",
+        "settings_tier": "simple"
+      },
+      {
+        "key": "SentryModeWebhook",
+        "label": "Sentry Webhook",
+        "description": "Optional webhook that Galaxy will POST to when sentry mode detects movement. Discord webhooks are supported.",
+        "data_type": "string",
+        "ui_type": "text",
+        "input_type": "url",
+        "placeholder": "https://\u2026",
+        "settings_tier": "simple"
+      },
+      {
+        "key": "SentryModeNtfyUrl",
+        "label": "Sentry ntfy URL",
+        "description": "Optional ntfy topic URL, for example https://ntfy.sh/my-starpilot-topic.",
+        "data_type": "string",
+        "ui_type": "text",
+        "input_type": "url",
+        "placeholder": "https://ntfy.sh/\u2026",
+        "settings_tier": "simple"
       }
     ]
   }

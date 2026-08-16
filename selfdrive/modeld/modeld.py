@@ -48,8 +48,8 @@ from openpilot.starpilot.common.starpilot_variables import get_starpilot_toggles
 PROCESS_NAME = "selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
-BUILTIN_MODEL_KEY = "rdf"
-BUILTIN_MODEL_ALIASES = {BUILTIN_MODEL_KEY}
+BUILTIN_MODEL_KEY = "rdf43"
+BUILTIN_MODEL_ALIASES = {BUILTIN_MODEL_KEY, "rdf"}
 MODEL_ID_ALIASES = {"sc": "sc2"}
 
 
@@ -120,6 +120,12 @@ def _canonical_model_id(model_id: str) -> str:
   if key in BUILTIN_MODEL_ALIASES:
     return BUILTIN_MODEL_KEY
   return MODEL_ID_ALIASES.get(key, key)
+
+
+def _select_builtin_model(params: Params) -> None:
+  params.put("Model", BUILTIN_MODEL_KEY)
+  params.put("DrivingModel", BUILTIN_MODEL_KEY)
+  params.put("DrivingModelName", "Regret Driven Framework V4")
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
@@ -373,7 +379,7 @@ class ModelState:
     return parsed
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
-          inputs: dict[str, np.ndarray], prepare_only: bool, blinker_on: bool = False) -> dict[str, np.ndarray] | None:
+inputs: dict[str, np.ndarray], prepare_only: bool, blinker_on: bool = False) -> dict[str, np.ndarray] | None:
     frames: dict[str, Tensor] = {}
     for key, buf in bufs.items():
       ptr = np.frombuffer(buf.data, dtype=np.uint8).ctypes.data
@@ -384,7 +390,7 @@ class ModelState:
         )
       frames[key] = self._blob_cache[cache_key]
 
-    # A desire is edge-triggered into the model input, but the compiled policy keeps
+# A desire is edge-triggered into the model input, but the compiled policy keeps
     # roughly five seconds of desire history in ``desire_q`` and max-pools it.  When
     # the blinker cancels, old turn/lane-change pulses would otherwise remain
     # actionable until that history ages out. Flush only on the blinker falling edge;
@@ -396,20 +402,6 @@ class ModelState:
       self.input_queues["desire_q"].assign(0)
 
     inputs[self.desire_key][0] = 0
-    self.numpy_inputs[self.desire_key].fill(0)
-    self.numpy_inputs[self.desire_key].reshape(-1, ModelConstants.DESIRE_LEN)[-1] = inputs[self.desire_key]
-    self.npy["desire"][:] = np.where(
-      inputs[self.desire_key] - self.prev_desire > 0.99,
-      inputs[self.desire_key],
-      0,
-    )
-    self.prev_desire[:] = inputs[self.desire_key]
-    for name in self.numpy_inputs:
-      if name not in (self.desire_key, self.prev_desired_curv_key):
-        self._set_optional_input(name, inputs)
-    self.npy["tfm"][:] = transforms[self.road_key]
-    self.npy["big_tfm"][:] = transforms[self.wide_key]
-
     warp_output = self.warp_enqueue(
       **{key: self.input_queues[key] for key in self.warp_input_keys},
       frame=frames[self.road_key],
@@ -458,6 +450,24 @@ class ModelState:
     if SEND_RAW_PRED:
       parsed["raw_pred"] = np.concatenate([output.copy() for output in outputs])
     return parsed
+
+
+def _load_model_state(cam_w: int, cam_h: int, selected_model: str, external_gpu_requested: bool,
+                      params: Params) -> ModelState:
+  try:
+    return ModelState(cam_w, cam_h, external_gpu_requested)
+  except Exception:
+    if selected_model == BUILTIN_MODEL_KEY:
+      raise
+
+    cloudlog.exception(f"Failed to load model {selected_model}; falling back to {BUILTIN_MODEL_KEY}")
+    _select_builtin_model(params)
+    if external_gpu_requested:
+      from tinygrad.helpers import DEV
+      device_config = tinygrad_dev_config(False, TICI)
+      DEV.value = device_config
+      os.environ["DEV"] = device_config
+    return ModelState(cam_w, cam_h, False)
 
 
 def main(demo=False):
@@ -512,16 +522,7 @@ def main(demo=False):
   cloudlog.warning("loading model")
   if external_gpu_requested:
     wait_usbgpu_link()
-  try:
-    model = ModelState(vipc_client_main.width, vipc_client_main.height, external_gpu_requested)
-  except Exception:
-    if not external_gpu_requested:
-      raise
-    cloudlog.exception(f"Failed to load external-GPU model {selected_model}; falling back to {BUILTIN_MODEL_KEY}")
-    device_config = tinygrad_dev_config(False, TICI)
-    DEV.value = device_config
-    os.environ["DEV"] = device_config
-    model = ModelState(vipc_client_main.width, vipc_client_main.height, False)
+  model = _load_model_state(vipc_client_main.width, vipc_client_main.height, selected_model, external_gpu_requested, params)
   external_gpu_active = model.uses_external_gpu
   params.put_bool("UsbGpuCompiled", external_model_selected and file_chunked_exists(external_artifact))
   params.put_bool("UsbGpuActive", external_gpu_active)
